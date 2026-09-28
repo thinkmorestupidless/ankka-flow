@@ -39,6 +39,9 @@ docker build -f samples/cart-router/Dockerfile -t sample-cart-router .   # from 
 
 ## On a kind cluster
 
+`flow` is not installed by anything: build it with `just cli` from the repository root, which
+prints the line that puts it on your PATH. The commands below call it by its staged path instead.
+
 ```bash
 just up                                            # from the repository root: kind, the CRD, the operator, a dev Kafka
 kubectl create namespace shop

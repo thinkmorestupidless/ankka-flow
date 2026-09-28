@@ -109,14 +109,32 @@ machine named.
 
 ## Tier 6 — installed on a kind cluster (manual)
 
+Needs kind, kubectl and just. `flow` is not installed by anything: `just cli` builds it and prints
+the line that puts it on your PATH.
+
 ```bash
-just up                                                  # kind cluster (default name: ankka, shared with ankka), CRD, operator, dev Kafka, cluster secret
+just cli                                                 # builds flow; run the export line it prints
+export PATH="$PWD/cli/target/universal/stage/bin:$PATH"
+just up                                                  # kind cluster (default name: ankka), CRD, operator, dev Kafka, cluster secret, images loaded
+kubectl create namespace shop
+kubectl -n kafka exec kafka-0 -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic shop.cart-events.v1 --partitions 3     # the unmanaged input, owned by "someone else"
 cd samples/cart-router
-flow generate blueprint.conf --descriptors flow --image router=sample-cart-router:dev -n shop | kubectl apply -f -
-kubectl get aflow -n shop -w                             # Pending → Ready
-kubectl get events -n shop --field-selector involvedObject.kind=AnkkaFlow
-kubectl -n shop port-forward deploy/flow-cart-router 2050 & curl -s localhost:2050/metrics | grep records_lag
+flow generate blueprint.conf --descriptors flow --conf k8s/in-cluster.conf \
+  --image router=sample-cart-router:latest -n shop | kubectl apply -f -
+kubectl -n shop wait aflow/cart --for=jsonpath='{.status.phase}'=Ready --timeout=240s
+for i in $(seq 0 49); do echo "cart-$((i % 10)):{\"id\":$i,\"total\":$(( (i*37) % 200 ))}"; done |
+  kubectl -n kafka exec -i kafka-0 -- /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
+    --topic shop.cart-events.v1 --property parse.key=true --property key.separator=:
+kubectl -n kafka exec kafka-0 -- /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic cart.valid-carts --from-beginning --timeout-ms 5000 | wc -l   # and cart.review-carts: 50 between them
+kubectl -n shop get events --field-selector involvedObject.kind=AnkkaFlow
+kubectl -n shop port-forward deploy/flow-cart-router 2050 & sleep 2; curl -s localhost:2050/metrics | grep records_lag
+cd ../.. && just down                                    # removes the cluster
 ```
+
+`k8s/in-cluster.conf` points the unmanaged input at the in-cluster Kafka; the blueprint's
+`kafka:9092` is the compose network's name.
 
 ## Tier 7 — beside a running ankka service (manual)
 

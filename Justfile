@@ -26,6 +26,11 @@ test-all:
 mutation:
     sbt mutationCheck
 
+# Build the `flow` CLI; put it on your PATH with the line this prints.
+cli:
+    sbt cli/stage
+    @echo 'export PATH="{{justfile_directory()}}/cli/target/universal/stage/bin:$PATH"'
+
 # The sidecar and operator images, and the sample's.
 images:
     sbt docker:publishLocal sampleImage

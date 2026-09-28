@@ -1,6 +1,14 @@
 # The `flow` CLI
 
-`sbt cli/stage` builds `cli/target/universal/stage/bin/flow`. Exit codes: `0` ok, `1` refused or
+Nothing installs `flow`. From the repository root, `just cli` (or `sbt cli/stage`) builds it at
+`cli/target/universal/stage/bin/flow`; put that directory on your PATH:
+
+```bash
+just cli
+export PATH="$PWD/cli/target/universal/stage/bin:$PATH"
+```
+
+Exit codes: `0` ok, `1` refused or
 failed (every problem on stderr, one per line), `2` usage error.
 
 ## `flow verify`
