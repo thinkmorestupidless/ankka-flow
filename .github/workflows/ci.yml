@@ -1,0 +1,112 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # Maps changed paths onto jobs. An untouched job is skipped, which GitHub counts as a pass.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name != 'pull_request' }}
+      sdk-python: ${{ steps.filter.outputs.sdk-python == 'true' || github.event_name != 'pull_request' }}
+      docs: ${{ steps.filter.outputs.docs == 'true' || github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            workflow: &workflow
+              - '.github/workflows/ci.yml'
+            scala:
+              - *workflow
+              - 'build.sbt'
+              - 'project/**'
+              - '.scalafmt.conf'
+              - 'protocol/**'
+              - 'blueprint/**'
+              - 'crd/**'
+              - 'sidecar/**'
+              - 'operator/**'
+              - 'cli/**'
+              - 'kustomization/**'
+            sdk-python:
+              - *workflow
+              - 'build.sbt'
+              - 'project/**'
+              - 'protocol/**'
+              - 'sidecar/**'
+              - 'sdks/python/**'
+              - 'samples/**'
+            docs:
+              - *workflow
+              - 'docs/**'
+              - 'README.md'
+              - 'scripts/check-links.py'
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.scala == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      - run: sbt -Dflow.cluster.tests=off scalafmtCheckAll scalafmtSbtCheck compile test
+      - run: sbt mutationCheck
+
+  sdk-python:
+    needs: changes
+    if: needs.changes.outputs.sdk-python == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # FR-027: the SDK's copy of the protocol is the protocol, byte for byte.
+      - run: diff -r protocol/src/main/protobuf sdks/python/proto/src/main/protobuf
+      - run: diff -r protocol/fixtures sdks/python/proto/fixtures
+      - run: diff protocol/DESCRIPTOR.md sdks/python/proto/DESCRIPTOR.md
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      - uses: astral-sh/setup-uv@v7
+      - name: SDK
+        working-directory: sdks/python
+        run: |
+          uv sync
+          uv run python scripts/proto.py
+          git diff --exit-code proto/
+          uv build
+          python3 -m venv /tmp/wheel && /tmp/wheel/bin/pip install dist/*.whl && /tmp/wheel/bin/python -c "import ankka_flow; print(ankka_flow.PROTOCOL_VERSION)"
+          uv run mypy
+          uv run pytest -q
+          uv run conformance
+      - name: Sample
+        working-directory: samples/cart-router
+        run: |
+          uv sync
+          uv run descriptor --check
+          uv run pytest -q
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 scripts/check-links.py

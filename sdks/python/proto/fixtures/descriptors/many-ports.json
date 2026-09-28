@@ -1,0 +1,94 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "in-a"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "in-b"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "in-c"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "in-d"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "in-e"
+      }
+    ],
+    "name": "many-ports",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "out-1"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "out-2"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "out-3"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "out-4"
+      },
+      {
+        "contract": {
+          "fingerprint": "0xHLORKwBDdQIUMwWn+ozVa5DsRulk0RF1WtC/7JCAg=",
+          "format": "json",
+          "schema_name": "many.v1"
+        },
+        "name": "out-5"
+      }
+    ]
+  }
+}

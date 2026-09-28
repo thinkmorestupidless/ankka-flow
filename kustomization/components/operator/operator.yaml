@@ -1,0 +1,91 @@
+# The ankka-flow operator: one Deployment in its own namespace, watching AnkkaFlow resources in
+# every namespace. The JVM reads this file from its classpath through a symlink into this directory.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ankka-flow
+  labels:
+    app.kubernetes.io/managed-by: ankka-flow
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ankka-flow-operator
+  namespace: ankka-flow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ankka-flow-operator
+rules:
+  - apiGroups: [flow.ankka.thinkmorestupidless.com]
+    resources: [ankkaflows]
+    verbs: [get, list, watch, patch, update]
+  - apiGroups: [flow.ankka.thinkmorestupidless.com]
+    resources: [ankkaflows/status]
+    verbs: [get, update, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [secrets, serviceaccounts]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Its own events on pipelines, and the permission it grants the sidecars (RBAC forbids granting
+  # what the grantor does not hold).
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ankka-flow-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ankka-flow-operator
+subjects:
+  - kind: ServiceAccount
+    name: ankka-flow-operator
+    namespace: ankka-flow
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ankka-flow-operator
+  namespace: ankka-flow
+  labels:
+    app.kubernetes.io/name: ankka-flow-operator
+    app.kubernetes.io/managed-by: ankka-flow
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ankka-flow-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ankka-flow-operator
+    spec:
+      serviceAccountName: ankka-flow-operator
+      containers:
+        - name: operator
+          image: ankka-flow-operator:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FLOW_SIDECAR_IMAGE
+              value: ankka-flow-sidecar:latest
+            - name: FLOW_KAFKA_CLUSTERS_NAMESPACE
+              value: ankka-flow
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi

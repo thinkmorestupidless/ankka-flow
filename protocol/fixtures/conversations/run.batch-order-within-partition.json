@@ -1,0 +1,46 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 0,
+          "value_base64": "eyJuIjowfQ=="
+        }
+      ]
+    },
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 1,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    },
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 2,
+          "value_base64": "eyJuIjoyfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "Three sequential batches on one partition, acked in order.",
+  "name": "run.batch-order-within-partition"
+}

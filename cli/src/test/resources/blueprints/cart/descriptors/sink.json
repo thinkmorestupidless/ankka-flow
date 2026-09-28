@@ -1,0 +1,21 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "description": "Consumes cart events and writes them elsewhere.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "nXhoFwNZSB7DKScFuZUtZ1gnAYkIxadumsXNHWwbLfM=",
+          "format": "json",
+          "schema_name": "cart-events.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "sink"
+  }
+}

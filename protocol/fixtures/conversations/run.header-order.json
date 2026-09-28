@@ -1,0 +1,39 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [
+            {
+              "key": "a",
+              "value_base64": "MQ=="
+            },
+            {
+              "key": "b",
+              "value_base64": "Mg=="
+            },
+            {
+              "key": "c",
+              "value_base64": "Mw=="
+            },
+            {
+              "key": "d",
+              "value_base64": "AP8qf4A="
+            }
+          ],
+          "key": "header-echo",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "Headers reversed, bytes intact.",
+  "name": "run.header-order"
+}

@@ -71,6 +71,26 @@ The technical shape behind this specification is in `docs/design/version-one.md`
   (operator, protocol, SDK and spec layout) so people move between the two without relearning.
 - Q: Where does user logic run? → A: In the user's own container, in any language. A Pekko sidecar
   in the same pod owns all Kafka interaction and feeds the user's process over the protocol.
+- Q: After a process fails a batch or dies with one in flight, what does the sidecar do next? → A:
+  It ends the conversation, reconnects, and redelivers from the last commit with exponential
+  backoff, indefinitely. The partition stalls, visible as lag; a warning event is recorded once the
+  stall passes a threshold. The sidecar never skips a batch; skipping a record is the process's
+  explicit choice, by acknowledging without emitting.
+- Q: How is an Avro contract's fingerprint derived so schemas written in two languages connect? →
+  A: Drop Avro from version one. The only contract format is JSON, fingerprinted by schema name.
+  The descriptor still carries a format field so later formats (Avro, Protobuf) can be added without
+  changing its shape.
+- Q: What happens when a changed resource is re-applied to a running pipeline? → A: Full
+  reconcile. Only streamlets whose image, descriptor or configuration changed are rolled; added
+  streamlets start and removed ones stop; new managed topics are created; a changed setting on an
+  existing topic is reported as a warning and not applied.
+- Q: Where does a streamlet's replica count live? → A: A `replicas` field per streamlet in the
+  pipeline resource, default 1. The operator owns one Deployment per streamlet and overwrites any
+  direct scaling of it, so scaling and the reset flow are edits to the resource.
+- Q: Does version one carry a performance target? → A: One floor, as a success criterion: the
+  Python cart router sustains at least 1,000 records per second per partition on a laptop, with the
+  sidecar adding under 10 ms median latency over a plain consumer, measured by a benchmark kept in
+  the repository. Tuning beyond that is a later feature.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -101,8 +121,9 @@ partition, with the CloudEvents headers the producer wrote.
 2. **Given** a batch the process has acknowledged, **When** the sidecar has written every record
    the process emitted for it, **Then** and only then are that batch's offsets committed.
 3. **Given** a process that fails a batch or dies while one is in flight, **When** the sidecar
-   observes it, **Then** nothing from that batch on is committed, and on restart the process sees
-   that batch again before anything later.
+   observes it, **Then** nothing from that batch on is committed, the conversation ends, and the
+   sidecar reconnects and redelivers from the last commit with exponential backoff, for as long as
+   it takes; the process sees that batch again before anything later.
 4. **Given** records over several keys on one inlet, **When** the process emits each with its
    input's key, **Then** each key's records land on one partition of the outlet in the order they
    were read.
@@ -130,8 +151,8 @@ consumers. It must happen before a pod exists, with no language runtime involved
 
 **Independent Test**: Verify a blueprint whose JSON outlet names `cart-events.v1` against an inlet
 naming `cart-events.v2`, and see it refused with the two names. Rename one and see it verify.
-Verify an Avro outlet against an inlet declared from the same schema text in another language and
-see it connect.
+Verify an outlet declared in Python against an inlet declared with the same schema name by the
+reference implementation and see it connect.
 
 **Acceptance Scenarios**:
 
@@ -179,17 +200,22 @@ sharing its inlet's partitions.
 4. **Given** a topic's settings at deploy time, in the blueprint and in the named or default Kafka
    cluster's secret, **When** a streamlet connects, **Then** the deploy-time setting wins, then the
    blueprint's, then the cluster's.
-5. **Given** a streamlet scaled to several replicas, **When** they run, **Then** they share one
-   consumer group per inlet and each record is processed by one of them.
+5. **Given** a streamlet whose `replicas` in the resource is set to several, **When** they run,
+   **Then** they share one consumer group per inlet and each record is processed by one of them;
+   **When** its Deployment is scaled directly, **Then** the operator restores the resource's count.
 6. **Given** the operator's sidecar image is not configured, **When** a resource is applied,
    **Then** it is refused with that reason and nothing is created.
+7. **Given** a running pipeline, **When** a changed resource is applied, **Then** only the
+   streamlets whose image, descriptor or configuration changed are rolled, added streamlets start,
+   removed streamlets' pods are deleted, new managed topics are created, and a changed setting on an
+   existing topic is recorded as a warning event and left as it is.
 
 ---
 
 ### User Story 4 - Rebuilt from the start, and watched (Priority: P4)
 
-An operator rebuilding what a pipeline feeds scales its streamlets to zero, asks for its inputs to
-be reprocessed from the beginning, and scales them back up. Every inlet's consumer group starts from
+An operator rebuilding what a pipeline feeds sets its streamlets' `replicas` to zero in the
+resource, asks for its inputs to be reprocessed from the beginning, and sets them back up. Every inlet's consumer group starts from
 the earliest offset, and each group's outcome is a Kubernetes event on the pipeline. While it
 catches up, a Prometheus dashboard shows each streamlet's lag per inlet under the streamlet's own
 name.
@@ -245,6 +271,10 @@ conversation fail.
 - A process emits to an outlet the streamlet did not declare: the stream fails, the batch is not
   committed, and the failure names the outlet.
 - A process acknowledges a batch it was never sent, or twice: the stream fails.
+- A process fails the same batch every time it is redelivered: the partition stalls behind it and
+  its lag grows; after a configurable stall threshold the sidecar records a warning event naming the
+  inlet, partition and offset. The sidecar never skips or dead-letters the batch; if the process
+  wants to move past a record it acknowledges the batch without emitting for it.
 - A process emits a record with no key: the outlet's partitioner decides; the default spreads
   records round robin, so per-key order is only promised for keyed records.
 - A record or a batch exceeds the protocol's message limit: the sidecar bounds batches by bytes as
@@ -271,14 +301,16 @@ conversation fail.
 **Descriptors and blueprints**
 
 - **FR-001**: A streamlet MUST be described by a descriptor file: its name, its inlets and outlets
-  each with a format and a fingerprint (and, for JSON, the schema name the fingerprint was derived
-  from), its configuration parameters, and the protocol version it was written against. The
-  descriptor's format is part of the protocol and versioned with it.
+  each with a format, a fingerprint and the schema name the fingerprint was derived from, its
+  configuration parameters, and the protocol version it was written against. The descriptor's
+  format is part of the protocol and versioned with it. Version one defines one format, `json`;
+  the field exists so later formats add a value, not a shape.
 - **FR-002**: An SDK MUST write the descriptor from the streamlet's declaration, so a descriptor is
   never written by hand, and the same declaration MUST produce the same descriptor in every
   language (checked by fixtures).
-- **FR-003**: A JSON contract's fingerprint MUST be derived from its schema name alone; an Avro
-  contract's from the schema text. Equal names or equal schemas connect; nothing else does.
+- **FR-003**: A JSON contract's fingerprint MUST be derived from its schema name alone. Equal
+  format and equal fingerprint connect; nothing else does. Verification MUST refuse any format other
+  than `json` in version one, naming it.
 - **FR-004**: A blueprint MUST name streamlets, connect outlets to inlets through named topics, and
   declare each topic's settings; verification MUST refuse a connection whose formats or
   fingerprints differ, an unconnected inlet, and any name no descriptor declares, reporting every
@@ -305,6 +337,11 @@ conversation fail.
 - **FR-012**: The sidecar MUST write every emitted record to its outlet's topic and have the
   broker confirm it before committing the batch's offsets; a failure to write MUST fail the
   stream with nothing from that batch on committed.
+- **FR-012a**: When a stream fails (the process reports failure, dies, breaks a protocol rule, or a
+  write fails), the sidecar MUST end the conversation, reconnect, and redeliver from the last commit
+  with exponential backoff, indefinitely. It MUST NOT skip, commit past, or dead-letter a batch. It
+  MUST record a warning event once a partition has been stalled longer than a configurable
+  threshold, naming the inlet, partition and offset.
 - **FR-013**: An emitted record MUST be written with the key and headers the process gave; a record
   with no key MUST be partitioned by the outlet's partitioner, round robin by default.
 - **FR-014**: The sidecar MUST report readiness only when the process has described itself and
@@ -328,6 +365,9 @@ conversation fail.
 - **FR-020**: The operator MUST run each streamlet as a pod with the sidecar from its own configured
   image and the developer's image as a second container; the resource MUST NOT name the sidecar's
   image.
+- **FR-020a**: Each streamlet in the resource MUST carry a `replicas` count, default 1. The operator
+  MUST own one Deployment per streamlet with that count and MUST restore it if the Deployment is
+  scaled by other means. Zero is valid and is how a streamlet is stopped for a reset.
 - **FR-021**: A streamlet's Kafka connection MUST resolve from the deploy-time topic configuration,
   then the blueprint, then the named or default cluster's secret, and MUST reach the sidecar as a
   mounted secret the process container does not see.
@@ -337,6 +377,10 @@ conversation fail.
   resetting each inlet's group to the earliest offset over the streamlet's own connection, recording
   each group's outcome as an event, and marking the request done so a restart does not repeat it.
 - **FR-024**: The operator MUST refuse a resource when it has no sidecar image configured.
+- **FR-024a**: On a change to a running pipeline's resource, the operator MUST reconcile to it: roll
+  only the streamlets whose image, descriptor or configuration changed, start added streamlets,
+  stop removed ones, create new managed topics, and record a warning event for any changed setting
+  on an existing topic without applying it. Unchanged streamlets MUST NOT be restarted.
 
 **SDKs and conformance**
 
@@ -366,7 +410,7 @@ conversation fail.
 - **Topic**: a Kafka topic between stages, managed (created by the operator) or unmanaged (owned by
   someone else, consumed only), with settings resolved from deploy time, blueprint and cluster.
 - **Pipeline resource**: the Kubernetes custom resource the CLI emits and the operator runs, carrying
-  every descriptor, image and topic.
+  every descriptor, image, per-streamlet replica count and topic.
 - **Record**: value bytes, an optional key and ordered headers, as Kafka holds it.
 - **Batch**: the unit of delivery and acknowledgement; one in flight per inlet partition.
 - **Sidecar**: the platform's container beside every process, owning Kafka.
@@ -392,6 +436,10 @@ conversation fail.
   test fail (records lost), and moving the commit ahead of the emit write does the same.
 - **SC-007**: Every piece carried over from the Cloudflow fork arrives with the real-Kafka test that
   proved it there, passing here.
+- **SC-008**: A benchmark in the repository, run on a laptop against the compose file, shows the
+  Python cart router sustaining at least 1,000 records per second per inlet partition, and the
+  sidecar path adding under 10 ms median latency per record compared with a plain Kafka consumer
+  reading the same topic. Performance beyond this floor is out of scope for version one.
 
 ## Assumptions
 
@@ -401,13 +449,18 @@ the plan.
 - **Process hosting only.** Version one has no in-process (embedded JVM) hosting; a Scala streamlet
   is written against the protocol like any other, with a Scala SDK as a later feature. The sidecar
   is itself Pekko, so embedding is a small step when something needs it.
-- **Formats in version one are JSON and Avro.** Protobuf contracts need descriptor-set parsing in
-  the CLI and are a follow-on.
-- **Batching defaults**: 100 records, 1 MiB, 100 ms, whichever first; configurable per inlet.
+- **The only contract format in version one is JSON**, fingerprinted by schema name. Avro and
+  Protobuf are follow-ons; each needs schema parsing in the CLI, and Avro needs a canonical form
+  agreed across SDKs before two languages can be trusted to fingerprint one schema identically.
+- **Batching**: a batch is whatever arrived while the previous one was in flight, capped at 100
+  records and 1 MiB, configurable per inlet. (Earlier: "100 records, 1 MiB, 100 ms, whichever
+  first"; a timer made every record of a quiet stream wait, which SC-008's latency floor forbids.)
 - **At-least-once only.** No transactional or exactly-once delivery; process logic must be
   idempotent, as ankka consumers must be.
-- **The CRD has its own group** (proposed `flow.ankka.dev`, kind `AnkkaFlow`, short name `aflow`)
-  and no compatibility with Cloudflow's `cloudflow.lightbend.com` resources.
+- **The CRD has its own group**: `flow.ankka.thinkmorestupidless.com` (under ankka's real domain,
+  decided in the plan; `flow.ankka.dev` was the earlier proposal), kind `AnkkaFlow`, plural
+  `ankkaflows`, short name `aflow`, and no compatibility with Cloudflow's
+  `cloudflow.lightbend.com` resources.
 - **The sidecar's loopback ports mirror ankka's** (process 9010, sidecar 9011), so a developer who
   knows one knows the other.
 - **The Python SDK lives in this repository** under `sdks/python`, as ankka's does, so protocol,
@@ -425,8 +478,11 @@ the plan.
   a graph database, is the next feature).
 - Server streamlets: HTTP or gRPC ingress into a pipeline.
 - Sharded sources, partition-aware processing across pods, and per-partition state in the process.
-- Protobuf contracts, schema registries, and schema evolution beyond "a new contract is a new name".
+- Avro and Protobuf contracts, schema registries, and schema evolution beyond "a new contract is a
+  new name".
 - Exactly-once delivery.
 - A TypeScript SDK (ankka's exists; it follows once the protocol is stable).
 - A UI, a hosted control plane, and multi-cluster Kafka.
 - Migration of any Cloudflow application or blueprint.
+- Performance work beyond the SC-008 floor: tuning, zero-copy paths, and per-language SDK
+  optimisation.

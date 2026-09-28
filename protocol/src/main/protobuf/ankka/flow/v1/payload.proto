@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package ankka.flow.v1;
+
+// A Kafka record, exactly as Kafka holds it. The sidecar never inspects `value`.
+message Record {
+  optional bytes key = 1;        // absent: Kafka's default partitioner decides
+  repeated Header headers = 2;   // order preserved
+  bytes value = 3;
+}
+
+message Header {
+  string key = 1;
+  bytes value = 2;
+}
+
+// A process's failure of a batch, or the reason the sidecar gives for something.
+message Error {
+  string message = 1;
+}
+
+message Problem {
+  string message = 1;
+}
+
+// Every problem the sidecar found in discovery, sent at once so they appear in the process's log.
+message Problems {
+  repeated Problem problems = 1;
+}
+
+message Empty {}

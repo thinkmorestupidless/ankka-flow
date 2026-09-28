@@ -1,0 +1,6 @@
+# A single-node kind cluster for ankka-flow. The same cluster can host ankka (`../ankka`), which is
+# how a pipeline reads an ankka service's topic in quickstart tier 7.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane

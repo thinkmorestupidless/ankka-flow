@@ -1,5 +1,16 @@
 # Version one: the technical shape
 
+> **Superseded in part.** The plan's research (`specs/001-version-one/research.md`) changed
+> several things below; where they disagree, the research wins. In short: the protocol is served
+> with grpc-java and ScalaPB, not pekko-grpc, and the sidecar has no HTTP server at all (R1). The
+> platform's variables are `FLOW_*`, and version one has no callback service on 9011 (R2). The only
+> contract format is JSON, fingerprinted as Base64(SHA-256(schema name)); Avro is out (R4). The
+> descriptor file is canonical JSON defined in `protocol/DESCRIPTOR.md` (R5). Readiness and liveness
+> are files, metrics come from the Prometheus JMX exporter with Cloudflow's rules (R7). A stalled
+> partition is a Kubernetes Event raised by the sidecar (R9). The CRD group is
+> `flow.ankka.thinkmorestupidless.com` (R11). Deploy-time overrides are merged by the CLI and
+> cluster secrets by the operator (R12). The operator writes Kubernetes Events (R13).
+
 The behaviour is in `specs/001-version-one/spec.md`. This is how it is built. Nothing here is
 final until the plan; it exists so the spec's requirements have a concrete reading.
 
@@ -109,7 +120,7 @@ settings. The operator:
 
 `flow verify <blueprint> --descriptors <dir> --images <file>` and `flow generate …`: blueprint
 verification over descriptor files, emitting the resource. Fingerprints are computed here: JSON
-from the schema name (SHA-256 of the name), Avro from the schema text (Avro's own fingerprint).
+from the schema name (Base64 of SHA-256 of the name). Avro is not in version one.
 `flow reset <pipeline> [<streamlet>…]` records the reset request after the same checks the
 Cloudflow CLI made (every target scaled to zero, no pods left). GraalVM native image, as ankka's
 CLI, but later; a JVM CLI is fine for version one.
@@ -157,5 +168,5 @@ docs/            public documentation, as ankka's
 specs/           spec-kit features
 ```
 
-Pekko line as ankka and the fork: pekko 1.7.0, pekko-connectors-kafka 1.2.0, pekko-grpc 1.2.0,
+Pekko line as ankka and the fork: pekko 1.7.0, pekko-connectors-kafka 1.2.0, grpc-java via ScalaPB 0.11.11,
 kafka-clients 3.9.2, families pinned whole. Scala 3 throughout; there is no 2.12 anywhere.
