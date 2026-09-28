@@ -59,7 +59,7 @@ Three things do not fall out of ankka's sidecar design and are the substance of 
    type the sidecar understands. That keeps the sidecar one program for every language and makes a
    JSON contract expressible from any of them as a name.
 
-The technical shape behind this specification is in `docs/design/version-one.md`.
+The technical shape behind this specification is in `notes/design/version-one.md`.
 
 ## Clarifications
 

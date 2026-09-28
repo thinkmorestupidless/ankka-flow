@@ -13,6 +13,7 @@ def event(cart: str, total: int) -> bytes:
     return json.dumps({"cartId": cart, "total": total}).encode()
 
 
+# docs:start routes-by-total
 def test_routes_by_total() -> None:
     h = Harness(CartRouter(), config={"review-threshold": 50})
     h.inlet("in").put(key=b"cart-1", value=event("cart-1", 10), headers=[("ce_type", b"ItemAdded")])
@@ -21,8 +22,10 @@ def test_routes_by_total() -> None:
     assert [r.key for r in h.outlet("valid").records] == [b"cart-1"]
     assert [r.key for r in h.outlet("review").records] == [b"cart-2"]
     assert h.outlet("valid").records[0].headers == [("ce_type", b"ItemAdded")]
+    # docs:end routes-by-total
 
 
+# docs:start ordering
 def test_each_cart_stays_in_order() -> None:
     h = Harness(CartRouter())
     for i in range(50):
@@ -35,6 +38,7 @@ def test_each_cart_stays_in_order() -> None:
     for cart in {r.key for r in everything}:
         totals = [json.loads(r.value)["total"] for r in everything if r.key == cart]
         assert sorted(totals) == sorted(set(totals))
+    # docs:end ordering
 
 
 def test_committed_descriptor_matches_the_fixture_and_the_declaration() -> None:

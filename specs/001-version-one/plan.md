@@ -3,7 +3,7 @@
 **Branch**: `001-version-one` | **Date**: 2026-09-28 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/001-version-one/spec.md`, the design treatment it
-was written from, `docs/design/version-one.md`, and the two clarification sessions of 2026-09-28
+was written from, `notes/design/version-one.md`, and the two clarification sessions of 2026-09-28
 recorded in the spec (a new repository; a Pekko sidecar per pod; indefinite redelivery on failure;
 JSON only; full reconcile on change; `replicas` in the resource; one performance floor).
 

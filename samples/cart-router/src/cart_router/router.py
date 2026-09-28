@@ -1,5 +1,6 @@
 """The cart router of the spec's first story: one JSON inlet, two outlets, one parameter."""
 
+# docs:start router
 from collections.abc import Iterable
 
 from ankka_flow import Batch, Emit, IntegerParameter, JsonInlet, JsonOutlet, Streamlet, json
@@ -23,3 +24,4 @@ class CartRouter(Streamlet):
             event = json.loads(record.value)  # the SDK decodes nothing; this is the router's choice
             outlet = self.review if event["total"] > limit else self.valid
             yield outlet.emit(record)  # same key, same headers, same bytes
+    # docs:end router

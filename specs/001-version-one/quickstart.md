@@ -153,4 +153,4 @@ test, SC-003).
 - [ ] No resource, blueprint or descriptor names the sidecar image (FR-020).
 - [ ] `flow verify` runs with no network and no JVM other than its own (FR-006).
 - [ ] The fixtures match from Python and from Scala; CI diffs the protocol copy (FR-027).
-- [ ] `docs/design/version-one.md` says grpc-java, JSON only, files for probes, `FLOW_` variables.
+- [ ] `notes/design/version-one.md` says grpc-java, JSON only, files for probes, `FLOW_` variables.

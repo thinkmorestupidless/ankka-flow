@@ -33,10 +33,12 @@ cli/target/universal/stage/bin/flow generate samples/cart-router/blueprint.conf 
 
 ## Read next
 
-- [Pipelines](docs/concepts/pipelines.md), [the sidecar](docs/concepts/sidecar.md) and
-  [contracts](docs/concepts/contracts.md).
-- [The CLI](docs/reference/cli.md), [the resource](docs/reference/resource.md),
-  [the sidecar reference](docs/reference/sidecar.md), [the protocol](docs/reference/protocol.md) and
-  [limitations](docs/reference/limitations.md).
-- [The Python SDK](docs/sdk/python.md), and [writing an SDK for another language](docs/contributing/language-sdks.md).
-- The specification, plan and research behind version one: [`specs/001-version-one/`](specs/001-version-one/spec.md).
+The documentation is at **[flow.ankka.cloud](https://flow.ankka.cloud/)**, built from [`docs/`](docs/)
+and published as a site, `llms.txt` and agent skills for the ankka marketplace. Start with
+[Pipelines and streamlets](https://flow.ankka.cloud/concepts/pipelines/),
+[the sidecar](https://flow.ankka.cloud/concepts/sidecar/) and
+[your first streamlet](https://flow.ankka.cloud/get-started/first-streamlet/).
+
+The specification, plan and research behind version one are in
+[`specs/001-version-one/`](specs/001-version-one/spec.md). `just docs` builds the documentation into
+`target/docs-site`; `just docs-serve` serves it with live reload.

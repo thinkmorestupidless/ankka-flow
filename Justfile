@@ -70,6 +70,14 @@ down:
 render overlay="local":
     kubectl kustomize kustomization/overlays/{{overlay}}
 
-# Check every relative link in docs/ and README.md.
+# Check every page, then build the site, llms.txt, llms-full.txt, docs-index.json and the skills.
 docs:
-    python3 scripts/check-links.py
+    uv run --project tools/docs docs build
+
+# Refresh included samples, the generated protocol table and the rendered skills from their sources.
+docs-sync:
+    uv run --project tools/docs docs sync
+
+# The site with live reload, while writing.
+docs-serve:
+    uv run --project tools/docs docs serve

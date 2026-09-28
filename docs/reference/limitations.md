@@ -1,19 +1,37 @@
+---
+title: Limitations
+description: What ankka-flow does not do — delivery guarantees, contract formats, SDKs, ingress, brokers and tooling — stated plainly so a design does not depend on it.
+kind: reference
+related: [concepts/delivery.md, concepts/contracts.md, concepts/pipelines.md]
+---
+
 # Limitations
 
-What version one does not do, stated plainly so a design does not depend on it.
+What ankka-flow does not do, stated plainly so a design does not depend on it.
 
-- **At least once, never exactly once.** A record whose emits were written but whose offsets were
-  not yet committed is delivered again after a failure. Streamlet logic must tolerate repeats.
-- **JSON contracts only.** Avro and Protobuf contracts, schema registries and schema evolution are
-  not supported. A new contract version is a new schema name.
-- **One SDK.** Python. A Scala or TypeScript SDK follows; any language can implement the protocol
-  and prove itself with the conformance suite.
-- **No stages built into the sidecar.** The sidecar's batch processor is written so a stage can run
-  inside it, but version one ships none.
-- **No per-partition state in the process.** A streamlet sees batches of any partition assigned to
-  its pod, and the assignment changes on every rebalance.
+- **At least once, never exactly once.** A record whose emits were written but whose offsets were not
+  yet committed is delivered again after a failure or a rebalance. Streamlet logic must tolerate
+  repeats. [Delivery and failure](../concepts/delivery.md) explains when they happen.
+- **JSON contracts only.** Avro and Protobuf contracts, schema registries and compatibility rules
+  between schema versions are not supported, and nothing checks a record against its schema. A new
+  contract version is a new schema name.
+- **One SDK.** Python. Any other language can implement the streamlet protocol directly and prove
+  itself with the descriptor fixtures and the conformance suite; see
+  [Adding a language SDK](../contributing/language-sdks.md).
+- **No stages built into the sidecar.** Every streamlet's logic runs in its own process; the sidecar
+  runs none itself.
+- **No per-partition state in the process.** A streamlet sees batches of whichever partitions are
+  assigned to its pod, and the assignment changes on every rebalance. State that must survive belongs
+  in a topic or an external store.
+- **No dead-letter topic and no skipping.** A batch that fails every time stalls its partition,
+  indefinitely, by design. The stall is visible as lag, a metric and a `PartitionStalled` event;
+  skipping a record is the streamlet's own decision.
 - **No HTTP or gRPC ingress into a pipeline.** Records enter a pipeline through a Kafka topic.
-- **One broker type.** Kafka. No UI, no hosted control plane, no multi-cluster Kafka within one topic.
-- **A JVM CLI.** `flow` needs a JVM; a native binary is a later feature.
-- **A failing batch stalls its partition, indefinitely.** By design: nothing is skipped or
-  dead-lettered. The stall is visible as lag, a metric and a warning event.
+- **Kafka only.** No other broker, and no single topic spread over several Kafka clusters.
+- **Existing topics are never changed.** The operator creates a managed topic once; a different
+  partition count, replication or topic configuration on an existing topic is reported, not applied.
+- **No user interface and no hosted control plane.** A pipeline is a Kubernetes resource, operated
+  with `kubectl` and the `flow` CLI.
+- **A JVM CLI.** `flow` needs a JVM and is built from source; there is no native binary or package.
+- **Records under 4 MiB.** A record larger than the protocol's per-record limit, just under 4 MiB
+  including its key and headers, fails the stream and stalls its partition.

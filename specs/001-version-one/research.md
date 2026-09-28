@@ -5,7 +5,7 @@
 Each finding says whether it was verified against a repository on this machine (`ankka` at
 `../ankka`, the Cloudflow fork at `../cloudflow`, both read on 2026-09-28) or is an assumption a
 named task settles at implementation. The list at the end collects the latter. Where this file
-disagrees with `docs/design/version-one.md`, this file wins and the design doc is updated by the
+disagrees with `notes/design/version-one.md`, this file wins and the design doc is updated by the
 first task.
 
 ## R1 — Transport: gRPC on loopback with grpc-java and ScalaPB, not pekko-grpc
