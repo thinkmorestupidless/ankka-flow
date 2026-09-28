@@ -71,6 +71,7 @@ Open the one a task needs; each is one topic and stands alone.
 
 ### Build
 
+- `references/build/ankka-topics.md` — Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
 - `references/build/images.md` — Package a streamlet as a container image that holds only its process — no Kafka client, no exposed ports — and make it available to a cluster.
 
 ### Run and operate

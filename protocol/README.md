@@ -18,6 +18,8 @@ each copy against this one. It holds:
 The developer's process serves `Discovery` and `Streamlet` on `127.0.0.1:$FLOW_PROCESS_PORT`
 (default 9010), bound to loopback only. The sidecar dials it. The sidecar binds no gRPC port in
 `1.x`; 9011 and `FLOW_SIDECAR_PORT` are reserved for a callback service a later minor may add.
+The sidecar sends no HTTP/2 keepalive pings, so a process keeps its gRPC library's default ping
+policy; one that ends connections for too many pings is never provoked.
 
 ## Discovery
 

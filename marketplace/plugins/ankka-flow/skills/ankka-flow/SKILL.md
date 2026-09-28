@@ -85,6 +85,7 @@ Open the one a task needs; each is one topic and stands alone.
 ### Build
 
 - `references/build/blueprints.md` — Write the blueprint that wires a pipeline's streamlets together over Kafka topics, from naming the streamlets to checking the result with flow verify.
+- `references/build/ankka-topics.md` — Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
 
 ### Reference
 

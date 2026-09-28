@@ -8,6 +8,7 @@ pages:
   - deploy/install.md
   - deploy/deploy-a-pipeline.md
   - deploy/configuration.md
+  - build/ankka-topics.md
   - deploy/reset.md
   - deploy/observe.md
   - deploy/troubleshooting.md

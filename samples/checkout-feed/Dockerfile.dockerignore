@@ -1,0 +1,14 @@
+# Read by BuildKit when building with -f samples/checkout-feed/Dockerfile from the repository root.
+**
+!sdks/python/pyproject.toml
+!sdks/python/uv.lock
+!sdks/python/README.md
+!sdks/python/scripts/**
+!sdks/python/proto/**
+!sdks/python/src/**
+!samples/checkout-feed/pyproject.toml
+!samples/checkout-feed/uv.lock
+!samples/checkout-feed/src/**
+**/.venv
+**/__pycache__
+sdks/python/src/ankka_flow/_proto

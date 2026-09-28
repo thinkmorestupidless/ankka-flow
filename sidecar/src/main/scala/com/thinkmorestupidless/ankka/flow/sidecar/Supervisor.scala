@@ -48,9 +48,10 @@ final class Supervisor(
       .forAddress(settings.processHost, settings.processPort)
       .usePlaintext()
       .maxInboundMessageSize(2 * Conversation.MaxMessageBytes)
-      .keepAliveTime(10, TimeUnit.SECONDS)
-      .keepAliveTimeout(5, TimeUnit.SECONDS)
-      .keepAliveWithoutCalls(true)
+      // No keepalive pings. gRPC servers allow one per five minutes by default and answer more with
+      // GOAWAY `too_many_pings`, which failed a quiet conversation every half a minute against a
+      // process on default settings. On loopback they buy nothing: a process that dies resets the
+      // connection at once, and one that hangs still answers pings from its HTTP/2 layer.
       .build()
 
   def run(): Int =

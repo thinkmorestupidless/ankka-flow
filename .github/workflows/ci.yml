@@ -96,3 +96,9 @@ jobs:
           uv sync
           uv run descriptor --check
           uv run pytest -q
+      - name: Sample beside ankka
+        working-directory: samples/checkout-feed
+        run: |
+          uv sync
+          uv run descriptor --check
+          uv run pytest -q

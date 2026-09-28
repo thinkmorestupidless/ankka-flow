@@ -13,6 +13,7 @@ pages:
   - get-started/deploy-locally.md
   - get-started/coding-agents.md
   - build/blueprints.md
+  - build/ankka-topics.md
   - reference/blueprint.md
   - reference/limitations.md
   - reference/glossary.md

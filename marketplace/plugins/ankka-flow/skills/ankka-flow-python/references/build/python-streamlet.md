@@ -9,9 +9,9 @@ from one inlet partition and yields the records to send to its outlets. `serve()
 sidecar in the same pod can reach it, and `uv run descriptor` writes the descriptor that a blueprint
 is checked against.
 
-The SDK is the `ankka-flow` package in
-[`sdks/python`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/sdks/python). It is not
-published to PyPI; a project depends on a checkout of the repository by path.
+The SDK is the [`ankka-flow`](https://pypi.org/project/ankka-flow/) package on PyPI, built from
+[`sdks/python`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/sdks/python). Its version
+is the ankka-flow release it belongs to, and the sidecar of the same release speaks its protocol.
 
 ## Start a project
 
@@ -34,7 +34,9 @@ my-streamlet/
 └── tests/test_streamlet.py   # tests with the Harness
 ```
 
-Point the dependency at your checkout of ankka-flow in `pyproject.toml`:
+The template's `pyproject.toml` depends on `ankka-flow=={{version}}`, so `uv sync` installs the SDK
+from PyPI. To work against a checkout of ankka-flow instead, as the samples in its repository do,
+point the dependency at it:
 
 ```toml
 [tool.uv.sources]

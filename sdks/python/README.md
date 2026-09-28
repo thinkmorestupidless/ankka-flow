@@ -1,6 +1,6 @@
 # ankka-flow for Python
 
-Write [ankka-flow](../../README.md) streamlets in Python. You declare ports and parameters and
+Write [ankka-flow](https://flow.ankka.cloud/) streamlets in Python. You declare ports and parameters and
 implement `process`; the sidecar the platform runs beside your container owns everything Kafka.
 
 ```python
@@ -34,7 +34,7 @@ if __name__ == "__main__":
 `uv run descriptor` writes `flow/descriptor.json` from the streamlet named by
 `[tool.ankka-flow] streamlet = "module:Class"` in your `pyproject.toml` (or `$FLOW_STREAMLET`).
 Commit it. `uv run descriptor --check` fails when it is stale. The format is
-[`proto/DESCRIPTOR.md`](proto/DESCRIPTOR.md).
+[`proto/DESCRIPTOR.md`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/sdks/python/proto/DESCRIPTOR.md).
 
 ## Testing without Kafka
 
@@ -60,7 +60,7 @@ uv run conformance               # the reference streamlet against the platform'
 `proto/` must equal `../../protocol` byte for byte; CI diffs it. `tests/test_descriptor_fixtures.py`
 proves this SDK writes every fixture descriptor exactly.
 
-A new project starts from [`template/`](template/), which carries a compose file with Kafka and the
+A new project starts from [`template/`](https://github.com/thinkmorestupidless/ankka-flow/tree/main/sdks/python/template), which carries a compose file with Kafka and the
 sidecar for the laptop loop.
 
 ## Conformance

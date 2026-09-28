@@ -50,6 +50,36 @@ class RestartKafkaSuite extends KafkaSuite:
       double.close()
   }
 
+  test("an idle conversation outlives a process that keeps gRPC's default keepalive policy") {
+    // gRPC servers allow a client one ping per five minutes by default and end the connection with
+    // GOAWAY `too_many_pings` after a few more; the process double's server keeps grpc-java's
+    // defaults, as Python's does. A sidecar that pinged a quiet stream every few seconds failed it
+    // about every half a minute, and every failure revoked and redelivered the inlet's partitions.
+    val in     = createTopic(uniqueTopic("idle-in"), 1)
+    val out    = createTopic(uniqueTopic("idle-out"), 1)
+    val double = new ProcessDouble(TestSpecs.fixture("minimal"), ProcessDouble.keyed())
+    val port   = double.start()
+    val sidecar = new SidecarRun(
+      TestSpecs.fixture("minimal"),
+      SidecarRun.conf("r", "i", bootstrap, Seq("in" -> in), Seq("out" -> out)),
+      port
+    )
+    try
+      eventually()(assert(sidecar.ready))
+      Thread.sleep(45000) // three pings' worth at the old ten-second interval, and a strike more
+      assert(sidecar.ready, "not ready after an idle spell")
+      assertEquals(
+        double.starts.map(_.conversationId).distinct.size,
+        1,
+        "the conversation was restarted"
+      )
+      publish(in, Seq((Some("k"), "0", Nil)))
+      eventually()(assertEquals(committed("r.i.in"), 1L))
+    finally
+      sidecar.stop(): Unit
+      double.close()
+  }
+
   test("a sidecar restarted against the same group resumes from the last commit") {
     val in     = createTopic(uniqueTopic("resume-in"), 1)
     val out    = createTopic(uniqueTopic("resume-out"), 1)

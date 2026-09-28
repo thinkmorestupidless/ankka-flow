@@ -474,11 +474,17 @@ that proves it.
 - **Tier 6** (kind, 2026-09-28): passed as recorded in `samples/cart-router/README.md`. It also
   caught a documentation error: `kubectl get events --field-selector regarding.kind=…` is refused by
   the core events API; the docs now use `involvedObject.kind`.
-- **Tier 7** (beside a running ankka service): not run. ankka's operator configures no Kafka for
-  services in a cluster (item 6), and the sample router expects cart events with a `total`, where
-  ankka's `CheckoutNotice` carries `cartId` and `at`. Running it needs a Kafka setting in ankka's
-  operator and a streamlet for checkout notices; both are follow-ups. What tier 7 proves, a pipeline
-  reading a topic the platform does not own, is proven by FlowClusterSuite's unmanaged topic.
+- **Tier 7** (beside a running ankka service): not run at first. ankka configured no Kafka for a
+  Scala service in a cluster (item 6), and the sample router expects cart events with a `total`, where
+  ankka's `CheckoutNotice` carries `cartId` and `at`.
+  **Run on 2026-09-28** after two follow-ups: ankka's `ProjectionRuntime.fromEnv()` (a Scala service
+  reads `ANKKA_KAFKA_BOOTSTRAP_SERVERS` from its descriptor's `env`, as a process-hosted service's
+  sidecar already did, and the shopping cart registers `CheckoutNotifier` when it is set), and
+  `samples/checkout-feed`. Three checkouts reached `checkouts.checkouts` with keys and CloudEvents
+  headers intact; the operator touched only its managed topic. The run caught a defect no suite had:
+  the sidecar's 10 s keepalive pings drew `GOAWAY too_many_pings` from a default-configured gRPC
+  server every ~40 s on a quiet stream, failing and restarting the conversation. The sidecar sends no
+  keepalive now, and `RestartKafkaSuite` idles a conversation against grpc-java's default policy.
 
 ## Measurements at the end
 

@@ -23,7 +23,9 @@ copies the whole directory verbatim and generates its code from the copy.
 | `Discovery`, `Streamlet` | the streamlet's process | the sidecar | `127.0.0.1:$FLOW_PROCESS_PORT`, 9010 by default |
 
 The process binds the loopback interface only. The sidecar binds no gRPC port; port 9011 and
-`FLOW_SIDECAR_PORT` are reserved for a callback service a later minor version may add.
+`FLOW_SIDECAR_PORT` are reserved for a callback service a later minor version may add. The sidecar
+sends no HTTP/2 keepalive pings, so a process keeps its gRPC library's default ping policy: a server
+that ends connections after too many pings is never provoked.
 
 ## Services
 
