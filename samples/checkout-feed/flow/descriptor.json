@@ -1,0 +1,31 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "ankka-flow-python",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "description": "Turns the shopping cart's checkout notices into a feed of checkouts.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "e0Cpauo32y7LOU2bHaYdQmq4QhXWvD/caczQKff53R0=",
+          "format": "json",
+          "schema_name": "ankka.checkout-notice.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "checkout-feed",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "uzqgUFJIf5RVh1hprA1n/VJI9EUxTPoCGlzv4mho1aE=",
+          "format": "json",
+          "schema_name": "checkouts.v1"
+        },
+        "name": "checkouts"
+      }
+    ]
+  }
+}

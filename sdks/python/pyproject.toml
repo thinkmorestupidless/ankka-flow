@@ -5,10 +5,16 @@ description = "Write ankka-flow streamlets in Python: declare ports, process bat
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
+keywords = ["ankka", "ankka-flow", "kafka", "streaming", "sidecar"]
 dependencies = [
     "grpcio>=1.84,<2",
     "protobuf>=6,<8",
 ]
+
+[project.urls]
+Homepage = "https://flow.ankka.cloud/"
+Documentation = "https://flow.ankka.cloud/reference/python-sdk/"
+Repository = "https://github.com/thinkmorestupidless/ankka-flow"
 
 [project.scripts]
 descriptor = "ankka_flow._descriptor:main"

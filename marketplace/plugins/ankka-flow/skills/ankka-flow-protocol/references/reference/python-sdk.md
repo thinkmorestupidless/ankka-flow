@@ -5,8 +5,9 @@
 Source: https://flow.ankka.cloud/reference/python-sdk/
 The package is `ankka-flow`, imported as `ankka_flow`, in
 [`sdks/python`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/sdks/python). It needs
-Python 3.12 or later and depends on `grpcio` and `protobuf`. It is not published to PyPI; a project
-depends on a checkout by path with `[tool.uv.sources]`. It is typed (`py.typed`) and checked with
+Python 3.12 or later and depends on `grpcio` and `protobuf`. It is published to PyPI as
+[`ankka-flow`](https://pypi.org/project/ankka-flow/) (`uv add ankka-flow`), versioned as the
+ankka-flow release it belongs to. It is typed (`py.typed`) and checked with
 `mypy --strict`.
 
 ## Names

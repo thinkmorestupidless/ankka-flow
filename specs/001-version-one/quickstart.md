@@ -139,7 +139,8 @@ cd ../.. && just down                                    # removes the cluster
 ## Tier 7 — beside a running ankka service (manual)
 
 With ankka deployed in the same kind cluster (`just up` in `../ankka`) and an ankka consumer
-producing cart events to a topic (research item 6 settles which sample): declare that topic
+producing to a topic (the shopping cart's `CheckoutNotifier`, registered when the service's
+descriptor sets `ANKKA_KAFKA_BOOTSTRAP_SERVERS`; `samples/checkout-feed` reads it): declare that topic
 unmanaged in `blueprint.conf` with `cluster = ankka` pointing at ankka's Kafka, apply, and watch
 the router's outlet topics fill without the operator touching the ankka topic (S3's independent
 test, SC-003).

@@ -26,7 +26,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push the sidecar, the operator and the sample
+      - name: Build and push the sidecar, the operator and the samples
         env:
           DOCKER_REPOSITORY: ghcr.io/thinkmorestupidless
         run: |
@@ -34,9 +34,35 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           docker build -f samples/cart-router/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-cart-router:${version}" .
           docker push "ghcr.io/thinkmorestupidless/sample-cart-router:${version}"
+          docker build -f samples/checkout-feed/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}" .
+          docker push "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}"
 
   sdk-python:
+    # The Python SDK to PyPI, as the package `ankka-flow`: https://pypi.org/project/ankka-flow/. The
+    # version is `__version__` in sdks/python/src/ankka_flow/__init__.py — 0.0.0 in the tree, written
+    # here from the tag and read by hatchling as the package version — so the version the SDK reports
+    # to the sidecar in discovery, and the one a descriptor records, is the one on PyPI. The gRPC stubs
+    # are generated from this commit's `protocol/`, so the wheel speaks the protocol of the release it
+    # is named after.
+    #
+    # No token anywhere: PyPI trusts this workflow directly (trusted publishing, OIDC), as ankka's
+    # release does. It needs one thing outside this repository, once: on
+    # https://pypi.org/manage/account/publishing/ a publisher for project `ankka-flow`, owner
+    # `thinkmorestupidless`, repository `ankka-flow`, workflow `release.yml`, environment `pypi` — a
+    # "pending" publisher until the first upload creates the project.
+    #
+    # It waits for the images: the SDK's project template runs the sidecar image of the same version,
+    # so a release whose images never reached the registry should not exist on PyPI either. A version
+    # can never be re-uploaded to PyPI, only superseded, so the checks below are the last point at which
+    # a release can be withdrawn.
+    needs: images
     runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ankka-flow/
+    permissions:
+      contents: read
+      id-token: write   # the OIDC token PyPI verifies
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,12 +74,43 @@ jobs:
           cache: sbt
       - uses: sbt/setup-sbt@v1
       - uses: astral-sh/setup-uv@v7
-      - name: The SDK, its fixtures and the conformance suite (no PyPI publish in version one)
+        with:
+          python-version: "3.12"
+      - name: The SDK, its fixtures and the conformance suite
         working-directory: sdks/python
         run: |
           diff -r ../../protocol/src/main/protobuf proto/src/main/protobuf
           diff -r ../../protocol/fixtures proto/fixtures
           uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
+      - name: Write the version, build the wheel
+        working-directory: sdks/python
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "s/^__version__ = \"0.0.0\"/__version__ = \"$version\"/" src/ankka_flow/__init__.py
+          grep -n "^__version__ = \"$version\"" src/ankka_flow/__init__.py
+          rm -rf dist
+          uv build
+          ls -l dist
+          test -f "dist/ankka_flow-$version-py3-none-any.whl" || { echo "::error::the wheel is not versioned as the tag"; exit 1; }
+      - name: The wheel installs on its own and is the release it claims to be
+        working-directory: sdks/python
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # An isolated interpreter with only the wheel and its declared dependencies: no checkout on the
+          # path, so a stub the wheel does not carry or an undeclared dependency fails here rather than on
+          # a user's first `uv add ankka-flow`.
+          uv run --isolated --no-project --with "dist/ankka_flow-$version-py3-none-any.whl" python - "$version" <<'PY'
+          import sys
+          import ankka_flow, ankka_flow.testkit
+          from ankka_flow._proto.ankka.flow.v1 import streamlet_pb2
+          assert ankka_flow.__version__ == sys.argv[1], (ankka_flow.__version__, sys.argv[1])
+          print("ankka-flow", ankka_flow.__version__, "protocol", ankka_flow.PROTOCOL_VERSION, "from", ankka_flow.__file__)
+          PY
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/python/dist
 
   marketplace:
     # The Claude Code marketplace is thinkmorestupidless/ankka-marketplace, one plugin per project. This
