@@ -1,0 +1,22 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "rogue-outlet",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "The streamlet tries to emit to an undeclared outlet: the SDK fails the batch, or the sidecar fails the stream.",
+  "name": "run.rogue-outlet"
+}

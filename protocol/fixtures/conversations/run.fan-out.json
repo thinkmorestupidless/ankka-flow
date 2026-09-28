@@ -1,0 +1,22 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "fan",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "Emits to out then other; then Ack.",
+  "name": "run.fan-out"
+}

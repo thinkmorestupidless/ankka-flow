@@ -1,0 +1,31 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [
+            {
+              "key": "ce_type",
+              "value_base64": "SXRlbUFkZGVk"
+            },
+            {
+              "key": "raw",
+              "value_base64": "AP8qf4A="
+            }
+          ],
+          "key": "echo",
+          "offset": 7,
+          "value_base64": "eyJ0b3RhbCI6M30="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "One Emit to out with the same key, headers in order and value bytes; then Ack.",
+  "name": "run.echo-preserves-record"
+}

@@ -1,0 +1,25 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 0,
+          "value_repeat": {
+            "byte": "x",
+            "count": 3145728
+          }
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "A 3 MiB value echoed intact.",
+  "name": "run.large-record"
+}

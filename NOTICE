@@ -1,0 +1,38 @@
+ankka-flow
+Copyright 2026 Trevor Burton-McCreadie
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Portions of this product are derived from Cloudflow
+(https://github.com/lightbend/cloudflow), by way of the thinkmorestupidless fork
+(https://github.com/thinkmorestupidless/cloudflow).
+Copyright (C) 2016-2026 Lightbend Inc. <https://www.lightbend.com>
+Licensed under the Apache License, Version 2.0.
+
+Each derived file keeps Lightbend's copyright header. The derived files are:
+
+blueprint/src/main/scala/com/thinkmorestupidless/ankka/flow/blueprint/Blueprint.scala
+blueprint/src/main/scala/com/thinkmorestupidless/ankka/flow/blueprint/BlueprintProblem.scala
+blueprint/src/main/scala/com/thinkmorestupidless/ankka/flow/blueprint/NameUtils.scala
+blueprint/src/main/scala/com/thinkmorestupidless/ankka/flow/blueprint/StreamletRef.scala
+blueprint/src/main/scala/com/thinkmorestupidless/ankka/flow/blueprint/Topic.scala
+blueprint/src/main/scala/com/thinkmorestupidless/ankka/flow/blueprint/VerifiedBlueprint.scala
+blueprint/src/test/scala/com/thinkmorestupidless/ankka/flow/blueprint/BlueprintParserSuite.scala
+blueprint/src/test/scala/com/thinkmorestupidless/ankka/flow/blueprint/BlueprintSuite.scala
+blueprint/src/test/scala/com/thinkmorestupidless/ankka/flow/blueprint/JsonContractSuite.scala
+blueprint/src/test/scala/com/thinkmorestupidless/ankka/flow/blueprint/UnmanagedTopicSuite.scala
+cli/src/main/scala/com/thinkmorestupidless/ankka/flow/cli/ResetGuards.scala
+cli/src/test/scala/com/thinkmorestupidless/ankka/flow/cli/CliResetSuite.scala
+crd/src/main/scala/com/thinkmorestupidless/ankka/flow/crd/ResetRequest.scala
+crd/src/test/scala/com/thinkmorestupidless/ankka/flow/crd/ResetRequestSuite.scala
+operator/src/main/scala/com/thinkmorestupidless/ankka/flow/operator/ConsumerGroupReset.scala
+operator/src/main/scala/com/thinkmorestupidless/ankka/flow/operator/TopicResolution.scala
+operator/src/test/scala/com/thinkmorestupidless/ankka/flow/operator/ConsumerGroupResetSuite.scala
+operator/src/test/scala/com/thinkmorestupidless/ankka/flow/operator/TopicResolutionSuite.scala
+protocol/src/main/scala/com/thinkmorestupidless/ankka/flow/protocol/Fingerprint.scala
+sidecar/src/main/scala/com/thinkmorestupidless/ankka/flow/sidecar/CommitAfterWrite.scala
+sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/ConsumerLagKafkaSuite.scala
+sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/PrometheusRulesSuite.scala
+sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/RecordKafkaSuite.scala
+sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/SinkCommittingAfterKafkaSuite.scala
+sidecar/src/universal/agent/prometheus.yaml

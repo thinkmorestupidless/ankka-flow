@@ -1,0 +1,22 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "multiply",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 5,
+    "mode": "echo"
+  },
+  "description": "Five emits, then Ack; nothing after.",
+  "name": "run.emits-precede-ack"
+}

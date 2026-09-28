@@ -1,0 +1,60 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "default_value": "1",
+        "description": "How many times the multiply key emits.",
+        "key": "factor",
+        "type": "INTEGER"
+      },
+      {
+        "default_value": "echo",
+        "description": "Unused by the suite; proves a string parameter arrives.",
+        "key": "mode"
+      }
+    ],
+    "description": "The conformance reference streamlet.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "VvH5cnqk1Upx7dg0u4qf+1LXL4f/rwSqCb8C1jqTgl4=",
+          "format": "json",
+          "schema_name": "conformance.v1"
+        },
+        "name": "in"
+      },
+      {
+        "contract": {
+          "fingerprint": "m3EbuoEZ/skp52kMg9QokJmnZpOhpI7153g0wuJ3c9w=",
+          "format": "json",
+          "schema_name": "conformance-side.v1"
+        },
+        "name": "side"
+      }
+    ],
+    "name": "conformance",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "8MrAlFSbnMhdFGHdFpFfuaLPaElI0S03pb4B9rnUZwE=",
+          "format": "json",
+          "schema_name": "conformance-other.v1"
+        },
+        "name": "other"
+      },
+      {
+        "contract": {
+          "fingerprint": "VvH5cnqk1Upx7dg0u4qf+1LXL4f/rwSqCb8C1jqTgl4=",
+          "format": "json",
+          "schema_name": "conformance.v1"
+        },
+        "name": "out"
+      }
+    ]
+  }
+}

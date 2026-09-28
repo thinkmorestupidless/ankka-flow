@@ -1,0 +1,22 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "multiply",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 3,
+    "mode": "echo"
+  },
+  "description": "Three emits: the factor from Start.config_json.",
+  "name": "run.config-applied"
+}

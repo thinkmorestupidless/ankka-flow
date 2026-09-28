@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Refuse a commit whose staged Scala or sbt files are not formatted (`just hooks` installs this).
+set -euo pipefail
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(scala|sbt)$' || true)
+[ -z "$files" ] && exit 0
+if command -v scalafmt >/dev/null; then
+  # shellcheck disable=SC2086
+  scalafmt --test --non-interactive $files
+else
+  sbt -batch scalafmtCheckAll scalafmtSbtCheck
+fi

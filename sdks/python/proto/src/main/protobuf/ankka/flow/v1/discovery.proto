@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package ankka.flow.v1;
+
+import "ankka/flow/v1/payload.proto";
+
+// Implemented by the developer's process on 127.0.0.1:$FLOW_PROCESS_PORT; dialled by the sidecar.
+service Discovery {
+  // The process describes itself. The sidecar compares the answer with the deployed descriptor.
+  rpc Discover (SidecarInfo) returns (Spec);
+  // The sidecar's refusal, so the problems appear in the process's own log before it exits.
+  rpc ReportError (Problems) returns (Empty);
+}
+
+message SidecarInfo {
+  string protocol_version = 1;
+  string sidecar_version = 2;
+}
+
+// The descriptor. An SDK writes this same message as canonical JSON to descriptor.json at build
+// time (DESCRIPTOR.md).
+message Spec {
+  string protocol_version = 1;   // "MAJOR.MINOR", "1.0" here
+  SdkInfo sdk = 2;
+  StreamletDescriptor streamlet = 3;
+}
+
+message SdkInfo {
+  string name = 1;
+  string version = 2;
+}
+
+message StreamletDescriptor {
+  string name = 1;                             // [a-z0-9-]{1,63}; what a blueprint refers to
+  string description = 2;
+  repeated Port inlets = 3;                    // port names unique across inlets and outlets
+  repeated Port outlets = 4;
+  repeated ConfigParameter config_parameters = 5;
+}
+
+message Port {
+  string name = 1;
+  Contract contract = 2;
+}
+
+message Contract {
+  string format = 1;        // "json" is the only value in 1.0
+  string schema_name = 2;   // e.g. "cart-events.v1"
+  string fingerprint = 3;   // Base64(SHA-256(UTF-8(schema_name))), standard alphabet, padded
+}
+
+message ConfigParameter {
+  string key = 1;             // [a-z][a-z0-9-]*
+  string description = 2;
+  ConfigType type = 3;
+  string default_value = 4;   // absent: required at deploy time
+}
+
+enum ConfigType {
+  STRING = 0;
+  INTEGER = 1;
+  DOUBLE = 2;
+  BOOLEAN = 3;
+  DURATION = 4;
+  MEMORY_SIZE = 5;
+}

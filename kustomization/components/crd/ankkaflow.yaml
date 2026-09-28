@@ -1,0 +1,174 @@
+# The AnkkaFlow custom resource definition.
+#
+# This is the single copy: the JVM reads it from its classpath through a symlink into this
+# directory, and the k3s suite installs this exact file. `CrdSchemaSuite` checks every field of the
+# Scala model is declared here.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ankkaflows.flow.ankka.thinkmorestupidless.com
+  labels:
+    app.kubernetes.io/managed-by: ankka-flow
+spec:
+  group: flow.ankka.thinkmorestupidless.com
+  # Namespaced: owner references only work within a namespace, which is what makes deleting a
+  # pipeline delete its Deployments and Secrets.
+  scope: Namespaced
+  names:
+    kind: AnkkaFlow
+    listKind: AnkkaFlowList
+    plural: ankkaflows
+    singular: ankkaflow
+    shortNames:
+      - aflow
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        # The operator's RBAC grants status updates without granting spec updates.
+        status: {}
+      additionalPrinterColumns:
+        - name: Pipeline
+          type: string
+          jsonPath: .spec.pipeline
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Detail
+          type: string
+          jsonPath: .status.detail
+          priority: 1
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [pipeline, streamlets]
+              properties:
+                pipeline:
+                  type: string
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                  maxLength: 40
+                version:
+                  type: string
+                protocolVersion:
+                  type: string
+                onDelete:
+                  type: object
+                  properties:
+                    managedTopics:
+                      type: string
+                      enum: [Keep, Delete]
+                streamlets:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, image, descriptor]
+                    properties:
+                      name:
+                        type: string
+                        pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                      image:
+                        type: string
+                      replicas:
+                        type: integer
+                        minimum: 0
+                      config:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      inlets:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      outlets:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      descriptor:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                topics:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, name]
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      managed:
+                        type: boolean
+                      cluster:
+                        type: string
+                      bootstrapServers:
+                        type: string
+                      partitions:
+                        type: integer
+                        minimum: 1
+                      replicas:
+                        type: integer
+                        minimum: 1
+                      connectionConfig:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      producerConfig:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      consumerConfig:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      topicConfig:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      batch:
+                        type: object
+                        properties:
+                          maxRecords:
+                            type: integer
+                          maxBytes:
+                            type: integer
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                phase:
+                  type: string
+                detail:
+                  type: string
+                lastTransitionTime:
+                  type: string
+                streamlets:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      desired:
+                        type: integer
+                      ready:
+                        type: integer
+                      detail:
+                        type: string
+                topics:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      exists:
+                        type: boolean
+                      detail:
+                        type: string

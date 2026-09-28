@@ -4,3 +4,31 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+
+# sbt, IDEs, OS
+target/
+.bsp/
+.metals/
+.bloop/
+.idea/
+.vscode/
+.DS_Store
+*.tmp
+*.swp
+
+# Python (sdks/python, samples)
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+sdks/python/src/ankka_flow/_proto/
+samples/*/src/*/_proto/
+
+# Kubernetes material that must never be committed
+*.secret.yaml
+kubeconfig*
+.env*

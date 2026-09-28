@@ -1,0 +1,34 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    },
+    {
+      "inlet": "side",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "Each batch acked with its own id.",
+  "name": "run.two-inlets"
+}

@@ -1,0 +1,7 @@
+# The local kind cluster: the CRD, the operator and a development Kafka. `just up` applies this.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+components:
+  - ../../components/crd
+  - ../../components/operator
+  - ../../components/kafka

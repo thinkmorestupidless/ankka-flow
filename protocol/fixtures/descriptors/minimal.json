@@ -1,0 +1,30 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "yGlZ8PljDBq2WOchg2fCVXgJvLqlfIkgFAUF8Ysvv9s=",
+          "format": "json",
+          "schema_name": "minimal.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "minimal",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "yGlZ8PljDBq2WOchg2fCVXgJvLqlfIkgFAUF8Ysvv9s=",
+          "format": "json",
+          "schema_name": "minimal.v1"
+        },
+        "name": "out"
+      }
+    ]
+  }
+}

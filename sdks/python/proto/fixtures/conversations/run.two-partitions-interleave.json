@@ -1,0 +1,34 @@
+{
+  "batches": [
+    {
+      "inlet": "in",
+      "partition": 0,
+      "records": [
+        {
+          "headers": [],
+          "key": "late",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    },
+    {
+      "inlet": "in",
+      "partition": 1,
+      "records": [
+        {
+          "headers": [],
+          "key": "echo",
+          "offset": 0,
+          "value_base64": "eyJuIjoxfQ=="
+        }
+      ]
+    }
+  ],
+  "config": {
+    "factor": 1,
+    "mode": "echo"
+  },
+  "description": "Partition 1 completes before partition 0's late batch.",
+  "name": "run.two-partitions-interleave"
+}

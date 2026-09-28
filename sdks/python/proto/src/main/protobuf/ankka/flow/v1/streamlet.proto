@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package ankka.flow.v1;
+
+import "ankka/flow/v1/payload.proto";
+
+// Implemented by the developer's process; dialled by the sidecar.
+service Streamlet {
+  // One conversation per streamlet instance. The sidecar opens it and speaks first.
+  rpc Run (stream ToProcess) returns (stream FromProcess);
+}
+
+message ToProcess {
+  oneof message {
+    Start start = 1;
+    Batch batch = 2;
+    Stop stop = 3;
+  }
+}
+
+message Start {
+  string conversation_id = 1;          // new on every (re)connect: state tied to an old one is void
+  string pipeline = 2;
+  string streamlet = 3;
+  string config_json = 4;              // {"key": value} for every declared parameter, resolved
+  repeated PortBinding inlets = 5;
+  repeated PortBinding outlets = 6;
+  uint32 max_message_bytes = 7;        // an Emit must stay under this
+}
+
+message PortBinding {
+  string port = 1;
+  string topic = 2;
+}
+
+message Batch {
+  uint64 batch_id = 1;                 // unique within the conversation, increasing
+  string inlet = 2;
+  int32 partition = 3;
+  repeated InputRecord records = 4;    // in offset order
+}
+
+message InputRecord {
+  int64 offset = 1;
+  int64 timestamp_ms = 2;
+  Record record = 3;
+}
+
+message Stop {
+  string reason = 1;
+}
+
+message FromProcess {
+  oneof message {
+    Emit emit = 1;
+    Ack ack = 2;
+    Fail fail = 3;
+  }
+}
+
+// Zero or more per batch, all before the batch's Ack.
+message Emit {
+  uint64 batch_id = 1;
+  string outlet = 2;
+  Record record = 3;
+}
+
+// Exactly one Ack or Fail per batch.
+message Ack {
+  uint64 batch_id = 1;
+}
+
+message Fail {
+  uint64 batch_id = 1;
+  Error error = 2;
+}

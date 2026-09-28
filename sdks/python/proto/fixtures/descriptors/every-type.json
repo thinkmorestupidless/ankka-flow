@@ -1,0 +1,62 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "default_value": "true",
+        "description": "A boolean.",
+        "key": "a-boolean",
+        "type": "BOOLEAN"
+      },
+      {
+        "default_value": "0.5",
+        "description": "A double.",
+        "key": "a-double",
+        "type": "DOUBLE"
+      },
+      {
+        "default_value": "100 ms",
+        "description": "A duration.",
+        "key": "a-duration",
+        "type": "DURATION"
+      },
+      {
+        "default_value": "1 MiB",
+        "description": "A memory size.",
+        "key": "a-memory-size",
+        "type": "MEMORY_SIZE"
+      },
+      {
+        "default_value": "hello",
+        "description": "A string.",
+        "key": "a-string"
+      },
+      {
+        "default_value": "42",
+        "description": "An integer.",
+        "key": "an-integer",
+        "type": "INTEGER"
+      },
+      {
+        "description": "Required: no default, so it must be set at deploy time.",
+        "key": "required"
+      }
+    ],
+    "description": "Every parameter type, and \"unicode\": café ✓",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "AEXcIy2Dtp7EhGIGAnYIkMmCFcWXt648EIKgOAGtbEU=",
+          "format": "json",
+          "schema_name": "every.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "every-type"
+  }
+}

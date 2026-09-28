@@ -1,0 +1,47 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "default_value": "100",
+        "description": "Carts with a total above this go to the review outlet.",
+        "key": "review-threshold",
+        "type": "INTEGER"
+      }
+    ],
+    "description": "Routes cart events to the valid or review outlet.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "nXhoFwNZSB7DKScFuZUtZ1gnAYkIxadumsXNHWwbLfM=",
+          "format": "json",
+          "schema_name": "cart-events.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "cart-router",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "nXhoFwNZSB7DKScFuZUtZ1gnAYkIxadumsXNHWwbLfM=",
+          "format": "json",
+          "schema_name": "cart-events.v1"
+        },
+        "name": "review"
+      },
+      {
+        "contract": {
+          "fingerprint": "nXhoFwNZSB7DKScFuZUtZ1gnAYkIxadumsXNHWwbLfM=",
+          "format": "json",
+          "schema_name": "cart-events.v1"
+        },
+        "name": "valid"
+      }
+    ]
+  }
+}
