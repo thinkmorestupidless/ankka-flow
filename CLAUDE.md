@@ -37,6 +37,8 @@ sbt cli/stage                               # cli/target/universal/stage/bin/flo
 sbt -Dflow.fixtures.regenerate=on 'protocol/testOnly *DescriptorFixturesSuite'   # rewrite protocol/fixtures/descriptors
 cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
 sbt scalafmtAll scalafmtSbt                 # format; `just hooks` installs the pre-commit check
+just docs                                   # check every page and build the docs site (uv)
+just docs-sync                              # refresh included samples, the protocol table, the skills
 ```
 
 `just` wraps these (`just --list`). Recipes stay one command each; logic lives in
@@ -66,6 +68,29 @@ counting, and the failure looks like the platform's.
 | No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image`; built images use `BuildInfo.version` with `+` → `-`. |
 | Warning-free compile | `-Wunused:all` is on. Generated ScalaPB sources are silenced by `-Wconf` on `src_managed` only. |
 | Not in this build | pekko-http, pekko-grpc, Avro, spray-json, ScalaTest. If a change needs one, it is a design change: update `research.md` first. |
+
+## Documentation
+
+One tree, `docs/`, of plain Markdown with YAML frontmatter, built by ankka's docs tool (a `uv`
+dependency named in `tools/docs/pyproject.toml`, pinned by its `uv.lock`; the settings are
+`extra.docs` in `mkdocs.yml`): the MkDocs Material site at flow.ankka.cloud (GitHub Pages, from
+`main`, by `.github/workflows/docs.yml`), `llms.txt`, `llms-full.txt`, Markdown per page,
+`docs-index.json`, and four Agent Skills curated in `tools/docs/skill/<name>/SKILL.md` and rendered
+into `marketplace/plugins/ankka-flow/skills/` (committed; `docs check` fails when stale; a tag
+publishes the plugin to `thinkmorestupidless/ankka-marketplace`). The rules are ankka's, on
+`docs/contributing/documentation.md` here and in full at docs.ankka.cloud/contributing/documentation/.
+The ones that bite:
+
+- **A page stands alone and tells no history.** No positional phrases, no FR/SC/T numbers, no `specs/`
+  paths; `docs check` refuses both. `specs/` and `notes/` are records, not pages.
+- **Samples are included from tested code** between `# docs:start name` and `# docs:end name`
+  markers, named by `<!-- include: path#name -->` before the block (no `#name` includes the whole
+  file); `just docs-sync` copies them and `docs check` fails on drift. Markers live in the cart router
+  sample, never in `protocol/` (the SDKs copy it byte for byte).
+- **The RPC table on `reference/protocol.md` is generated** from `protocol/src/main/protobuf`.
+- **A new page goes in `mkdocs.yml`'s `nav` and in a skill's `pages:` list**, or `docs check` fails.
+- **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and protocol
+  rules; change them in the same commit.
 
 ## Carried code
 

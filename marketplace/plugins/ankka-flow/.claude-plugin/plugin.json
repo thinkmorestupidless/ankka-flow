@@ -1,0 +1,20 @@
+{
+  "name": "ankka-flow",
+  "version": "0.0.0",
+  "description": "The ankka-flow documentation as skills — designing pipelines of streamlets over Kafka, writing and testing a Python streamlet, deploying and operating pipelines on Kubernetes, and implementing the streamlet protocol in another language.",
+  "author": {
+    "name": "thinkmorestupidless",
+    "url": "https://github.com/thinkmorestupidless/ankka-flow"
+  },
+  "homepage": "https://flow.ankka.cloud/",
+  "repository": "https://github.com/thinkmorestupidless/ankka-marketplace",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ankka",
+    "ankka-flow",
+    "streaming",
+    "kafka",
+    "pipelines",
+    "sidecar"
+  ]
+}

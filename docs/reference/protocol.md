@@ -1,233 +1,319 @@
-# The streamlet protocol, `ankka.flow.v1`
+---
+title: Streamlet protocol
+description: The gRPC protocol between the sidecar and a streamlet's process — the Discovery and Streamlet services, the Run conversation, the rules the messages do not state, failure, rebalances, message limits and versioning.
+kind: reference
+related: [reference/descriptor.md, concepts/sidecar.md, concepts/delivery.md, contributing/language-sdks.md]
+---
 
-The authoritative copy is `protocol/` in the repository; this page mirrors its README and proto files.
+# Streamlet protocol
 
-The protocol is the platform's promise to every SDK. It is versioned on its own (`1.0` here),
-carried in discovery, and the sidecar refuses another major. Within a major, fields, messages,
-rpcs and fixtures are only ever added, with defaults that mean "as before". The artefact is the
-`protocol/` directory, copied verbatim into every SDK (FR-027):
+The streamlet protocol, package `ankka.flow.v1`, is how the sidecar and a streamlet's process talk
+inside one pod. The process is the gRPC server; the sidecar is the client. The protocol is versioned
+on its own, `1.0` here, and carried in discovery.
 
-```
-protocol/
-├── README.md                          # version rule; the rules the messages do not state (below)
-├── DESCRIPTOR.md                      # the descriptor file's canonical JSON (contracts/descriptor.md)
-├── fixtures/
-│   ├── descriptors/<name>.json        # descriptors every SDK must reproduce byte for byte
-│   ├── declarations/<name>.md         # the declaration each descriptor is written from, in prose
-│   └── conversations/<name>.json      # scripted conversations the conformance suite replays
-└── src/main/protobuf/ankka/flow/v1/
-    ├── payload.proto
-    ├── discovery.proto
-    └── streamlet.proto
-```
+Its authoritative copy is the
+[`protocol/`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/protocol) directory of the
+repository: the `.proto` files, `DESCRIPTOR.md`, and the fixtures every SDK must reproduce. An SDK
+copies the whole directory verbatim and generates its code from the copy.
 
-## Directions and addresses
+## Addresses
 
-| service | implemented by | dialled by | address |
+| services | implemented by | dialled by | address |
 |---|---|---|---|
-| `Discovery`, `Streamlet` | the developer's process | the sidecar | `127.0.0.1:${FLOW_PROCESS_PORT}` (default 9010) |
+| `Discovery`, `Streamlet` | the streamlet's process | the sidecar | `127.0.0.1:$FLOW_PROCESS_PORT`, 9010 by default |
 
-The process binds loopback only (FR-007). The sidecar binds no gRPC port in version one; 9011
-and `FLOW_SIDECAR_PORT` are reserved (R2).
+The process binds the loopback interface only. The sidecar binds no gRPC port; port 9011 and
+`FLOW_SIDECAR_PORT` are reserved for a callback service a later minor version may add.
+
+## Services
+
+<!-- generated:start protocol -->
+| Service | RPC | Request | Response | Defined in |
+|---|---|---|---|---|
+| `Discovery` | `Discover` | `SidecarInfo` | `Spec` | `discovery.proto` |
+| `Discovery` | `ReportError` | `Problems` | `Empty` | `discovery.proto` |
+| `Streamlet` | `Run` | `stream ToProcess` | `stream FromProcess` | `streamlet.proto` |
+<!-- generated:end protocol -->
+
+## Discovery
+
+1. The sidecar calls `Discover(SidecarInfo)`, retrying with a backoff of 500 ms doubling to 10 s, until
+   the process answers. It is not ready until then.
+2. It checks `Spec.protocol_version` against its own. Another major version, or a later minor, is
+   refused, naming both.
+3. It validates the `Spec`'s descriptor and compares `Spec.streamlet` field by field with the
+   descriptor it was deployed with. See [Descriptor](descriptor.md).
+4. On any problem it calls `ReportError(Problems)` once with every problem, so they appear in the
+   process's own log, logs each itself, and exits.
+5. Otherwise it opens `Run`.
+
+## The conversation
+
+1. The sidecar opens `Run` and sends `Start`: a new `conversation_id`, the pipeline and streamlet
+   names, `config_json` (every declared parameter, resolved, as `{"key": value}`), the inlet and outlet
+   bindings to topics, and `max_message_bytes`. The process sends nothing before `Start`.
+2. The sidecar sends `Batch`es. For each inlet partition it owns, at most one batch is in flight, and a
+   partition's batches arrive in offset order. Batches of different partitions interleave freely.
+3. The process answers each batch with zero or more `Emit`s, each naming a declared outlet and carrying
+   a record, then exactly one `Ack` or `Fail` with the batch's `batch_id`. Messages for different
+   batches may interleave.
+4. The sidecar holds a batch's emits until its `Ack`. It then produces them to their outlets' topics
+   with the keys and headers given, waits for the broker to confirm every one, and only then commits
+   the batch's offsets. A produce failure fails the stream.
+5. On shutdown the sidecar sends `Stop` and half-closes; the process finishes its batches and completes
+   its side of the stream.
+
+### Skipping a record
+
+The process acknowledges the batch without emitting for that record. The sidecar never knows a record
+was skipped; its offset is committed with the batch.
+
+### Failing the stream
+
+Any of these fails the stream:
+
+- a `Fail`;
+- an `Emit` naming an outlet not in `Start.outlets`;
+- an `Emit`, `Ack` or `Fail` for a `batch_id` not in flight: never sent or already acknowledged;
+- an `Emit` after its batch's `Ack`;
+- a message the sidecar cannot parse, or an empty message;
+- the process closing the stream or becoming unreachable;
+- a produce failure.
+
+The sidecar then fails every in-flight batch with nothing committed, removes its readiness file, closes
+the conversation, backs off from 500 ms doubling to 30 s, repeats discovery in full, sends a new `Start`
+with a new `conversation_id`, and resumes from the last committed offsets. It does this indefinitely
+and never skips a record. A batch that fails every time stalls its partition; once stalled for
+`FLOW_STALL_WARNING_AFTER`, the sidecar records a `PartitionStalled` warning event on its pod, once per
+stall.
+
+### Rebalances
+
+When a partition is revoked while its batch is in flight, the batch is marked revoked: its emits and
+`Ack` are discarded, nothing is committed for it, and the partition's new owner reads it again. An
+`Emit` or `Ack` for a revoked batch is not a violation; the process could not have known, and the
+message is dropped silently.
+
+### Message limits
+
+A batch is whatever arrived for its partition while the previous batch was with the process, capped by
+the inlet's `batch.max-records` and `batch.max-bytes` (100 records and 1 MiB by default) so it stays
+under the 4 MiB message limit. A quiet stream sends each record at once; nothing waits on a timer. One
+input record larger than the limit fails the stream, naming its topic, partition and offset, before any
+batch containing it is sent. An `Emit` must stay under `Start.max_message_bytes`; a larger one fails the
+stream at the gRPC level.
+
+## Rules
+
+The messages cannot state these; every SDK and the sidecar keep them.
+
+- **One batch in flight per inlet partition**, and a partition's batches in offset order.
+- **Emits precede the ack.** An emit after its batch's ack fails the stream.
+- **Commit after the write.** Offsets are committed only after every emit of the batch is confirmed by
+  the broker.
+- **A failure redelivers; nothing is skipped.** A `Fail` fails the stream, and the sidecar redelivers
+  from the last commit, indefinitely.
+- **Skipping is acknowledging without emitting.**
+- **A rebalance discards.** An ack for a partition the sidecar no longer owns commits nothing.
+- **The sidecar never decodes a value.** A contract is a format and a fingerprint.
+- **A keyless emit is placed by Kafka's default partitioner.** Per-key order is promised for keyed
+  records only; an emit without a key must leave `Record.key` unset, not empty.
+- **A new `Start` voids everything.** State tied to an older `conversation_id` must be discarded.
+
+## Versioning
+
+`protocol_version` is `MAJOR.MINOR`. The sidecar accepts a `Spec` whose major equals its own and whose
+minor is not later than its own, and refuses anything else, naming both versions. Adding an optional
+field, a message, an rpc, a `ConfigType` value, a contract `format` or a fixture is a minor change.
+Renaming, removing or changing the meaning of anything is a major change.
 
 ## `payload.proto`
 
-```proto
+<!-- include: protocol/src/main/protobuf/ankka/flow/v1/payload.proto -->
+```protobuf
 syntax = "proto3";
+
 package ankka.flow.v1;
 
 // A Kafka record, exactly as Kafka holds it. The sidecar never inspects `value`.
 message Record {
-  optional bytes key = 1;        // absent = Kafka's default partitioner decides
+  optional bytes key = 1;        // absent: Kafka's default partitioner decides
   repeated Header headers = 2;   // order preserved
   bytes value = 3;
 }
 
-message Header { string key = 1; bytes value = 2; }
+message Header {
+  string key = 1;
+  bytes value = 2;
+}
 
-message Error { string message = 1; }
+// A process's failure of a batch, or the reason the sidecar gives for something.
+message Error {
+  string message = 1;
+}
 
-message Problem { string message = 1; }
-message Problems { repeated Problem problems = 1; }
+message Problem {
+  string message = 1;
+}
+
+// Every problem the sidecar found in discovery, sent at once so they appear in the process's log.
+message Problems {
+  repeated Problem problems = 1;
+}
 
 message Empty {}
 ```
 
 ## `discovery.proto`
 
-```proto
+<!-- include: protocol/src/main/protobuf/ankka/flow/v1/discovery.proto -->
+```protobuf
 syntax = "proto3";
+
 package ankka.flow.v1;
+
 import "ankka/flow/v1/payload.proto";
 
+// Implemented by the developer's process on 127.0.0.1:$FLOW_PROCESS_PORT; dialled by the sidecar.
 service Discovery {
+  // The process describes itself. The sidecar compares the answer with the deployed descriptor.
   rpc Discover (SidecarInfo) returns (Spec);
-  rpc ReportError (Problems) returns (Empty);   // the sidecar's refusal, so it appears in the process's log
+  // The sidecar's refusal, so the problems appear in the process's own log before it exits.
+  rpc ReportError (Problems) returns (Empty);
 }
 
-message SidecarInfo { string protocol_version = 1; string sidecar_version = 2; }
+message SidecarInfo {
+  string protocol_version = 1;
+  string sidecar_version = 2;
+}
 
-// `Spec` is the descriptor. The SDK writes this same message as canonical JSON to descriptor.json
-// at build time (DESCRIPTOR.md); the sidecar compares the deployed file with this answer.
+// The descriptor. An SDK writes this same message as canonical JSON to descriptor.json at build
+// time (DESCRIPTOR.md).
 message Spec {
-  string protocol_version = 1;             // "1.0"
+  string protocol_version = 1;   // "MAJOR.MINOR", "1.0" here
   SdkInfo sdk = 2;
   StreamletDescriptor streamlet = 3;
 }
 
-message SdkInfo { string name = 1; string version = 2; }
+message SdkInfo {
+  string name = 1;
+  string version = 2;
+}
 
 message StreamletDescriptor {
-  string name = 1;                         // [a-z0-9-]{1,63}; the name a blueprint refers to
+  string name = 1;                             // [a-z0-9-]{1,63}; what a blueprint refers to
   string description = 2;
-  repeated Port inlets = 3;                // names unique across inlets and outlets together
+  repeated Port inlets = 3;                    // port names unique across inlets and outlets
   repeated Port outlets = 4;
   repeated ConfigParameter config_parameters = 5;
 }
 
-message Port { string name = 1; Contract contract = 2; }
+message Port {
+  string name = 1;
+  Contract contract = 2;
+}
 
 message Contract {
-  string format = 1;                       // "json" is the only value in 1.0
-  string schema_name = 2;                  // e.g. "cart-events.v1"
-  string fingerprint = 3;                  // Base64(SHA-256(UTF-8(schema_name)))
+  string format = 1;        // "json" is the only value in 1.0
+  string schema_name = 2;   // e.g. "cart-events.v1"
+  string fingerprint = 3;   // Base64(SHA-256(UTF-8(schema_name))), standard alphabet, padded
 }
 
 message ConfigParameter {
-  string key = 1;                          // [a-z][a-z0-9-]*
+  string key = 1;             // [a-z][a-z0-9-]*
   string description = 2;
   ConfigType type = 3;
-  string default_value = 4;                // absent = required at deploy time
+  string default_value = 4;   // absent: required at deploy time
 }
 
-enum ConfigType { STRING = 0; INTEGER = 1; DOUBLE = 2; BOOLEAN = 3; DURATION = 4; MEMORY_SIZE = 5; }
+enum ConfigType {
+  STRING = 0;
+  INTEGER = 1;
+  DOUBLE = 2;
+  BOOLEAN = 3;
+  DURATION = 4;
+  MEMORY_SIZE = 5;
+}
 ```
 
 ## `streamlet.proto`
 
-```proto
+<!-- include: protocol/src/main/protobuf/ankka/flow/v1/streamlet.proto -->
+```protobuf
 syntax = "proto3";
+
 package ankka.flow.v1;
+
 import "ankka/flow/v1/payload.proto";
 
+// Implemented by the developer's process; dialled by the sidecar.
 service Streamlet {
   // One conversation per streamlet instance. The sidecar opens it and speaks first.
   rpc Run (stream ToProcess) returns (stream FromProcess);
 }
 
 message ToProcess {
-  oneof message { Start start = 1; Batch batch = 2; Stop stop = 3; }
+  oneof message {
+    Start start = 1;
+    Batch batch = 2;
+    Stop stop = 3;
+  }
 }
 
 message Start {
-  string conversation_id = 1;              // new on every (re)connect; state tied to an old one is void
+  string conversation_id = 1;          // new on every (re)connect: state tied to an old one is void
   string pipeline = 2;
   string streamlet = 3;
-  string config_json = 4;                  // {"key": value} for every declared parameter, resolved
+  string config_json = 4;              // {"key": value} for every declared parameter, resolved
   repeated PortBinding inlets = 5;
   repeated PortBinding outlets = 6;
-  uint32 max_message_bytes = 7;            // an Emit must stay under this (4 MiB in 1.0)
+  uint32 max_message_bytes = 7;        // an Emit must stay under this
 }
 
-message PortBinding { string port = 1; string topic = 2; }
+message PortBinding {
+  string port = 1;
+  string topic = 2;
+}
 
 message Batch {
-  uint64 batch_id = 1;                     // unique within the conversation, increasing
+  uint64 batch_id = 1;                 // unique within the conversation, increasing
   string inlet = 2;
   int32 partition = 3;
-  repeated InputRecord records = 4;        // in offset order
+  repeated InputRecord records = 4;    // in offset order
 }
 
-message InputRecord { int64 offset = 1; int64 timestamp_ms = 2; Record record = 3; }
+message InputRecord {
+  int64 offset = 1;
+  int64 timestamp_ms = 2;
+  Record record = 3;
+}
 
-message Stop { string reason = 1; }
+message Stop {
+  string reason = 1;
+}
 
 message FromProcess {
-  oneof message { Emit emit = 1; Ack ack = 2; Fail fail = 3; }
+  oneof message {
+    Emit emit = 1;
+    Ack ack = 2;
+    Fail fail = 3;
+  }
 }
 
-message Emit { uint64 batch_id = 1; string outlet = 2; Record record = 3; }
-message Ack  { uint64 batch_id = 1; }
-message Fail { uint64 batch_id = 1; Error error = 2; }
+// Zero or more per batch, all before the batch's Ack.
+message Emit {
+  uint64 batch_id = 1;
+  string outlet = 2;
+  Record record = 3;
+}
+
+// Exactly one Ack or Fail per batch.
+message Ack {
+  uint64 batch_id = 1;
+}
+
+message Fail {
+  uint64 batch_id = 1;
+  Error error = 2;
+}
 ```
-
-## Conversations, one by one
-
-### Discovery
-
-1. The sidecar dials `Discover(SidecarInfo)` with backoff (500 ms doubling to 10 s) until it
-   answers; it is not ready until then (S1.5).
-2. It checks `Spec.protocol_version` against its own: another major, or a later minor, is refused
-   naming both (FR-017, edge case).
-3. It compares `Spec.streamlet` field by field with the deployed `descriptor.json` (R5) and
-   validates it: a name that is not `[a-z0-9-]{1,63}`, a port name declared twice across inlets
-   and outlets, a `format` other than `json`, a `fingerprint` that is not
-   `Base64(SHA-256(schema_name))`, a duplicate parameter key. Every problem is collected.
-4. On problems: `ReportError(Problems)` with all of them, one log line each, exit 1 (FR-008, S1.6).
-5. On success: `Run`.
-
-### Run
-
-1. The sidecar sends `Start`. The process sends nothing before it.
-2. For each (inlet, partition) the sidecar owns, at most one `Batch` is in flight. Batches for
-   different partitions interleave freely; within a partition they arrive in offset order
-   (FR-010).
-3. The process answers a batch with zero or more `Emit` then exactly one `Ack` or `Fail`
-   (FR-011). Emits and the ack for one batch may interleave with those of other batches.
-4. On `Ack`: the sidecar produces every buffered emit for that batch to its outlet's topic with
-   the key and headers given, awaits every broker confirmation, then commits the batch's offsets
-   (FR-012, S1.2). A produce failure fails the stream.
-5. On `Fail`: the stream fails (below).
-6. On shutdown the sidecar sends `Stop` and half-closes; the process completes its side.
-
-### Skipping a record
-
-The process acknowledges the batch without emitting for that record (S1.7). The sidecar never
-knows.
-
-### Failing the stream
-
-Any of: `Fail`; an `Emit` naming an outlet not in `Start.outlets`; an `Emit`, `Ack` or `Fail` for
-a `batch_id` not in flight (never sent, already acknowledged, or revoked); an `Emit` after its
-`Ack`; a message the sidecar cannot parse; the process closing the stream or becoming unreachable;
-a produce failure. The sidecar then: completes every in-flight batch as failed with nothing
-committed; removes the ready file; closes the conversation; backs off (500 ms doubling to 30 s);
-repeats **Discovery** in full; sends a new `Start` with a new `conversation_id`; resumes from the
-last committed offsets. The process must discard anything tied to the old conversation (edge
-case). A batch that fails every time stalls its partition and, after `FLOW_STALL_WARNING_AFTER`,
-is a warning event once per stall (FR-012a). The sidecar never skips.
-
-### Rebalance
-
-A partition revoked while its batch is in flight: the batch is marked revoked, its `Ack` (and
-emits) are discarded, nothing is committed, and the new owner reads the batch again (edge case).
-An `Emit` or `Ack` for a revoked batch is **not** a violation; it is dropped silently, since the
-process could not have known.
-
-### Message limits
-
-A `Batch` is whatever arrived for its partition while the previous batch was with the process,
-capped by `max-records` and `max-bytes` (defaults 100 and 1 MiB) so it stays under the 4 MiB message
-limit. A quiet stream sends each record at once; nothing waits on a timer. One input record over the limit fails the stream naming
-its topic, partition and offset, before any batch containing it is sent. An `Emit` over
-`Start.max_message_bytes` is a gRPC-level failure that fails the stream like any other.
-
-## Versioning
-
-`protocol_version` is `MAJOR.MINOR`. The sidecar accepts a `Spec` whose major equals its own and
-whose minor is not later than its own, and refuses otherwise naming both (FR-017). Adding an
-optional field, a message, an rpc, a `ConfigType` value, a `format` value or a fixture is a minor.
-Renaming, removing or re-meaning anything is a major.
-
-## Rules the messages do not state (the `README.md`)
-
-- One batch in flight per (inlet, partition); batches of one partition in offset order.
-- Emits precede the ack. An emit after the ack fails the stream.
-- Commit after the write. Offsets are committed only after every emit for the batch is confirmed.
-- A `Fail` fails the stream and the sidecar redelivers from the last commit, indefinitely.
-- A rebalance discards. An ack for a partition the sidecar no longer owns commits nothing.
-- Skipping is acking without emitting.
-- The sidecar never decodes a value. A contract is a format and a fingerprint.
-- A keyless emit is partitioned by Kafka's default partitioner; per-key order is promised for keyed
-  records only.
-- A new `Start` voids everything: state tied to an old `conversation_id` must be discarded.

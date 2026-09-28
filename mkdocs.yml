@@ -1,0 +1,120 @@
+# The documentation site. The source is docs/, plain Markdown with YAML frontmatter; this file says how
+# MkDocs renders it for people and, under `extra.docs`, what ankka's docs tool needs to know about this
+# repository. Everything machine-facing — llms.txt, llms-full.txt, raw Markdown per page,
+# docs-index.json and the agent skills — is rendered from the same tree by
+# `uv run --project tools/docs docs build`. See docs/contributing/documentation.md.
+site_name: ankka-flow
+site_description: Streaming pipelines beside ankka — streamlets in any language, wired by a blueprint over Kafka topics, with a sidecar in every pod that owns everything Kafka and commits only after the write.
+site_url: https://flow.ankka.cloud/
+repo_url: https://github.com/thinkmorestupidless/ankka-flow
+repo_name: thinkmorestupidless/ankka-flow
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: target/docs-site
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+# Deliberately plain, as ankka's pages are: no admonitions, no snippet syntax. A page must read
+# correctly with no renderer at all, because that is how a model most often receives it. The one
+# exception is `pymdownx.blocks.tab`, for a page that shows the same thing in more than one language.
+markdown_extensions:
+  - toc:
+      permalink: true
+  - tables
+  - pymdownx.highlight:
+      anchor_linenums: false
+  - pymdownx.superfences
+  - pymdownx.blocks.tab:
+      alternate_style: true
+
+extra:
+  generator: false
+  # What ankka's docs tool needs to know about this repository. The tool is ankka's; the rules are on
+  # docs/contributing/documentation.md.
+  docs:
+    facets:
+      languages: [python]
+    skills:
+      source: tools/docs/skill
+      targets:
+        - path: marketplace/plugins/ankka-flow/skills
+    generated:
+      protocol:
+        kind: protobuf
+        directory: protocol/src/main/protobuf/ankka/flow/v1
+    site-links:
+      retired-hosts: []
+      files: [README.md, marketplace/plugins/ankka-flow/.claude-plugin/plugin.json]
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Build the tools: get-started/install.md
+      - Your first streamlet: get-started/first-streamlet.md
+      - Deploy to a local cluster: get-started/deploy-locally.md
+      - Work with a coding agent: get-started/coding-agents.md
+  - Concepts:
+      - Pipelines and streamlets: concepts/pipelines.md
+      - The sidecar: concepts/sidecar.md
+      - Delivery and failure: concepts/delivery.md
+      - Contracts: concepts/contracts.md
+      - Topics and Kafka clusters: concepts/topics.md
+  - Build:
+      - Write a streamlet in Python: build/python-streamlet.md
+      - Test a streamlet: build/testing.md
+      - Write a blueprint: build/blueprints.md
+      - Build an image: build/images.md
+  - Run and operate:
+      - Install the platform: deploy/install.md
+      - Deploy a pipeline: deploy/deploy-a-pipeline.md
+      - Configure at deploy time: deploy/configuration.md
+      - Rebuild from the start: deploy/reset.md
+      - Observe a pipeline: deploy/observe.md
+      - Troubleshooting: deploy/troubleshooting.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Blueprint: reference/blueprint.md
+      - AnkkaFlow resource: reference/resource.md
+      - Operator: reference/operator.md
+      - Sidecar: reference/sidecar.md
+      - Descriptor: reference/descriptor.md
+      - Streamlet protocol: reference/protocol.md
+      - Python SDK: reference/python-sdk.md
+      - Limitations: reference/limitations.md
+      - Glossary: reference/glossary.md
+  - Contributing:
+      - Writing documentation: contributing/documentation.md
+      - Adding a language SDK: contributing/language-sdks.md

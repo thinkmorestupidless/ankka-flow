@@ -13,7 +13,6 @@ jobs:
     outputs:
       scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name != 'pull_request' }}
       sdk-python: ${{ steps.filter.outputs.sdk-python == 'true' || github.event_name != 'pull_request' }}
-      docs: ${{ steps.filter.outputs.docs == 'true' || github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -43,11 +42,6 @@ jobs:
               - 'sidecar/**'
               - 'sdks/python/**'
               - 'samples/**'
-            docs:
-              - *workflow
-              - 'docs/**'
-              - 'README.md'
-              - 'scripts/check-links.py'
 
   build:
     needs: changes
@@ -102,11 +96,3 @@ jobs:
           uv sync
           uv run descriptor --check
           uv run pytest -q
-
-  docs:
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - run: python3 scripts/check-links.py
