@@ -20,7 +20,8 @@ object ResourceWriter:
       images: Map[String, String],
       pipeline: String,
       version: String,
-      namespace: Option[String]
+      namespace: Option[String],
+      onDelete: OnDelete = OnDelete()
   ): AnkkaFlow =
     val v = verified.blueprint
     def portsOf(streamlet: String, outlets: Boolean) =
@@ -48,6 +49,7 @@ object ResourceWriter:
         pipeline = pipeline,
         version = version,
         protocolVersion = ProtocolVersion.Current.toString,
+        onDelete = onDelete,
         streamlets = streamlets,
         topics = topics
       )

@@ -19,6 +19,7 @@ a pipeline resource names it (FR-020); the operator knows it from `FLOW_SIDECAR_
 | `FLOW_STALL_WARNING_AFTER` | `5m` | a partition stalled this long is a warning event |
 | `FLOW_RECONNECT_MAX_BACKOFF` | `30s` | reconnect backoff caps here (starts at 500 ms) |
 | `KUBERNETES_SERVICE_HOST` | set by Kubernetes | when present, stall warnings are Events; otherwise log lines |
+| `FLOW_POD_NAME`, `FLOW_POD_NAMESPACE` | set by the operator from the downward API | the pod a `PartitionStalled` event regards |
 | `FLOW_SIDECAR_PORT`, `FLOW_SIDECAR_BIND` | reserved (9011, `127.0.0.1`) | unused in 1.0 |
 
 The process container gets `FLOW_PROCESS_PORT=9010` and nothing else from the platform.
@@ -59,8 +60,11 @@ pipeline reads its inputs from the start.
 
 ## Startup
 
-1. Read both files; refuse to start on a parse error or a descriptor that fails validation.
-2. Discovery (protocol.md): dial, compare, validate; on refusal `ReportError`, log, exit 1.
+1. Read both files; refuse to start, with exit code 2, on a parse error or a descriptor that fails
+   validation.
+2. Discovery (protocol.md): dial, compare, validate; on refusal `ReportError`, log, exit 1. The
+   channel sends no HTTP/2 keepalive pings: gRPC servers on default settings answer frequent pings
+   with `GOAWAY too_many_pings`, and on loopback they detect nothing a reset socket does not.
 3. Build one consumer per inlet (`committablePartitionedSource`, group and client id from the
    file), one `SendProducer` per outlet, the `RemoteProcessor` over a new `Run` conversation.
 4. When every inlet's consumer has joined its group: write `ready` (FR-014, S3.3).
@@ -70,7 +74,7 @@ pipeline reads its inputs from the start.
 
 Exec probes rendered by the operator on the sidecar container only:
 `readinessProbe: exec: test -f /tmp/flow/ready` (period 5 s), `livenessProbe: exec: test $(( $(date
-+%s) - $(stat -c %Y /tmp/flow/alive) )) -lt 15` (period 10 s). `ready` is removed the moment the
++%s) - $(stat -c %Y /tmp/flow/alive) )) -lt 15` (period 10 s, initial delay 20 s). `ready` is removed the moment the
 process is unreachable or the stream is reconnecting, and rewritten when the rebuilt graph has
 rejoined its groups. The process container has no ports and no probe (S3.2).
 
@@ -85,7 +89,7 @@ sidecar's own MBeans:
 | metric | labels | meaning |
 |---|---|---|
 | `kafka_consumer_consumer_fetch_manager_metrics_records_lag` | `client_id`, `topic`, `partition` | lag per inlet partition; `client_id` is `<pipeline>.<streamlet>.<inlet>` (S4.4) |
-| `kafka_producer_producer_metrics_record_send_rate` | `client_id` | emits per second per outlet |
+| `kafka_producer_producer_metrics_record_send_rate` | `client_id`, `topic` | emits per second per outlet |
 | `ankka_flow_sidecar_in_flight` | `inlet`, `partition` | 1 while a batch is with the process |
 | `ankka_flow_sidecar_stalled_seconds` | `inlet`, `partition` | age of the oldest uncommitted batch; 0 when none |
 

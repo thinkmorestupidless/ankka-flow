@@ -91,7 +91,7 @@ status:
       detail: ""
 ```
 
-Printer columns: `PIPELINE`, `PHASE`, `READY` (`1/2` streamlets), `AGE`. Field names are camelCase
+Printer columns: `PIPELINE`, `PHASE`, `DETAIL` (priority 1, so only with `-o wide`; for example `router: 1 of 3 ready`), `AGE`. There is no `READY` column: the counts are `status.streamlets[]`. Field names are camelCase
 (Kubernetes convention) except inside `descriptor`, which is the canonical descriptor object with
 its snake_case keys, preserved unknown fields. `bootstrapServers`, `connectionConfig`,
 `producerConfig` are optional per topic for the unmanaged-with-brokers case.
@@ -104,7 +104,7 @@ kind: Secret
 metadata:
   name: kafka-cluster-default          # kafka-cluster-<name>
   namespace: ankka-flow                # FLOW_KAFKA_CLUSTERS_NAMESPACE
-  labels: { flow.ankka.thinkmorestupidless.com/kafka-cluster: default }
+  labels: { flow.ankka.thinkmorestupidless.com/kafka-cluster: default }   # a convention; Secrets are found by the name prefix
 stringData:
   bootstrap.servers: kafka.kafka.svc:9092
   connection-config: |
@@ -124,7 +124,7 @@ refusal.
 | setting | env var | default |
 |---|---|---|
 | sidecar image | `FLOW_SIDECAR_IMAGE` | none: a resource is refused with `SidecarImageMissing` (FR-024, S3.6) |
-| Kafka clusters namespace | `FLOW_KAFKA_CLUSTERS_NAMESPACE` | the operator's own namespace |
+| Kafka clusters namespace | `FLOW_KAFKA_CLUSTERS_NAMESPACE` | `FLOW_OPERATOR_NAMESPACE`, else `ankka-flow` |
 | resync interval | `FLOW_OPERATOR_RESYNC_SECONDS` | 300 |
 | retry backoff | `FLOW_OPERATOR_RETRY_MIN_BACKOFF_SECONDS` / `_MAX_` | 1 / 300 |
 | max concurrent reconciles | `FLOW_OPERATOR_MAX_CONCURRENT_RECONCILES` | 4 |
@@ -172,8 +172,9 @@ within one reconcile:
 3. `EnsureSecret`, `EnsureServiceAccount/Role/RoleBinding`, `ApplyDeployment` per streamlet;
    `DeleteDeployment` (and its Secret) for a labelled Deployment not in the spec.
 4. A pending reset request (annotation id ≠ done id): if any target has `replicas != 0` or pods,
-   `Warning` `ResetRefused` and no marker; otherwise `ResetGroup` per target inlet, each `Normal`
-   `ResetOffsets` (`<group>: <n> partitions to earliest`) or `Warning` `ResetOffsetsFailed`
+   `Warning` `ResetRefused` and no marker (a request naming a streamlet the spec does not have is
+   refused and marked done, since waiting cannot make it valid); otherwise `ResetGroup` per target inlet, each `Normal`
+   `ResetOffsets` (`<group>: <n> partition(s) of '<topic>' to earliest`) or `Warning` `ResetOffsetsFailed`
    (Kafka's "group has members" is a `Warning`, never a pipeline failure, S4.2), then the done
    marker. Never repeated after a restart (S4.3).
 5. `SetStatus`: `streamlets[].ready` from the Deployment's `readyReplicas`; `phase = Ready` when

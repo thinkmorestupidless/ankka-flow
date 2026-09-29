@@ -107,5 +107,6 @@ topics is the resource's `spec.onDelete.managedTopics`:
 | `Keep` (the default) | the managed topics and their records stay in Kafka |
 | `Delete` | the operator deletes the managed topics before the resource goes |
 
-`flow generate` leaves the default in place; set `onDelete: { managedTopics: Delete }` in the resource
-before applying it when the topics should go with the pipeline. Unmanaged topics are never deleted.
+`flow generate` writes `Keep` unless it is given `--delete-managed-topics`, which writes `Delete`: use it
+when the topics, and the records in them, should go with the pipeline. Unmanaged topics are never
+deleted.

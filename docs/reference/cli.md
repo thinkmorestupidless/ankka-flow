@@ -75,6 +75,7 @@ An outlet connected to nothing is allowed. It is printed on stderr as a note
 flow generate <blueprint.conf> --descriptors <dir> [--conf <file>]...
               [--images <file>] [--image <name>=<ref>]...
               [--pipeline <id>] [--version <v>] [-n|--namespace <ns>] [-o|--output <file>]
+              [--delete-managed-topics]
 ```
 
 Everything `verify` does, then it writes the `AnkkaFlow` resource as YAML, to stdout or to `--output`
@@ -90,6 +91,7 @@ settings.
 | `--version <v>` | `spec.version`; default `git describe --tags --always --dirty` in the blueprint's directory, else `unversioned` |
 | `-n`, `--namespace <ns>` | `metadata.namespace`; without it the resource has none and `kubectl` uses its current namespace |
 | `-o`, `--output <file>` | write here instead of stdout |
+| `--delete-managed-topics` | `spec.onDelete.managedTopics: Delete`: deleting the resource deletes the topics the pipeline created, and their records; without it, `Keep` |
 
 The resource's name and `spec.pipeline` are both the pipeline id. On top of `verify`'s problems it
 refuses when:
@@ -116,8 +118,7 @@ flow generate blueprint.conf --descriptors flow --conf prod.conf \
   --image router=registry.example.com/cart-router:1.2 -n shop | kubectl apply -f -
 ```
 
-`spec.onDelete.managedTopics` is always written as `Keep`. See [the resource reference](resource.md) for
-every field `generate` writes.
+See [the resource reference](resource.md) for every field `generate` writes.
 
 ## `flow reset`
 
