@@ -6,6 +6,8 @@ topics. A streamlet's logic is written in any language and shipped as an image h
 code. A **sidecar** in every pod owns everything Kafka: subscribing, batching, producing,
 committing only after the write, consumer groups, lag and resets.
 
+![ankka-flow on Kubernetes: a developer or CI job writes an AnkkaFlow resource with flow generate and applies it. The operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka; they speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the pipeline's managed topics.](docs/assets/diagrams/platform.svg)
+
 It descends from [Cloudflow](https://github.com/lightbend/cloudflow) by way of the
 [thinkmorestupidless fork](https://github.com/thinkmorestupidless/cloudflow), which moved it to
 Apache Pekko. Neither is a dependency: six pieces were carried over with their tests (see `NOTICE`).
@@ -22,8 +24,6 @@ uv run python produce.py && uv run python verify.py
 ```
 
 ## On Kubernetes
-
-![ankka-flow on Kubernetes: a developer or CI job writes an AnkkaFlow resource with flow generate and applies it. The operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka; they speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the pipeline's managed topics.](docs/assets/diagrams/platform.svg)
 
 ```bash
 just up                                          # kind, the CRD, the operator, a development Kafka
