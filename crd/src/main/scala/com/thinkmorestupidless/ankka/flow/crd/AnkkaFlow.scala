@@ -47,7 +47,12 @@ final case class StreamletSpec(
     inlets: Map[String, String] = Map.empty,
     outlets: Map[String, String] = Map.empty,
     /** The descriptor's `streamlet` object, verbatim, with its snake_case keys (DESCRIPTOR.md). */
-    descriptor: JsonNode = null
+    descriptor: JsonNode = null,
+    /**
+     * `true` for a streamlet whose descriptor the platform ships (`builtin/<name>` in the
+     * blueprint): its `image` is empty and its pod has only the sidecar, which runs the stage.
+     */
+    builtin: Boolean = false
 )
 
 @JsonInclude(JsonInclude.Include.NON_ABSENT)

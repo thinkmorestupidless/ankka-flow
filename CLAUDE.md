@@ -58,15 +58,16 @@ counting, and the failure looks like the platform's.
 | Rule | What it means here |
 |---|---|
 | Module direction | `protocol` depends on nothing of ours. `blueprint` → `protocol`. `crd` → fabric8 only. `sidecar` → `protocol`. `operator` → `crd`, `blueprint`, `protocol`. `cli` → `blueprint`, `crd`, `protocol`. Nothing depends on `sidecar` or `operator` except the operator's tests reading `StreamletConfig`. |
-| The sidecar never decodes | A record's value is bytes from Kafka to the process and back. A contract is a format and a fingerprint, never a type the sidecar understands. |
+| The sidecar never decodes for a process | A record's value is bytes from Kafka to the process and back. A contract is a format and a fingerprint, never a type the sidecar understands. A built-in stage decodes its own contract and nothing else. |
 | Commit after the write | Offsets are committed only once every emit for the batch is confirmed by the broker. `CommitAfterWrite` and its Kafka suite are the guard; `mutationCheck` proves the suite would catch a regression. |
 | Never skip | A failed batch is redelivered from the last commit, indefinitely. Skipping a record is the process's decision: acknowledge without emitting. |
 | Explicit registration | A streamlet is declared; its SDK writes the descriptor. The sidecar compares discovery with the deployed file and refuses a difference. No classpath scanning, ever. |
 | Pure rendering, one place for I/O | `Rendering.render` returns actions; `Fabric8Executor` and `KafkaExecutor` perform them. |
 | The resource says what runs | Deploy-time overrides are merged by the CLI into the resource. The operator adds only what only it can know: the sidecar image (its own setting) and Kafka cluster secrets. |
 | Kafka credentials reach only the sidecar | Mounted from a Secret into the sidecar container. The process container has no ports, probes, mounts or secrets. |
-| No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image`; built images use `BuildInfo.version` with `+` → `-`. |
+| No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image` and Neo4j's from `-Dflow.neo4j.image`; built images use `BuildInfo.version` with `+` → `-`. |
 | Warning-free compile | `-Wunused:all` is on. Generated ScalaPB sources are silenced by `-Wconf` on `src_managed` only. |
+| Built-in stages are declared values | A stage the sidecar runs with no process has its descriptor in `protocol/.../Builtins.scala`, its canonical JSON in `protocol/fixtures/builtin/`, and a blueprint names it `builtin/<name>`. The sidecar refuses a deployed descriptor that is not its own built-in. |
 | Not in this build | pekko-http, pekko-grpc, Avro, spray-json, ScalaTest. If a change needs one, it is a design change: update `research.md` first. |
 
 ## Documentation

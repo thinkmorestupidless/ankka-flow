@@ -68,7 +68,8 @@ spec:
                   type: array
                   items:
                     type: object
-                    required: [name, image, descriptor]
+                    # image is required unless builtin is true; the operator checks it.
+                    required: [name, descriptor]
                     properties:
                       name:
                         type: string
@@ -92,6 +93,8 @@ spec:
                       descriptor:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                      builtin:
+                        type: boolean
                 topics:
                   type: array
                   items:

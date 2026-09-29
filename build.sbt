@@ -74,6 +74,7 @@ lazy val commonSettings = Seq(
   Test / javaOptions ++= forwardedTestSwitches.flatMap(k => sys.props.get(k).map(v => s"-D$k=$v")),
   // The one place the Kafka image is written for code: no test names an image by a literal tag.
   Test / javaOptions += s"-Dflow.kafka.image=${V.kafkaImage}",
+  Test / javaOptions += s"-Dflow.neo4j.image=${V.neo4jImage}",
   // Suites resolve protocol/fixtures and samples/ relative to the repository root.
   Test / javaOptions += s"-Dflow.repo.root=${(LocalRootProject / baseDirectory).value.getAbsolutePath}",
   testFrameworks += new TestFramework("munit.Framework")
@@ -162,10 +163,12 @@ lazy val sidecar = project
       pekkoSlf4j,
       pekkoKafka,
       kafkaClients,
+      neo4jDriver,
       logback,
       pekkoActorTestkit   % Test,
       pekkoStreamTestkit  % Test,
       testcontainersKafka % Test,
+      testcontainersNeo4j % Test,
       jacksonYaml         % Test
     ),
     dependencyOverrides += kafkaClients
@@ -210,6 +213,7 @@ lazy val operator = project
       logback,
       testcontainersKafka % Test,
       testcontainersK3s   % Test,
+      testcontainersNeo4j % Test,
       fabric8ServerMock   % Test
     ),
     dependencyOverrides += kafkaClients

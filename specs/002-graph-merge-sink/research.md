@@ -349,3 +349,10 @@ sink reference and the guide; `ankka-flow-python` and `ankka-flow-protocol` the 
    with one `get` per built-in streamlet without a measurable reconcile cost.
 8. **The k3s NodePort for Bolt**: `FlowClusterSuite` reaches Neo4j from the test JVM through a
    NodePort mapped by the k3s container, as Kafka's 30094 is.
+
+## Found during implementation
+
+- **Item 1, Netty** — answered: `neo4j-java-driver` 5.28.5 brings `neo4j-bolt-connection-*` 2.0.0,
+  reactor-core 3.6.16 and **unshaded** Netty 4.1.119 (`netty-handler`, `-codec`, `-transport`, …).
+  Nothing else in the sidecar uses unshaded Netty: gRPC is `grpc-netty-shaded` and kafka-clients
+  uses none, so the two coexist; `sidecar/evicted` shows only error-prone annotations.
