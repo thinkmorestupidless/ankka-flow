@@ -32,3 +32,6 @@ samples/*/src/*/_proto/
 *.secret.yaml
 kubeconfig*
 .env*
+
+# Claude Code agent worktrees
+.claude/worktrees/
