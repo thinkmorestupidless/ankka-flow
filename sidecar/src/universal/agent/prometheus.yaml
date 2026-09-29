@@ -53,3 +53,22 @@ rules:
     labels:
       inlet: "$1"
       partition: "$2"
+  # A built-in stage's own, one bean per inlet partition it has processed (feature 002, research R11).
+  - pattern: 'ankka\.flow<type=stage,\s*inlet=(\S+),\s*partition=([0-9]+)><>DeltasWritten:'
+    name: ankka_flow_stage_deltas_written_total
+    type: COUNTER
+    labels:
+      inlet: "$1"
+      partition: "$2"
+  - pattern: 'ankka\.flow<type=stage,\s*inlet=(\S+),\s*partition=([0-9]+)><>DeltasStale:'
+    name: ankka_flow_stage_deltas_stale_total
+    type: COUNTER
+    labels:
+      inlet: "$1"
+      partition: "$2"
+  - pattern: 'ankka\.flow<type=stage,\s*inlet=(\S+),\s*partition=([0-9]+)><>BatchesFailed:'
+    name: ankka_flow_stage_batches_failed_total
+    type: COUNTER
+    labels:
+      inlet: "$1"
+      partition: "$2"

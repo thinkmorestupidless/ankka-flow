@@ -106,6 +106,7 @@ final class Supervisor(
 
     def teardown(): Unit =
       probes.notReady()
+      graphs.foreach(_.tearingDown())
       opened.fail(new StreamFailed("the session is being torn down"))
       val shutdowns = graphs.map(_.control.shutdown())
       Try(Await.ready(Future.sequence(shutdowns), 15.seconds))
@@ -113,6 +114,7 @@ final class Supervisor(
 
     def stop(reason: String): Unit =
       probes.notReady()
+      graphs.foreach(_.tearingDown())
       val stops = graphs.map(_.control.stop())
       Try(Await.ready(Future.sequence(stops), 5.seconds))
       opened.stop(reason)

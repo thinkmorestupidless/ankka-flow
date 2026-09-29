@@ -11,7 +11,15 @@ import scala.util.{Failure, Success, Try}
 
 import com.thinkmorestupidless.ankka.flow.protocol.{Builtins, DescriptorValidation}
 import org.apache.pekko.actor.ActorSystem
-import org.neo4j.driver.{AuthTokens, Driver, GraphDatabase, SessionConfig, TransactionConfig}
+import org.apache.pekko.pattern.after
+import org.neo4j.driver.{
+  AuthTokens,
+  Config,
+  Driver,
+  GraphDatabase,
+  SessionConfig,
+  TransactionConfig
+}
 import org.neo4j.driver.exceptions.ClientException
 import org.slf4j.LoggerFactory
 
@@ -54,24 +62,29 @@ final class Neo4jMergeStage(
   // ── opening ──────────────────────────────────────────────────────────────────────────────────
 
   def open(stopped: () => Boolean): Option[Either[Stage.Refusal, Stage.Run]] =
-    val s = secret match
-      case Some(s) => Right(s)
-      case None =>
-        Neo4jSecret.read(Paths.get(credsDir)).map { s =>
-          secret = Some(s)
-          s
-        }
-    s match
+    readSecret() match
       case Left(problem) =>
         log.error("refusing to start: {}", problem)
         Some(Left(Stage.Refusal(Vector(problem), 2)))
-      case Right(s) =>
+      case Right(_) =>
         descriptorProblems match
           case problems if problems.nonEmpty =>
             log.error("refusing to start: the deployed descriptor is not this sidecar's built-in")
             problems.foreach(p => log.error("  {}", p))
             Some(Left(Stage.Refusal(problems, 1)))
-          case _ => connect(s, stopped).map(Right(_))
+          case _ => connect(stopped).map(Right(_))
+
+  /**
+   * The credentials, read again on every attempt: a mounted Secret's files change in place when the
+   * Secret does, so a corrected or rotated password is used without a restart.
+   */
+  private def readSecret(): Either[String, Neo4jSecret] =
+    Neo4jSecret.read(Paths.get(credsDir)).map { s =>
+      if !secret.contains(s) then
+        discardDriver()
+        secret = Some(s)
+      s
+    }
 
   /** Every way the deployed descriptor differs from the one this sidecar ships. */
   private def descriptorProblems: Vector[String] =
@@ -84,16 +97,16 @@ final class Neo4jMergeStage(
       )
 
   /** Until the database answers, is new enough, and has (or cannot be given) its constraint. */
-  private def connect(s: Neo4jSecret, stopped: () => Boolean): Option[Stage.Run] =
+  private def connect(stopped: () => Boolean): Option[Stage.Run] =
     var backoff                   = 500.millis
     var opened: Option[Stage.Run] = None
     while opened.isEmpty && !stopped() do
-      attempt(s) match
+      readSecret().left.map(new IllegalStateException(_)).toTry.flatMap(attempt) match
         case Success(run) => opened = Some(run)
         case Failure(e) =>
           log.warn(
             "cannot open Neo4j at {}: {}; retrying in {}",
-            s.uri,
+            secret.fold("?")(_.uri),
             redact(e.getMessage),
             backoff
           )
@@ -103,7 +116,8 @@ final class Neo4jMergeStage(
 
   private def attempt(s: Neo4jSecret): Try[Stage.Run] = Try {
     val d = driver.getOrElse {
-      val created = GraphDatabase.driver(s.uri, AuthTokens.basic(s.username, s.password))
+      val created =
+        GraphDatabase.driver(s.uri, AuthTokens.basic(s.username, s.password), driverConfig)
       driver = Some(created)
       created
     }
@@ -118,8 +132,7 @@ final class Neo4jMergeStage(
     catch
       case e: Throwable =>
         // A driver that could not connect keeps its pool; start from a clean one next time.
-        Try(d.close())
-        driver = None
+        discardDriver()
         throw e
     val state = new RunState
     current.set(Some(state))
@@ -159,12 +172,23 @@ final class Neo4jMergeStage(
             Future.failed(failure(batch, problem))
           case None =>
             val folded = Deltas.fold(parsed.collect { case Right(d) => d })
-            Future(write(folded)).transform {
+            // The transaction timeout is enforced by the server; a server that stops answering
+            // enforces nothing, so the batch also has a deadline of its own.
+            val deadline = after(timeout + DeadlineMargin)(
+              Future.failed(
+                new StreamFailed(
+                  s"the transaction did not complete within ${timeout + DeadlineMargin}"
+                )
+              )
+            )(using system)
+            Future.firstCompletedOf(Seq(Future(write(folded)), deadline)).transform {
               case Success(written) =>
                 record.applied(batch.inlet, batch.partition, written, batch.records.size - written)
                 Success(Outcome.Acked(Vector.empty))
               case Failure(e) =>
                 record.failed(batch.inlet, batch.partition)
+                // A connection that hung may still hold the transaction; never reuse it.
+                discardDriver()
                 Failure(failure(batch, redact(e.getMessage), e))
             }
 
@@ -215,9 +239,24 @@ final class Neo4jMergeStage(
    */
   def revoke(inlet: String, partition: Int, generation: Long): Unit = ()
 
-  def close(): Unit =
-    driver.foreach(d => Try(d.close()))
+  def close(): Unit = discardDriver()
+
+  /** Closes the driver without waiting on a connection that may never answer. */
+  private def discardDriver(): Unit = synchronized {
+    driver.foreach(d => Try(d.closeAsync()))
     driver = None
+  }
+
+  private def driverConfig: Config =
+    Config
+      .builder()
+      .withConnectionTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+      .withConnectionAcquisitionTimeout(
+        timeout.toMillis,
+        java.util.concurrent.TimeUnit.MILLISECONDS
+      )
+      .withMaxTransactionRetryTime(timeout.toMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
+      .build()
 
   /** One opened run: fails when the supervisor tears it down, stops when it stops. */
   private final class RunState extends Stage.Run:
@@ -228,6 +267,9 @@ final class Neo4jMergeStage(
     def stop(reason: String): Unit   = failure.trySuccess(new StreamFailed(reason)): Unit
 
 object Neo4jMergeStage:
+
+  /** How long past the transaction timeout a batch waits before giving up on the server. */
+  val DeadlineMargin: FiniteDuration = 5.seconds
 
   val Constraint =
     "CREATE CONSTRAINT element_id IF NOT EXISTS FOR (n:Element) REQUIRE n.id IS UNIQUE"

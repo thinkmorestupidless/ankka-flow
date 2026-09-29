@@ -356,3 +356,32 @@ sink reference and the guide; `ankka-flow-python` and `ankka-flow-protocol` the 
   reactor-core 3.6.16 and **unshaded** Netty 4.1.119 (`netty-handler`, `-codec`, `-transport`, …).
   Nothing else in the sidecar uses unshaded Netty: gRPC is `grpc-netty-shaded` and kafka-clients
   uses none, so the two coexist; `sidecar/evicted` shows only error-prone annotations.
+- **Items 2–4, the statements through the driver** — answered by `Neo4jMergeSuite` against
+  `neo4j:5.26-community`: `REMOVE n:$([...])` with an empty list is a no-op, `SET n:$(d.labels)`
+  and `MERGE ()-[r:$(d.type) {id: d.id}]->()` run as written inside one `executeWrite`, and
+  `SET r = map` replaces a relationship's properties as it does a node's. The server's agent
+  (`Neo4j/5.26.x`) is not on the `Driver` in 5.28; it comes from a query's summary
+  (`session.run("RETURN 1").consume().server().agent()`).
+- **Item 5, the privilege failure** — not testable here: Neo4j Community has no role-based
+  privileges (every user can create constraints), so the `Neo.ClientError.Security.*` branch that
+  records `ConstraintNotCreated` is verified by inspection only. An Enterprise image would test it.
+- **Item 6, pausing the container** — answered: `getDockerClient.pauseContainerCmd` from the test
+  JVM freezes Neo4j, and the driver then waits for a response indefinitely.
+- **A frozen database hung the batch forever** — found by `Neo4jSinkKafkaSuite`'s outage case. The
+  transaction timeout is enforced by the server, so a server that stops answering enforces nothing:
+  the batch never completed, the pod stayed ready and the partition stalled silently. Now each batch
+  has a client-side deadline (`transaction-timeout` + 5 s), the driver has bounded connection and
+  acquisition timeouts and a retry budget equal to the transaction timeout, and a driver whose batch
+  failed is discarded (closed asynchronously) rather than reused.
+- **Credentials are re-read on every connection attempt** — a mounted Secret's files change in
+  place when the Secret does, so a corrected or rotated password is used without a restart; the
+  first version cached the first read and waited on a wrong password forever.
+- **`PartitionStalled` never fired for a batch that fails every time (a version-one defect)** —
+  found by the same outage case. `InletGraph` forgot a partition's stall whenever its substream
+  ended, and a failed batch ends its substream (and a teardown ends them all), so every reconnect
+  reset the clock; `SupervisorSuite` tested `Stalls` alone and missed it. A stall is now forgotten
+  only when a substream *completes* while the sidecar is not tearing down (a revocation), and an
+  assignment forgets stalls of partitions that moved away. `RestartKafkaSuite` has the regression
+  test (a process batch that always fails is warned within the threshold); it failed before.
+- **`version` written with an exponent** — `1e3` parses to a whole `BigDecimal` and is accepted as
+  version 1000; the contract's "a JSON integer" is read as "a whole number".

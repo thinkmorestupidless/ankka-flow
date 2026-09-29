@@ -1,6 +1,7 @@
 package com.thinkmorestupidless.ankka.flow.sidecar
 
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 
 /**
  * The edge cases of restarts: the process restarted while the sidecar runs, and the sidecar
@@ -75,6 +76,42 @@ class RestartKafkaSuite extends KafkaSuite:
       )
       publish(in, Seq((Some("k"), "0", Nil)))
       eventually()(assertEquals(committed("r.i.in"), 1L))
+    finally
+      sidecar.stop(): Unit
+      double.close()
+  }
+
+  test(
+    "a batch that fails every time is warned as stalled, however many times the sidecar reconnects"
+  ) {
+    // Every failure tears the stream down and reconnects; the stall must be measured from the first
+    // attempt, not reset by each teardown, or PartitionStalled never fires for a stuck partition.
+    val in     = createTopic(uniqueTopic("stall-in"), 1)
+    val out    = createTopic(uniqueTopic("stall-out"), 1)
+    val double = new ProcessDouble(TestSpecs.fixture("minimal"), ProcessDouble.keyed())
+    val port   = double.start()
+    val sidecar = new SidecarRun(
+      TestSpecs.fixture("minimal"),
+      SidecarRun.conf("r", "stall", bootstrap, Seq("in" -> in), Seq("out" -> out)),
+      port,
+      stallAfter = 3.seconds
+    )
+    try
+      eventually()(assert(sidecar.ready))
+      publish(in, Seq((Some("fail"), "0", Nil)))
+      eventually(30.seconds)(
+        assert(
+          sidecar.events.warnings.asScala.exists(_._1 == "PartitionStalled"),
+          sidecar.events.warnings.toString
+        )
+      )
+      val note = sidecar.events.warnings.asScala.find(_._1 == "PartitionStalled").get._2
+      assert(note.contains("partition 0"), note)
+      assert(!note.contains("last error: none yet"), note)
+      assert(
+        double.starts.map(_.conversationId).distinct.size >= 2,
+        "the sidecar never reconnected"
+      )
     finally
       sidecar.stop(): Unit
       double.close()
