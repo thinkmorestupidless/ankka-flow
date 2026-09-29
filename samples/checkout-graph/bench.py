@@ -21,7 +21,7 @@ import time
 
 from kafka import KafkaAdminClient, KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.admin import NewTopic
-from kafka.errors import TopicAlreadyExistsError
+from kafka.errors import CoordinatorNotAvailableError, GroupIdNotFoundError, TopicAlreadyExistsError
 from neo4j import GraphDatabase
 
 DELTAS = "checkouts-graph.graph-deltas"
@@ -43,8 +43,12 @@ def deltas(cart: str, at: int) -> list[tuple[str, dict[str, object]]]:
 
 
 def committed(admin: KafkaAdminClient) -> int:
-    offsets = admin.list_consumer_group_offsets(GROUP)
-    return sum(o.offset for tp, o in offsets.items() if tp.topic == DELTAS and o.offset >= 0)
+    """The sink group's committed offsets, summed; 0 before its first commit."""
+    try:
+        offsets = admin.list_group_offsets(GROUP).get(GROUP, {})
+        return sum(m.offset for m in offsets.values() if m.offset >= 0)
+    except (CoordinatorNotAvailableError, GroupIdNotFoundError):
+        return 0  # the group is not there yet, or its coordinator is still loading
 
 
 def main() -> None:
@@ -55,7 +59,8 @@ def main() -> None:
     args = parser.parse_args()
 
     with GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "flow-local-password")) as driver:
-        driver.execute_query("MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS")
+        with driver.session() as session:  # an implicit transaction, which IN TRANSACTIONS needs
+            session.run("MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS").consume()
 
     admin = KafkaAdminClient(bootstrap_servers=args.bootstrap, client_id="checkout-graph-bench")
     if DELTAS in set(admin.list_topics()):
@@ -66,7 +71,7 @@ def main() -> None:
     except TopicAlreadyExistsError:
         pass
     try:
-        admin.delete_consumer_groups([GROUP])
+        admin.delete_groups([GROUP])
     except Exception:  # the group does not exist yet
         pass
 

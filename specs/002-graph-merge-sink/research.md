@@ -389,3 +389,13 @@ sink reference and the guide; `ankka-flow-python` and `ankka-flow-protocol` the 
   1001 in group 0 and the kubelet writes Secret files as root:root, so a 0400 file is unreadable
   to the sidecar. `Neo4jSecret` also reported the unreadable file as missing; it now says
   `cannot read '<key>' …`, with a test.
+
+## Measurements at the end
+
+SC-007 is measured by `samples/checkout-graph/bench.py`: Kafka and `neo4j:5.26-community` from the
+sample's compose file, the sink's sidecar in stage mode with `batch.max-records = 500`, 60,000
+deltas (20,000 notices × 3) preloaded over 3 partitions, timed from the sink's first commit until
+its group had committed everything. On a laptop (Apple silicon, Docker Desktop), 2026-09-29:
+**59,999 deltas in 11.2 s — 5,345/s, 1,782/s per partition**, against a floor of 1,000/s per
+partition. The laptop loop (`produce.py`, `verify.py`, the same notices again) gave 5 carts, 20
+checkouts and 20 edges both times, with the second production entirely stale.

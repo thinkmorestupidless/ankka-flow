@@ -154,6 +154,17 @@ blueprint {
 `flow verify` checks the sink's inlet against `mapper.deltas` like any pair of ports: an outlet of any
 contract other than `ankka.graph-delta.v1` is refused before anything is deployed.
 
+The sink's `secret` parameter has no default, so verification needs the deploy-time configuration
+that names the Secret, as generation does:
+
+```bash
+flow verify blueprint.conf --descriptors flow --conf k8s/in-cluster.conf
+```
+
+```text
+verified: 2 streamlets, 2 topics
+```
+
 ## Give it a connection
 
 The sink reaches Neo4j through a Secret in the pipeline's namespace, named by its `secret` parameter,

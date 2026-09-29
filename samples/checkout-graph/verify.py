@@ -4,8 +4,8 @@
     uv run python verify.py --count 200 --carts 20
 
 Exits 0 when the graph has one Cart per cart, one Checkout per notice, one CHECKED_OUT edge from
-each checkout's cart, and every element's _version equal to its notice's time; waits up to a
-minute for the sink to catch up.
+each checkout's cart, and every element's _version equal to its notice's time; waits up to two
+minutes for Neo4j to start and the sink to catch up.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import sys
 import time
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 
 def snapshot(session: object) -> tuple[int, int, int, int]:
@@ -38,11 +39,15 @@ def main() -> None:
     args = parser.parse_args()
     expected = (args.carts, args.count, args.count, 0)
     with GraphDatabase.driver(args.uri, auth=("neo4j", args.password)) as driver:
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + 120
         seen = (0, 0, 0, 0)
         while time.monotonic() < deadline:
-            with driver.session() as session:
-                seen = snapshot(session)
+            try:
+                with driver.session() as session:
+                    seen = snapshot(session)
+            except (ServiceUnavailable, SessionExpired):
+                pass  # Neo4j still starting: keep waiting
+
             if seen == expected:
                 print(f"ok: {seen[0]} carts, {seen[1]} checkouts, {seen[2]} CHECKED_OUT edges, versions as sent")
                 return

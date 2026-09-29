@@ -104,9 +104,9 @@ graph identical (US4, FR-026, FR-029).
 
 ## The reviewer's checklist
 
-- [ ] `protocol/fixtures/builtin/neo4j-merge-sink.json` and its Python copy are byte-identical; CI's diff passes.
-- [ ] The sidecar image starts with the driver on the classpath and `evicted` shows no Netty conflict.
-- [ ] No log line, event note or refusal message contains a password (grep the suites' captured output).
-- [ ] The process path is untouched: `ConversationSuite`, `ConformanceSuite`, `RestartKafkaSuite` pass unchanged.
-- [ ] `CLAUDE.md`'s decoding rule is narrowed, and the skills say the same.
-- [ ] `docs check` passes with the three new pages in the nav and in a skill each; `limitations.md` no longer says "no built-in stages".
+- [x] `protocol/fixtures/builtin/neo4j-merge-sink.json` and its Python copy are byte-identical; CI's diff passes.
+- [x] The sidecar image starts with the driver on the classpath and `evicted` shows no Netty conflict.
+- [x] No log line, event note or refusal message contains a password (grep the suites' captured output).
+- [x] The process path is untouched: `ConversationSuite`, `ConformanceSuite`, `RestartKafkaSuite` pass unchanged.
+- [x] `CLAUDE.md`'s decoding rule is narrowed, and the skills say the same.
+- [x] `docs check` passes with the three new pages in the nav and in a skill each; `limitations.md` no longer says "no built-in stages".
