@@ -59,6 +59,26 @@ streamlets {
 A streamlet name is a DNS label: at most 63 characters of `a-z`, `0-9` and `-`, not starting or ending
 with `-`. Two streamlets may not share a name.
 
+A value of the form `builtin/<name>` names a descriptor the platform ships instead of one an SDK
+wrote. Its logic runs inside the sidecar, so it needs no descriptor file, no image and no process
+container. The built-ins are:
+
+| Built-in | What it does |
+|---|---|
+| `builtin/neo4j-merge-sink` | merges [graph deltas](graph-deltas.md) into Neo4j; see [Neo4j merge sink](neo4j-merge-sink.md) |
+
+```hocon
+streamlets {
+  mapper = checkout-graph
+  graph  = builtin/neo4j-merge-sink
+}
+```
+
+A built-in is found only by its `builtin/` name, and a descriptor file only by its bare name, so a
+descriptor file named `neo4j-merge-sink` neither replaces the built-in nor is replaced by it. A
+built-in that this version of the CLI does not have is refused:
+`Streamlet 'graph' names built-in descriptor 'builtin/nope', which this version does not have; the built-ins are: neo4j-merge-sink.`
+
 ## `blueprint.topics`
 
 Each key is a topic id. Each value is an object with these keys, all optional:

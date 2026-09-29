@@ -97,6 +97,7 @@ nav:
       - Test a streamlet: build/testing.md
       - Write a blueprint: build/blueprints.md
       - Read an ankka service's topic: build/ankka-topics.md
+      - Build a graph from a pipeline: build/graph-sink.md
       - Build an image: build/images.md
   - Run and operate:
       - Install the platform: deploy/install.md
@@ -112,6 +113,8 @@ nav:
       - Operator: reference/operator.md
       - Sidecar: reference/sidecar.md
       - Descriptor: reference/descriptor.md
+      - Graph deltas: reference/graph-deltas.md
+      - Neo4j merge sink: reference/neo4j-merge-sink.md
       - Streamlet protocol: reference/protocol.md
       - Python SDK: reference/python-sdk.md
       - Limitations: reference/limitations.md

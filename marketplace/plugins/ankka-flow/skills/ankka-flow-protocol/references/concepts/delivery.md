@@ -83,6 +83,10 @@ A batch that fails every time is redelivered every time, so its partition makes 
   `PartitionStalled` warning event on its pod, naming the pipeline, streamlet, inlet, partition and the
   last error. Outside Kubernetes it logs the same warning.
 
+The stall is measured from the first attempt at the batch. Each failure tears the stream down and the
+batch is read again after the reconnect, but the clock keeps running across those reconnects; it
+resets only when the partition is revoked and moves to another pod.
+
 The stall clears when a batch of that partition commits. Clearing it is a change to the streamlet's
 code or configuration, or to the data it depends on, not to the platform: the platform will not move
 past the record for it.

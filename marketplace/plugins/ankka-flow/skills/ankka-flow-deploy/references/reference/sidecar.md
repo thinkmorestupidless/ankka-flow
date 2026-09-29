@@ -17,7 +17,7 @@ Each variable can also be given as a system property, the name lower-cased with 
 
 | variable | default | meaning |
 |---|---|---|
-| `FLOW_PROCESS_ADDRESS` | `127.0.0.1:9010` | `host:port` of the streamlet's process. The operator sets `127.0.0.1:9010`; a compose file sets `host.docker.internal:9010` |
+| `FLOW_PROCESS_ADDRESS` | `127.0.0.1:9010` | `host:port` of the streamlet's process. The operator sets `127.0.0.1:9010`; a compose file sets `host.docker.internal:9010`. Unused, and not set, for a built-in stage |
 | `FLOW_CONFIG_DIR` | `/etc/flow/config` | holds `descriptor.json` and `streamlet.conf` |
 | `FLOW_STATE_DIR` | `/tmp/flow` | where the `ready` and `alive` files are written |
 | `FLOW_METRICS_PORT` | `2050` | the Prometheus metrics port |
@@ -90,10 +90,36 @@ flow {
 | `…connection-config` | no | client properties for this port: `security.protocol`, `sasl.*`, `ssl.*` |
 | `inlets.<name>.consumer-config`, `outlets.<name>.producer-config` | no | consumer or producer properties |
 | `inlets.<name>.batch.max-records`, `…max-bytes` | no | the largest batch sent to the process; default `100` and `1 MiB` |
+| `flow.stage.name` | no | a built-in stage to run instead of talking to a process, such as `neo4j-merge-sink`; see [Built-in stages](#built-in-stages) |
+| `flow.stage.neo4j.credentials-dir` | with the merge sink | the directory of the Neo4j connection's files, `/etc/flow/neo4j` in a pod |
 
 Every inlet reads with `auto.offset.reset = earliest` unless its `consumer-config` says otherwise, so a
 new pipeline reads its inputs from the start. `allow.auto.create.topics` is always `false`: reading a
 topic never creates it. The inlets and outlets must be exactly the descriptor's ports.
+
+## Built-in stages
+
+With a `flow.stage` block, the sidecar runs a stage built into its own image instead of talking to a
+process: it opens no gRPC channel, runs no discovery, and reads no `FLOW_PROCESS_ADDRESS`. Everything
+else — the inlets, batching, commit after the write, readiness, stalls, metrics — is the same. The
+stage decodes records of its own contract; for a process the sidecar decodes nothing.
+
+```hocon
+flow {
+  pipeline  = checkouts-graph
+  streamlet = graph
+  config    = { secret = "neo4j-local", transaction-timeout = "30s" }
+  stage {
+    name = "neo4j-merge-sink"
+    neo4j { credentials-dir = "/etc/flow/neo4j" }
+  }
+  inlets { in { topic = "checkouts-graph.graph-deltas", bootstrap.servers = "kafka:9092" } }
+}
+```
+
+The deployed `descriptor.json` must be the image's own descriptor of that built-in; a difference is
+refused at start-up, naming every difference, with exit code `1`. A stage the image does not have is
+refused with exit code `2`. The one built-in stage is the [Neo4j merge sink](neo4j-merge-sink.md).
 
 ## Start-up and exit codes
 
@@ -105,6 +131,9 @@ topic never creates it. The inlets and outlets must be exactly the descriptor's 
    the process's `ReportError`, logs them, and exits with code `1`.
 4. Open a `Run` conversation, subscribe every inlet, and write `ready` once every inlet is subscribed and
    its topic exists.
+
+For a built-in stage, steps 2 and 3 are the stage opening instead; see
+[Neo4j merge sink](neo4j-merge-sink.md#opening).
 
 On a failure after start-up the sidecar never exits: it discards the batches in flight, removes `ready`,
 waits (500 ms, doubling to `FLOW_RECONNECT_MAX_BACKOFF`), repeats discovery, and resumes from the last
@@ -137,6 +166,9 @@ streamlet.
 | `kafka_producer_producer_metrics_record_send_rate` | `client_id`, `topic` | records written per second, per outlet |
 | `ankka_flow_sidecar_in_flight` | `inlet`, `partition` | `1` while a batch of that partition is with the process |
 | `ankka_flow_sidecar_stalled_seconds` | `inlet`, `partition` | how long the partition has gone without committing; `0` when nothing is outstanding |
+| `ankka_flow_stage_deltas_written_total` | `inlet`, `partition` | a built-in stage's deltas applied |
+| `ankka_flow_stage_deltas_stale_total` | `inlet`, `partition` | a built-in stage's deltas found stale |
+| `ankka_flow_stage_batches_failed_total` | `inlet`, `partition` | a built-in stage's batches that failed |
 
 Kafka reports topic names in these labels with dots replaced by underscores:
 `shop.cart-events.v1` appears as `shop_cart-events_v1`. The pod template carries
@@ -149,6 +181,11 @@ sidecar records one warning for that stall, reason `PartitionStalled`, with a no
 streamlet, inlet and partition, how long it has not committed, and the last error. In a pod it is an
 `events.k8s.io/v1` Warning Event regarding the pod, posted with the pipeline's service account. Elsewhere,
 or if posting fails, it is a `warn` log line. The stall clears when a batch of that partition commits.
+
+The stall is measured from the first attempt at the oldest uncommitted batch, across the sidecar's own
+reconnects: a batch that fails every time tears the stream down and is read again, and the clock keeps
+running, so the warning fires. It is forgotten only when the partition is revoked and moves to another
+pod.
 
 ## Logs
 

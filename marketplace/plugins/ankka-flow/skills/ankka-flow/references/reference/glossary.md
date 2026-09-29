@@ -32,6 +32,12 @@ most one batch per inlet partition is in flight. See [The sidecar](../concepts/s
 The HOCON file that names a pipeline's streamlets and the topics connecting their ports. See
 [Write a blueprint](../build/blueprints.md) and [Blueprint](../reference/blueprint.md).
 
+### Built-in streamlet
+
+A streamlet whose descriptor ships with the platform, named `builtin/<name>` in a blueprint. It needs no
+image or descriptor file, and its pod has only the sidecar, which runs its logic as a stage. See
+[Blueprint](blueprint.md).
+
 ### Client id
 
 The Kafka client id of one port, `<pipeline>.<streamlet>.<port>`, which labels its lag and rates in the
@@ -72,6 +78,11 @@ JSON by the streamlet's SDK. See [Descriptor](../reference/descriptor.md).
 The sidecar asking the process to describe itself and comparing the answer with the deployed descriptor
 before any record flows. See [The sidecar](../concepts/sidecar.md).
 
+### Element
+
+A node or an edge of a graph the Neo4j merge sink writes, found by its global id and holding the version
+of the last delta applied to it. See [Neo4j merge sink](neo4j-merge-sink.md).
+
 ### Emit
 
 A record the process sends to one of its outlets while handling a batch. See
@@ -86,6 +97,11 @@ from the last commit. See [Delivery and failure](../concepts/delivery.md).
 
 The part of a contract compared between ports. For a JSON contract it is the Base64 of the SHA-256 of
 the schema name. See [Contracts](../concepts/contracts.md).
+
+### Graph delta
+
+One record of the `ankka.graph-delta.v1` contract: a node merge, an edge merge or a tombstone, stating an
+element's whole state at a version. See [Graph deltas](graph-deltas.md).
 
 ### Inlet
 
@@ -122,6 +138,11 @@ A typed configuration value a streamlet declares, with an optional default, set 
 A graph of streamlets connected by Kafka topics, described by a blueprint and deployed as one
 `AnkkaFlow`. See [Pipelines and streamlets](../concepts/pipelines.md).
 
+### Placeholder
+
+A node an edge names before the node's own delta has arrived, holding only its id; the node's first delta
+replaces it. See [Neo4j merge sink](neo4j-merge-sink.md).
+
 ### Port
 
 An inlet or an outlet, named and carrying a contract. A blueprint addresses it as `<streamlet>.<port>`.
@@ -147,6 +168,11 @@ the streamlet protocol. See [The sidecar](../concepts/sidecar.md).
 Acknowledging a batch without emitting for a record. Only the streamlet skips; the platform never does.
 See [Delivery and failure](../concepts/delivery.md).
 
+### Stage
+
+Logic that runs inside the sidecar instead of in a process: the logic of a built-in streamlet. Its write
+is the write the sidecar commits after. See [The sidecar](../concepts/sidecar.md).
+
 ### Stall
 
 A partition that makes no progress because one of its batches fails every time. It shows as lag, a
@@ -161,6 +187,11 @@ function that turns batches into emits. See [Pipelines and streamlets](../concep
 
 The gRPC services, `ankka.flow.v1`, between the sidecar and the process. See
 [Streamlet protocol](../reference/protocol.md).
+
+### Tombstone
+
+A graph delta that marks an element deleted at a version rather than removing it, so an older delta
+cannot bring the element back. See [Graph deltas](graph-deltas.md).
 
 ### Unmanaged topic
 

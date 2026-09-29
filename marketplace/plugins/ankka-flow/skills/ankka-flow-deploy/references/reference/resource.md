@@ -68,12 +68,13 @@ status:
 | field | type | meaning |
 |---|---|---|
 | `name` | string, required | the streamlet's name in the blueprint, a DNS label |
-| `image` | string, required | the streamlet's image, holding only its code |
+| `image` | string | the streamlet's image, holding only its code; required unless `builtin`, and empty when it is |
 | `replicas` | integer ≥ 0 | pods to run; default `1`. `0` stops the streamlet |
 | `config` | map | every declared parameter, resolved and typed |
 | `inlets` | map | inlet name → topic id; every declared inlet must be bound |
 | `outlets` | map | outlet name → topic id; an outlet may be left unbound |
 | `descriptor` | object, required | the descriptor's `streamlet` object, verbatim, with its snake_case keys; see [the descriptor reference](descriptor.md) |
+| `builtin` | boolean | `true` for a streamlet whose descriptor ships with the platform (`builtin/<name>` in the blueprint): its pod has only the sidecar, which runs the stage; default `false` |
 
 ### `spec.topics[]`
 
@@ -162,6 +163,12 @@ Once per streamlet, owned by the `AnkkaFlow`, so deleting the resource deletes t
 |---|---|---|---|---|---|
 | `sidecar` | the operator's `FLOW_SIDECAR_IMAGE` | `FLOW_PROCESS_ADDRESS=127.0.0.1:9010`, `FLOW_CONFIG_DIR=/etc/flow/config`, `FLOW_STATE_DIR=/tmp/flow`, `FLOW_METRICS_PORT=2050`, `FLOW_POD_NAME`, `FLOW_POD_NAMESPACE` | the Secret at `/etc/flow/config`, read-only; a projected service-account token | `metrics` 2050 | readiness and liveness from files |
 | `process` | `spec.streamlets[].image` | `FLOW_PROCESS_PORT=9010` | none | none | none |
+
+A **built-in** streamlet (`builtin: true`) has only the `sidecar` container, without
+`FLOW_PROCESS_ADDRESS`, and its `streamlet.conf` carries a `stage` block. The
+[Neo4j merge sink](neo4j-merge-sink.md) also gets the Secret its `secret` parameter names, mounted
+read-only at `/etc/flow/neo4j` with mode `0440`; that Secret's `resourceVersion` is part of the config
+hash, so changing it rolls the pod.
 
 The pod does not automount a service-account token, so only the sidecar has one. The pod template
 carries `prometheus.io/scrape: "true"`, `prometheus.io/port: "2050"` and

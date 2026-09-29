@@ -5,7 +5,8 @@
 The sidecar is one Pekko Streams program built at startup from two files. It is published as the
 image `ankka-flow-sidecar:<version>`, built by `sbt sidecar/docker:publishLocal`, pushed on a
 release tag as `ghcr.io/thinkmorestupidless/ankka-flow-sidecar`. It is never a library. Nothing in
-a pipeline resource names it (FR-020); the operator knows it from `FLOW_SIDECAR_IMAGE`.
+a pipeline resource names it (FR-020); the operator knows it from `FLOW_SIDECAR_IMAGE`. It decodes
+nothing it passes to a process; a built-in stage (feature 002) decodes its own contract only.
 
 ## Environment
 

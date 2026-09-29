@@ -25,6 +25,9 @@ import io.fabric8.kubernetes.api.model.rbac.{
  */
 object Rendering:
 
+  /** Mode of the stage Secret's files: 0440, readable by the sidecar's group (0) only. */
+  val SecretFileMode: Int = Integer.parseInt("440", 8)
+
   val ProcessPort = 9010
   val MetricsPort = 2050
   val ConfigDir   = "/etc/flow/config"
@@ -428,11 +431,16 @@ object Rendering:
       )
       .build()
 
+    // 0440: the sidecar image runs as uid 1001 in group 0, and the kubelet writes Secret files as
+    // root:root, so group-readable is what lets the sidecar read them and no one else.
     val stageVolume = stageSecret.map(name =>
       new VolumeBuilder()
         .withName("neo4j")
         .withSecret(
-          new SecretVolumeSourceBuilder().withSecretName(name).withDefaultMode(256).build()
+          new SecretVolumeSourceBuilder()
+            .withSecretName(name)
+            .withDefaultMode(SecretFileMode)
+            .build()
         )
         .build()
     )

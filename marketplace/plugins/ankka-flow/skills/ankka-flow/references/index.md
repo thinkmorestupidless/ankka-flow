@@ -26,6 +26,9 @@ shop.cart-events.v1 ──► router ──valid──► cart.valid-carts
   Kafka credentials reach only the sidecar.
 - **Any language.** A streamlet speaks a small gRPC protocol on the pod's loopback interface. The Python
   SDK implements it; any other language can, and proves it with the conformance suite.
+- **Generic work ships with the platform.** A built-in streamlet runs inside the sidecar with no image
+  of its own: the [Neo4j merge sink](reference/neo4j-merge-sink.md) turns a topic of graph deltas into a
+  graph that is the same however often, or in whatever order, the deltas arrive.
 
 ## When to use it
 

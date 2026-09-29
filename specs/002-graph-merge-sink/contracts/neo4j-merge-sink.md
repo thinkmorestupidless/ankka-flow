@@ -46,12 +46,15 @@ needs no `--image` for `graph` and refuses one.
 ## The connection Secret
 
 In the pipeline's namespace; keys `uri`, `username`, `password`, optional `database` (default
-`neo4j`). Mounted read-only at `/etc/flow/neo4j` in the sidecar container; `streamlet.conf` carries
+`neo4j`). Mounted read-only at `/etc/flow/neo4j` in the sidecar container, mode `0440` (the sidecar
+runs as uid 1001 in group 0 and the kubelet writes the files as root:root); `streamlet.conf` carries
 `flow.stage.neo4j.credentials-dir = "/etc/flow/neo4j"`. The operator refuses the resource
 (`Refused`, phase `Failed`, no other action) when the Secret does not exist or lacks a required key:
 
 - `streamlet 'graph' names Secret 'neo4j-shop', which does not exist in namespace 'shop'`
 - `streamlet 'graph': Secret 'neo4j-shop' has no key 'password'`
+- `streamlet 'graph' is built in and names no Secret in its 'secret' parameter`
+- `streamlet 'graph': Secret 'neo4j-shop': could not be read: <reason>`
 
 A change to the Secret rolls the streamlet (its `resourceVersion` is in the config hash).
 
@@ -61,8 +64,10 @@ In order, retried with the reconnect backoff (500 ms doubling to `FLOW_RECONNECT
 while any step but the descriptor check fails:
 
 1. Read the four files. A missing required file: `credentials directory /etc/flow/neo4j has no
-   'uri'` — a refusal at startup, exit 2, because no retry can fix a file the operator did not
-   mount.
+   'uri'`; one that is there but unreadable: `cannot read 'uri' in credentials directory …` — a
+   refusal at startup, exit 2, because no retry can fix a file the operator did not mount. The
+   files are read again on every later connection attempt, so a corrected or rotated password is
+   used without a restart (and a file missing then is retried, not refused).
 2. The deployed descriptor equals the built-in: otherwise log every difference and exit 1.
 3. `verifyConnectivity`; the server agent must be `Neo4j/5.26` or later, else the stage does not
    open: `Neo4j 5.24.1 at bolt://… is older than 5.26, which the merge needs (dynamic labels)`.
@@ -81,13 +86,15 @@ userinfo before logging.
 2. Fold to one delta per element id per kind space (highest version; first on a tie); count the
    rest stale.
 3. One managed write transaction (`session.executeWrite`, timeout `transaction-timeout`, database
-   from the Secret) running the four statements below with the folded lists as parameters; the
+   from the Secret, a client-side deadline of `transaction-timeout` + 5 s because a server that has
+   stopped answering enforces no timeout of its own) running the four statements below with the folded lists as parameters; the
    driver retries transient failures (deadlocks between partitions' transactions) by rerunning the
    whole function, which is safe because every statement is idempotent.
 4. On commit: add the statements' counts to `deltas_written`, the folded and filtered counts to
    `deltas_stale`, and complete the batch with `Acked(Vector.empty)`; the sidecar then commits the
    inlet's offsets.
-5. On any failure: `batches_failed + 1`, and the Future fails with `StreamFailed` whose message
+5. On any failure: `batches_failed + 1`, the driver is discarded (a hung connection may still hold
+   the transaction), and the Future fails with `StreamFailed` whose message
    names the inlet, the partition and the reason. The stream tears down, the pod is not ready, the
    supervisor backs off and reopens, and the batch is redelivered from the last commit.
 

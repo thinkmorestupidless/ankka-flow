@@ -327,7 +327,7 @@ class RenderingSuite extends munit.FunSuite:
     assert(sidecar.getVolumeMounts.asScala.forall(_.getReadOnly))
     val volume = pod.getVolumes.asScala.find(_.getName == "neo4j").get
     assertEquals(volume.getSecret.getSecretName, "neo4j-shop")
-    assertEquals(volume.getSecret.getDefaultMode.intValue, 256)
+    assertEquals(volume.getSecret.getDefaultMode.intValue, Integer.parseInt("440", 8))
     assert(sidecar.getReadinessProbe != null && sidecar.getLivenessProbe != null)
   }
 

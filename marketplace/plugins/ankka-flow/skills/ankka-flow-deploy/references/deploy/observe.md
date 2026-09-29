@@ -125,3 +125,31 @@ that fails every time therefore stalls its partition. It shows three ways: that 
 the sidecar records one `PartitionStalled` Warning on its pod, naming the inlet, the partition and the
 last error. The fix is in the streamlet's code: skip the record by acknowledging without emitting, or
 correct what makes it fail. See [Delivery and failure](../concepts/delivery.md).
+
+The stall is measured from the first attempt at the batch, across the sidecar's reconnects, so the
+warning appears even though every failure tears the stream down and starts it again.
+
+## A built-in stage
+
+A built-in streamlet's pod, such as the [Neo4j merge sink](../reference/neo4j-merge-sink.md), exports
+every inlet metric, plus three counters of its own per inlet partition:
+
+| Metric | Meaning |
+|---|---|
+| `ankka_flow_stage_deltas_written_total` | deltas applied to the graph |
+| `ankka_flow_stage_deltas_stale_total` | deltas found stale: folded away within a batch, or older than what the graph holds |
+| `ankka_flow_stage_batches_failed_total` | batches whose transaction failed or whose records could not be read |
+
+A rising written count with lag near zero is a healthy sink. A replay from the start, or a burst of
+redelivery, shows as stale deltas rather than written ones: nothing in the graph changed. Failed
+batches beside growing lag mean the database is refusing or not answering; the sidecar's log and the
+`PartitionStalled` note carry the reason.
+
+A sink whose credentials may not create the uniqueness constraint it needs records one
+`ConstraintNotCreated` Warning on its pod each time it opens, and keeps going. Merges then scan the
+graph instead of looking elements up, so throughput falls as the graph grows. Create the constraint
+with an account that may:
+
+```cypher
+CREATE CONSTRAINT element_id IF NOT EXISTS FOR (n:Element) REQUIRE n.id IS UNIQUE
+```

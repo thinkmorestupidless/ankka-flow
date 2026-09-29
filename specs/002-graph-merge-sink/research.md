@@ -147,7 +147,7 @@ The operator's `observe` fetches the named Secret for every built-in streamlet; 
 one lacking `uri`, `username` or `password`, is refused like a missing Kafka cluster
 (`Refused`: `streamlet 'graph' names Secret 'neo4j-shop', which does not exist in namespace
 'shop'`). Rendering mounts it read-only at `/etc/flow/neo4j` (a `secret` volume, `defaultMode`
-0400) and writes `flow.stage.neo4j.credentials-dir = "/etc/flow/neo4j"` into `streamlet.conf`; the
+0440, found at implementation: the sidecar runs as uid 1001 in group 0) and writes `flow.stage.neo4j.credentials-dir = "/etc/flow/neo4j"` into `streamlet.conf`; the
 password never enters the rendered config Secret or the resource. The Secret's `resourceVersion` is
 folded into the config hash so a rotated credential rolls the pod (a Secret informer is not added;
 as for Kafka clusters, a Secret created after a refusal is seen at the next resync).
@@ -385,3 +385,7 @@ sink reference and the guide; `ankka-flow-python` and `ankka-flow-protocol` the 
   test (a process batch that always fails is warned within the threshold); it failed before.
 - **`version` written with an exponent** — `1e3` parses to a whole `BigDecimal` and is accepted as
   version 1000; the contract's "a JSON integer" is read as "a whole number".
+- **The Secret's mode is 0440, not 0400** — found by the k3s scenario: the sidecar image runs as uid
+  1001 in group 0 and the kubelet writes Secret files as root:root, so a 0400 file is unreadable
+  to the sidecar. `Neo4jSecret` also reported the unreadable file as missing; it now says
+  `cannot read '<key>' …`, with a test.

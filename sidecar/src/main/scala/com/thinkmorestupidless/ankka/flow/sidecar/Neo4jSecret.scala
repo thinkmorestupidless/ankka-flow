@@ -25,15 +25,21 @@ object Neo4jSecret:
   val DefaultDatabase = "neo4j"
 
   def read(dir: Path): Either[String, Neo4jSecret] =
-    def file(key: String): Option[String] =
+    /** `Right(None)` when the file is absent or empty; `Left` when it is there but unreadable. */
+    def file(key: String): Either[String, Option[String]] =
       val p = dir.resolve(key)
-      Option
-        .when(Files.isRegularFile(p))(Try(Files.readString(p).trim).toOption)
-        .flatten
-        .filter(_.nonEmpty)
-    def required(key: String) = file(key).toRight(s"credentials directory $dir has no '$key'")
+      if !Files.isRegularFile(p) then Right(None)
+      else
+        Try(Files.readString(p).trim).toEither.left
+          .map(e =>
+            s"cannot read '$key' in credentials directory $dir: ${e.getClass.getSimpleName}"
+          )
+          .map(Option(_).filter(_.nonEmpty))
+    def required(key: String) =
+      file(key).flatMap(_.toRight(s"credentials directory $dir has no '$key'"))
     for
       uri      <- required("uri")
       username <- required("username")
       password <- required("password")
-    yield Neo4jSecret(uri, username, password, file("database").getOrElse(DefaultDatabase))
+      database <- file("database")
+    yield Neo4jSecret(uri, username, password, database.getOrElse(DefaultDatabase))

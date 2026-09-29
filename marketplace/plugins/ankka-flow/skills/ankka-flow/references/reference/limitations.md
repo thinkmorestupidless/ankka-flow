@@ -14,8 +14,15 @@ What ankka-flow does not do, stated plainly so a design does not depend on it.
 - **One SDK.** Python. Any other language can implement the streamlet protocol directly and prove
   itself with the descriptor fixtures and the conformance suite; see
   [Adding a language SDK](../contributing/language-sdks.md).
-- **No stages built into the sidecar.** Every streamlet's logic runs in its own process; the sidecar
-  runs none itself.
+- **One built-in stage.** The [Neo4j merge sink](neo4j-merge-sink.md) is the only streamlet that runs
+  inside the sidecar, and there is no way to add a stage from outside the sidecar image; every other
+  streamlet's logic runs in its own process.
+- **Neo4j 5.26 or later, written only.** The merge sink needs dynamic labels in `MERGE`, which Neo4j
+  5.26 introduced; it refuses to open against an older server. No other graph database is supported,
+  a pipeline cannot supply its own Cypher, and the sink never reads from the graph.
+- **Graph deltas state, never change.** A delta carries an element's whole state with a version from
+  one source entity; there are no increments, no merging of properties from several sources, and
+  tombstones mark elements rather than removing them. See [Graph deltas](graph-deltas.md).
 - **No per-partition state in the process.** A streamlet sees batches of whichever partitions are
   assigned to its pod, and the assignment changes on every rebalance. State that must survive belongs
   in a topic or an external store.

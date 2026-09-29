@@ -40,3 +40,17 @@ class Neo4jSecretSuite extends munit.FunSuite:
     assertEquals(s.redact("connection refused"), "connection refused")
     assert(!s.toString.contains("s3cret"))
   }
+
+  test("a file that is there but cannot be read says so, rather than that it is missing") {
+    val d = dir("uri" -> "bolt://n:7687", "username" -> "u", "password" -> "p")
+    val p = d.resolve("password")
+    Files.setPosixFilePermissions(p, java.util.Set.of())
+    try
+      val result = Neo4jSecret.read(d)
+      assert(result.left.exists(_.startsWith("cannot read 'password'")), result.toString)
+    finally
+      Files.setPosixFilePermissions(
+        p,
+        java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")
+      ): Unit
+  }

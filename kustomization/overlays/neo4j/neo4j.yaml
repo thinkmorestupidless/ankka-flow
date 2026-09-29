@@ -46,6 +46,9 @@ spec:
       labels:
         app.kubernetes.io/name: neo4j
     spec:
+      # The Service named neo4j would inject NEO4J_PORT_* variables, which the image reads as
+      # settings and refuses; no service links.
+      enableServiceLinks: false
       containers:
         - name: neo4j
           image: neo4j:5.26-community

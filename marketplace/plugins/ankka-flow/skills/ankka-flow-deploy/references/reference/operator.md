@@ -69,8 +69,8 @@ backoff. A reset waiting for its targets' pods to go is looked at again every 5 
 
 ## One reconcile
 
-Rendering is pure: from the resource, the Kafka cluster Secrets, the observed Deployments, pods and
-topics, it produces a list of actions, which two executors carry out, one for Kubernetes and one for
+Rendering is pure: from the resource, the Kafka cluster Secrets, the Secrets built-in streamlets name
+(their keys and `resourceVersion`, never their values), the observed Deployments, pods and topics, it produces a list of actions, which two executors carry out, one for Kubernetes and one for
 Kafka. In order:
 
 1. **Refusals.** The resource is refused, its phase set to `Failed` with every problem in `detail`, one
@@ -82,7 +82,11 @@ Kafka. In order:
     - a managed topic has no `partitions` or no `replicas` after resolution;
     - a streamlet has no descriptor, or its descriptor does not parse or fails validation;
     - a declared inlet is not bound, or a binding names a port the descriptor does not declare;
-    - a port names a topic id the resource does not declare.
+    - a port names a topic id the resource does not declare;
+    - a built-in streamlet has an image, names a built-in this operator does not know, names no Secret
+      in its `secret` parameter, or names a Secret that does not exist in the pipeline's namespace,
+      cannot be read, or lacks `uri`, `username` or `password`. The messages are listed on
+      [Neo4j merge sink](neo4j-merge-sink.md#the-connection-secret).
 2. **Topics.** Each managed topic that does not exist is created with its partitions, replication and
    `topicConfig` (`TopicCreated`). An existing managed topic is never altered: other partitions or
    replication is `TopicDiffers`, a differing `topicConfig` entry is `TopicSettingsIgnored`. An
@@ -90,7 +94,9 @@ Kafka. In order:
    before any Deployment.
 3. **Per pipeline**, the ServiceAccount, Role and RoleBinding `flow-<pipeline>`.
 4. **Per streamlet**, the Secret and the Deployment `flow-<pipeline>-<streamlet>`, with `StreamletRolled`
-   when the pod template's image or configuration hash changed. A labelled Deployment the spec no longer
+   when the pod template's image or configuration hash changed. A built-in streamlet's Deployment has
+   only the sidecar container, and its stage's Secret mounted read-only at `/etc/flow/neo4j`; that
+   Secret's `resourceVersion` is part of the configuration hash. A labelled Deployment the spec no longer
    names is deleted with its Secret (`StreamletRemoved`).
 5. **A pending reset request**, when the request annotation's id differs from the done annotation's.
    While any target has `replicas` other than 0 or pods left, it records `ResetRefused` and waits. A

@@ -86,8 +86,9 @@ The ones that bite:
   paths; `docs check` refuses both. `specs/` and `notes/` are records, not pages.
 - **Samples are included from tested code** between `# docs:start name` and `# docs:end name`
   markers, named by `<!-- include: path#name -->` before the block (no `#name` includes the whole
-  file); `just docs-sync` copies them and `docs check` fails on drift. Markers live in the cart router
-  sample, never in `protocol/` (the SDKs copy it byte for byte).
+  file); `just docs-sync` copies them and `docs check` fails on drift. Markers live in the three
+  samples (`cart-router`, `checkout-feed`, `checkout-graph`), never in `protocol/` (the SDKs copy it
+  byte for byte).
 - **The RPC table on `reference/protocol.md` is generated** from `protocol/src/main/protobuf`.
 - **A new page goes in `mkdocs.yml`'s `nav` and in a skill's `pages:` list**, or `docs check` fails.
 - **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and protocol

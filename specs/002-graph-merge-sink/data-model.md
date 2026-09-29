@@ -96,7 +96,7 @@ equal its own built-in (`DescriptorValidation.compare`), else exit 1.
 | `password` | yes | |
 | `database` | no | default `neo4j` |
 
-**In the pod**: mounted read-only at `/etc/flow/neo4j` (`defaultMode: 0400`) into the sidecar
+**In the pod**: mounted read-only at `/etc/flow/neo4j` (`defaultMode: 0440`) into the sidecar
 container, one file per key. **On a laptop**: a directory of the same four files.
 
 **`streamlet.conf`** for a built-in streamlet, rendered by the operator or written by hand:

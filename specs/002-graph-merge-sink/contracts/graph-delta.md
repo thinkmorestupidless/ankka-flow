@@ -58,11 +58,14 @@ stalls, the sink's log names the offset and the problem, and nothing is skipped
 | check | on failure |
 |---|---|
 | the value parses as JSON and is an object | `offset N: not a JSON object` |
+| `kind` is present | `offset N: kind missing` |
 | `kind` is `node`, `edge` or `tombstone` | `offset N: unknown kind 'x'` |
 | `id` is a non-empty string | `offset N: id missing or empty` |
-| `version` is a JSON integer ≥ 0 that fits 64 bits | `offset N: version is not a non-negative integer` |
+| `version` is a whole number ≥ 0 that fits 64 bits (`1e3` is 1000) | `offset N: version is not a non-negative integer` |
 | node: `labels` is an array of identifiers (absent ⇒ empty) | `offset N: labels must be an array of identifiers` |
 | edge: `type` is an identifier; `from` and `to` non-empty strings | `offset N: edge needs type, from and to` |
-| tombstone: `element` is `node` or `edge`; an edge tombstone has `type`, `from`, `to` | `offset N: tombstone needs element …` |
-| `properties` absent, or an object whose values are scalars or homogeneous non-empty arrays of scalars, keys not reserved | `offset N: property 'p' is not a scalar or array of scalars` / `… is reserved` |
+| tombstone: `element` is `node` or `edge` | `offset N: tombstone needs element 'node' or 'edge'` |
+| an edge tombstone has `type`, `from`, `to` | `offset N: tombstone of an edge needs type, from and to` |
+| `properties` absent or an object | `offset N: properties must be an object` |
+| `properties`' values are scalars or homogeneous non-empty arrays of scalars, keys not reserved | `offset N: property 'p' is not a scalar or array of scalars` / `… is reserved` |
 | unknown top-level fields | ignored (forward compatibility within `v1`) |

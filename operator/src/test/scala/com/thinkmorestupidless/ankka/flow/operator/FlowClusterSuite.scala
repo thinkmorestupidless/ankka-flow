@@ -35,6 +35,9 @@ class FlowClusterSuite extends munit.FunSuite:
   private val sidecarImage  = s"ankka-flow-sidecar:$tag"
   private val sampleImage   = s"sample-cart-router:$tag"
   private val NodePort      = 30094
+  private val Neo4jImage    = sys.props.getOrElse("flow.neo4j.image", "neo4j:5.26-community")
+  private val BoltNodePort  = 30687
+  private val Neo4jPassword = "flow-cluster-password"
   private val Namespace     = "shop"
 
   private var k3s: K3sContainer        = scala.compiletime.uninitialized
@@ -231,9 +234,10 @@ class FlowClusterSuite extends munit.FunSuite:
     if !munitIgnore then
       k3s = new K3sContainer(DockerImageName.parse(K3sImage))
       k3s.addExposedPort(NodePort)
+      k3s.addExposedPort(BoltNodePort)
       k3s.start()
       external = s"localhost:${k3s.getMappedPort(NodePort)}"
-      Seq(KafkaImage, operatorImage, sidecarImage, sampleImage).foreach(
+      Seq(KafkaImage, operatorImage, sidecarImage, sampleImage, Neo4jImage).foreach(
         ClusterImages.importInto(k3s, _)
       )
       client = new KubernetesClientBuilder()
@@ -507,4 +511,197 @@ class FlowClusterSuite extends munit.FunSuite:
       )
       assert(metrics.contains("ankka_flow_sidecar_stalled_seconds"), "no sidecar stall series")
     finally forward.close()
+  }
+
+  // ── feature 002: a built-in streamlet ────────────────────────────────────────────────────
+
+  private def neo4jManifest: String =
+    s"""apiVersion: v1
+       |kind: Namespace
+       |metadata: { name: neo4j }
+       |---
+       |apiVersion: v1
+       |kind: Service
+       |metadata: { name: neo4j, namespace: neo4j }
+       |spec:
+       |  type: NodePort
+       |  selector: { app: neo4j }
+       |  ports: [ { name: bolt, port: 7687, targetPort: 7687, nodePort: $BoltNodePort } ]
+       |---
+       |apiVersion: apps/v1
+       |kind: Deployment
+       |metadata: { name: neo4j, namespace: neo4j }
+       |spec:
+       |  replicas: 1
+       |  selector: { matchLabels: { app: neo4j } }
+       |  template:
+       |    metadata: { labels: { app: neo4j } }
+       |    spec:
+       |      # A Service named neo4j injects NEO4J_PORT_* variables, which the image reads as settings.
+       |      enableServiceLinks: false
+       |      containers:
+       |        - name: neo4j
+       |          image: $Neo4jImage
+       |          imagePullPolicy: IfNotPresent
+       |          env: [ { name: NEO4J_AUTH, value: "neo4j/$Neo4jPassword" } ]
+       |          readinessProbe: { tcpSocket: { port: 7687 }, periodSeconds: 3 }
+       |""".stripMargin
+
+  private def neo4jSecret: String =
+    s"""apiVersion: v1
+       |kind: Secret
+       |metadata: { name: neo4j-test, namespace: $Namespace }
+       |stringData:
+       |  uri: "bolt://neo4j.neo4j.svc:7687"
+       |  username: neo4j
+       |  password: "$Neo4jPassword"
+       |""".stripMargin
+
+  private def graphSpec(version: String): AnkkaFlowSpec =
+    AnkkaFlowSpec(
+      pipeline = "graphs",
+      version = version,
+      protocolVersion = "1.0",
+      streamlets = List(
+        StreamletSpec(
+          name = "graph",
+          replicas = 1,
+          config = Map(
+            "secret"              -> mapper.readTree("\"neo4j-test\""),
+            "transaction-timeout" -> mapper.readTree("\"30s\"")
+          ),
+          inlets = Map("in" -> "graph-deltas"),
+          descriptor = Fixtures.neo4jMergeSink,
+          builtin = true
+        )
+      ),
+      topics = List(
+        TopicSpec(
+          id = "graph-deltas",
+          name = "shop.graph-deltas",
+          managed = false,
+          bootstrapServers = Some("kafka.kafka.svc:9092")
+        )
+      )
+    )
+
+  private def graphStatus: Option[AnkkaFlowStatus] =
+    Option(flows.withName("graphs").get()).flatMap(r => Option(r.getStatus))
+
+  test("a built-in streamlet: one container, the Secret mounted, Ready, and a delta in the graph") {
+    load(neo4jManifest)
+    load(neo4jSecret)
+    def neo4jPods =
+      client.pods.inNamespace("neo4j").withLabel("app", "neo4j").list().getItems.asScala
+    try
+      eventually(5.minutes, "Neo4j to be ready")(
+        assert(
+          neo4jPods.exists(p =>
+            Option(p.getStatus.getConditions)
+              .exists(_.asScala.exists(c => c.getType == "Ready" && c.getStatus == "True"))
+          )
+        )
+      )
+    catch
+      case e: AssertionError =>
+        val described = neo4jPods
+          .map { p =>
+            val log = Try(
+              client.pods
+                .inNamespace("neo4j")
+                .withName(p.getMetadata.getName)
+                .tailingLines(30)
+                .getLog
+            )
+              .getOrElse("(no log)")
+            s"${p.getMetadata.getName}: ${p.getStatus.getPhase} ${p.getStatus.getContainerStatuses}\n$log"
+          }
+          .mkString("\n---\n")
+        throw new AssertionError(s"${e.getMessage}\nNeo4j pods:\n$described", e)
+    admin(
+      _.createTopics(java.util.List.of(new NewTopic("shop.graph-deltas", 1, 1.toShort))).all().get()
+    )
+    client
+      .resource(AnkkaFlow(Namespace, "graphs", graphSpec("test")))
+      .fieldManager("test")
+      .forceConflicts()
+      .serverSideApply()
+
+    try
+      eventually(6.minutes, s"the graph pipeline to be Ready (status: $graphStatus)")(
+        assertEquals(graphStatus.map(_.phase), Some(AnkkaFlowStatus.Ready))
+      )
+    catch
+      case e: AssertionError =>
+        val logs = client.pods
+          .inNamespace(Namespace)
+          .withLabel(Labels.StreamletKey, "graph")
+          .list()
+          .getItems
+          .asScala
+          .map(p =>
+            Try(
+              client.pods
+                .inNamespace(Namespace)
+                .withName(p.getMetadata.getName)
+                .inContainer("sidecar")
+                .tailingLines(40)
+                .getLog
+            )
+              .getOrElse("(no log)")
+          )
+          .mkString("\n---\n")
+        throw new AssertionError(s"${e.getMessage}\nthe sink's sidecar said:\n$logs", e)
+    val pod = client.pods
+      .inNamespace(Namespace)
+      .withLabel(Labels.StreamletKey, "graph")
+      .list()
+      .getItems
+      .asScala
+      .head
+    assertEquals(pod.getSpec.getContainers.asScala.map(_.getName).toList, List("sidecar"))
+    val sidecar = pod.getSpec.getContainers.get(0)
+    assert(
+      sidecar.getVolumeMounts.asScala.exists(m =>
+        m.getMountPath == "/etc/flow/neo4j" && m.getReadOnly
+      ),
+      sidecar.getVolumeMounts.toString
+    )
+    assert(!sidecar.getEnv.asScala.exists(_.getName == "FLOW_PROCESS_ADDRESS"))
+
+    produce(
+      "shop.graph-deltas",
+      Seq(
+        "cart:k3s" -> """{"kind":"node","id":"cart:k3s","version":1,"labels":["Cart"],"properties":{"cartId":"k3s"}}"""
+      )
+    )
+    val bolt = s"bolt://localhost:${k3s.getMappedPort(BoltNodePort)}"
+    val driver = org.neo4j.driver.GraphDatabase
+      .driver(bolt, org.neo4j.driver.AuthTokens.basic("neo4j", Neo4jPassword))
+    try
+      eventually(2.minutes, "the delta in Neo4j") {
+        val session = driver.session()
+        try
+          val found = session
+            .run("MATCH (c:Cart {id: 'cart:k3s'}) RETURN c.cartId AS id")
+            .list()
+            .asScala
+            .map(_.get("id").asString)
+          assertEquals(found.toList, List("k3s"))
+        finally session.close()
+      }
+    finally driver.close()
+  }
+
+  test("a built-in streamlet whose Secret is gone is refused") {
+    client.secrets.inNamespace(Namespace).withName("neo4j-test").delete()
+    client
+      .resource(AnkkaFlow(Namespace, "graphs", graphSpec("test-2")))
+      .fieldManager("test")
+      .forceConflicts()
+      .serverSideApply()
+    eventually(2.minutes, s"the refusal (status: $graphStatus)") {
+      assertEquals(graphStatus.map(_.phase), Some(AnkkaFlowStatus.Failed))
+      assert(graphStatus.exists(_.detail.contains("neo4j-test")), graphStatus.toString)
+    }
   }
