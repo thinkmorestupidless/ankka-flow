@@ -15,8 +15,18 @@ final case class Observed(
     /** Problems reading cluster Secrets, reported as refusals if a topic needs that cluster. */
     clusterProblems: Map[String, String] = Map.empty,
     /** Kafka topic name to what Kafka says about it; absent when not yet described. */
-    topics: Map[String, TopicState] = Map.empty
+    topics: Map[String, TopicState] = Map.empty,
+    /**
+     * The Secrets built-in streamlets name in their `secret` parameter, by name, from the
+     * resource's namespace; absent when the Secret does not exist.
+     */
+    secrets: Map[String, SecretState] = Map.empty,
+    /** Problems reading those Secrets, by Secret name, reported as refusals. */
+    secretProblems: Map[String, String] = Map.empty
 )
+
+/** What rendering may know of a stage's Secret: its version and its keys, never its values. */
+final case class SecretState(resourceVersion: String, keys: Set[String])
 
 final case class DeploymentState(
     configHash: String,

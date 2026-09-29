@@ -11,6 +11,30 @@ object CliFixtures:
   val cart: Path =
     Paths.get(getClass.getResource("/blueprints/cart/blueprint.conf").toURI).getParent
 
+  val repoRoot: Path =
+    Paths.get(sys.props.getOrElse("flow.repo.root", ".")).toAbsolutePath.normalize
+
+  /** A pipeline with a built-in streamlet: a mapper in front of the Neo4j merge sink. */
+  val graph: Path =
+    Paths.get(getClass.getResource("/blueprints/graph/blueprint.conf").toURI).getParent
+
+  /** A copy of the graph pipeline in a temporary directory, with edits applied. */
+  def graphVariant(
+      blueprint: String => String = identity,
+      mapper: String => String = identity
+  ): Path =
+    val dir = Files.createTempDirectory("graph")
+    Files.createDirectories(dir.resolve("descriptors"))
+    Files.writeString(
+      dir.resolve("blueprint.conf"),
+      blueprint(Files.readString(graph.resolve("blueprint.conf")))
+    )
+    Files.writeString(
+      dir.resolve("descriptors/mapper.json"),
+      mapper(Files.readString(graph.resolve("descriptors/mapper.json")))
+    )
+    dir
+
   final case class Result(code: Int, out: String, err: String):
     def lines: Vector[String] = err.linesIterator.toVector.filter(_.nonEmpty)
 

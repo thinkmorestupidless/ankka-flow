@@ -8,7 +8,11 @@ import scala.util.Try
 
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.thinkmorestupidless.ankka.flow.blueprint.{BlueprintProblem, MissingImage}
+import com.thinkmorestupidless.ankka.flow.blueprint.{
+  BlueprintProblem,
+  BuiltinHasImage,
+  MissingImage
+}
 import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, OnDelete}
 import com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion
 
@@ -38,7 +42,12 @@ object Main:
   private val inputs: Opts[Verify.Inputs] =
     (
       Opts.argument[Path]("blueprint.conf"),
-      Opts.option[Path]("descriptors", "Directory of descriptor files (*.json)."),
+      Opts
+        .option[Path](
+          "descriptors",
+          "Directory of descriptor files (*.json); optional when every streamlet is built in."
+        )
+        .orNone,
       Opts.options[Path]("conf", "Deploy-time configuration (HOCON); later files win.").orEmpty
     ).mapN(Verify.Inputs.apply)
 
@@ -132,10 +141,14 @@ object Main:
     val verified = Verify.run(g.in)
     val images   = Images.load(g.images, g.image)
     val missing = verified.toOption.toVector.flatMap { v =>
-      val known = images.getOrElse(Map.empty)
-      v.blueprint.streamlets
+      val known              = images.getOrElse(Map.empty)
+      val (builtin, process) = v.blueprint.streamlets.partition(_.descriptor.builtin)
+      process
         .filterNot(s => known.contains(s.name))
-        .map(s => BlueprintProblem.toMessage(MissingImage(s.name)))
+        .map(s => BlueprintProblem.toMessage(MissingImage(s.name))) ++
+        builtin
+          .filter(s => known.contains(s.name))
+          .map(s => BlueprintProblem.toMessage(BuiltinHasImage(s.name)))
     }
     val pipeline = g.pipeline
       .orElse(verified.toOption.flatMap(_.blueprint.name))

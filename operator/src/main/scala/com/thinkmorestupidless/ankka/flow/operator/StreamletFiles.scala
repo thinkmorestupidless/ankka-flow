@@ -10,13 +10,23 @@ import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json}
  * The two files the sidecar reads (contracts/sidecar.md): the deployed descriptor, and
  * `streamlet.conf` with every port's topic, group, client id and resolved connection. Their hash is
  * the pod template's config-hash annotation, so a change to either rolls the streamlet and nothing
- * else does (FR-024a).
+ * else does (FR-024a). For a built-in streamlet the hash also covers the version of the Secret its
+ * stage reads, so a rotated credential rolls it; the Secret's values are never in either file.
  */
-final case class StreamletFiles(descriptorJson: String, streamletConf: String):
+final case class StreamletFiles(
+    descriptorJson: String,
+    streamletConf: String,
+    secretVersion: Option[String] = None
+):
   def hash: String =
     MessageDigest
       .getInstance("SHA-256")
-      .digest((descriptorJson + "\n---\n" + streamletConf).getBytes(UTF_8))
+      .digest(
+        (descriptorJson + "\n---\n" + streamletConf + secretVersion.fold("")(v =>
+          s"\n---\nsecret:$v"
+        ))
+          .getBytes(UTF_8)
+      )
       .map(b => f"$b%02x")
       .mkString
 
@@ -25,7 +35,8 @@ object StreamletFiles:
   def render(
       pipeline: String,
       s: StreamletSpec,
-      topics: Map[String, ResolvedTopic]
+      topics: Map[String, ResolvedTopic],
+      secretVersion: Option[String] = None
   ): Either[String, StreamletFiles] =
     for
       streamlet <- Json
@@ -70,6 +81,14 @@ object StreamletFiles:
            |      producer-config ${block(t.producerConfig)}
            |    }""".stripMargin
       }
+      // A built-in streamlet's stage reads its credentials from the mounted Secret, never from here.
+      val stage =
+        if !s.builtin then ""
+        else s"""
+             |  stage {
+             |    name = ${q(streamlet.name)}
+             |    neo4j { credentials-dir = ${q(BuiltinStages.CredentialsDir)} }
+             |  }""".stripMargin
       val conf =
         s"""# Rendered by the ankka-flow operator for ${q(s.name)} of pipeline ${q(
             pipeline
@@ -77,7 +96,7 @@ object StreamletFiles:
            |flow {
            |  pipeline = ${q(pipeline)}
            |  streamlet = ${q(s.name)}
-           |  config = $config
+           |  config = $config$stage
            |  inlets {
            |${in.mkString("\n")}
            |  }
@@ -86,7 +105,7 @@ object StreamletFiles:
            |  }
            |}
            |""".stripMargin
-      StreamletFiles(DescriptorJson.write(spec), conf)
+      StreamletFiles(DescriptorJson.write(spec), conf, secretVersion)
 
   private def ports(
       streamlet: String,

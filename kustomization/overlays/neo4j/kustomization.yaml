@@ -1,0 +1,8 @@
+# A development Neo4j for the graph merge sink, and the Secret a pipeline in `shop` names to reach
+# it. Separate from `overlays/local` so `just up` stays the CRD, the operator and a Kafka; install
+# this with `just neo4j-up` when a pipeline has a built-in Neo4j merge sink. Never for production:
+# the password is in this file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - neo4j.yaml

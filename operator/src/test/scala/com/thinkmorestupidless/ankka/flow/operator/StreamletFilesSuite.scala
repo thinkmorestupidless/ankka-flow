@@ -42,3 +42,40 @@ class StreamletFilesSuite extends munit.FunSuite:
     assertEquals(StreamletFiles.render("cart", router, topics).toOption.get.hash, files.hash)
     assertNotEquals(files.copy(streamletConf = files.streamletConf + " ").hash, files.hash)
   }
+
+  // ── Built-in streamlets (feature 002) ─────────────────────────────────────────────────────────
+
+  private val graphRendered = Rendering.render(graph(), settings, graphObserved, "t")
+  private val graphTopics   = graphRendered.resolved.map(t => t.id -> t).toMap
+  private val sink          = graph().getSpec.streamlets.find(_.builtin).get
+  private val mapperSpec    = graph().getSpec.streamlets.find(!_.builtin).get
+
+  test("a built-in streamlet's streamlet.conf carries the stage block and still parses") {
+    val f = StreamletFiles.render("checkouts", sink, graphTopics, Some("41")).toOption.get
+    assert(
+      f.streamletConf.contains(
+        """  stage {
+          |    name = "neo4j-merge-sink"
+          |    neo4j { credentials-dir = "/etc/flow/neo4j" }
+          |  }""".stripMargin
+      ),
+      f.streamletConf
+    )
+    val c = StreamletConfig.parseString(f.streamletConf).fold(e => fail(e.mkString), identity)
+    assertEquals(c.inlets("in").topic, "checkouts.graph-deltas")
+    assert(c.outlets.isEmpty)
+    assert(!f.streamletConf.contains("password"))
+  }
+
+  test("a streamlet with a process has no stage block") {
+    val f = StreamletFiles.render("checkouts", mapperSpec, graphTopics).toOption.get
+    assert(!f.streamletConf.contains("stage"), f.streamletConf)
+  }
+
+  test("the Secret's version is in the hash; its absence and a new version both change it") {
+    def hash(v: Option[String]) =
+      StreamletFiles.render("checkouts", sink, graphTopics, v).toOption.get.hash
+    assertNotEquals(hash(Some("41")), hash(Some("42")))
+    assertNotEquals(hash(None), hash(Some("41")))
+    assertEquals(hash(Some("41")), hash(Some("41")))
+  }
