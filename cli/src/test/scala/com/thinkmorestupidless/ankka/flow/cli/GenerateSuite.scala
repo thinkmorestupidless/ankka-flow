@@ -72,6 +72,53 @@ class GenerateSuite extends munit.FunSuite:
     assertEquals(topics("review-carts").partitions, None, "left for the cluster's default")
   }
 
+  private def generateGraph(extra: String*) =
+    flow(
+      Seq(
+        "generate",
+        graph.resolve("blueprint.conf").toString,
+        "--descriptors",
+        graph.resolve("descriptors").toString,
+        "--images",
+        graph.resolve("images.conf").toString,
+        "--conf",
+        graph.resolve("overrides.conf").toString,
+        "--version",
+        "0.1.0",
+        "-n",
+        "shop"
+      ) ++ extra*
+    )
+
+  test("a built-in streamlet needs no image and is recorded as built in") {
+    val r = generateGraph()
+    assertEquals(r.code, 0, r.err)
+    val spec   = FlowSerialization.fromYaml(r.out).getSpec
+    val sink   = spec.streamlets.find(_.name == "graph").get
+    val mapper = spec.streamlets.find(_.name == "mapper").get
+    assertEquals((sink.builtin, sink.image), (true, ""))
+    assertEquals((mapper.builtin, mapper.image), (false, "ghcr.io/example/checkout-graph:0.1.0"))
+    assertEquals(sink.config("secret").asText, "neo4j-shop")
+    assertEquals(sink.config("transaction-timeout").asText, "30s")
+    assertEquals(sink.inlets, Map("in" -> "graph-deltas"))
+    val fixture = DescriptorJson
+      .read(Files.readString(repoRoot.resolve("protocol/fixtures/builtin/neo4j-merge-sink.json")))
+      .toOption
+      .get
+    val embedded = DescriptorJson
+      .streamletFromJson(Json.parse(sink.descriptor.toString).toOption.get)
+      .toOption
+      .get
+    assertEquals(embedded, fixture.getStreamlet)
+    assert(!r.out.contains("sidecar"), r.out)
+  }
+
+  test("an image given for a built-in streamlet is refused") {
+    val r = generateGraph("--image", "graph=registry/neo4j-sink:1")
+    assertEquals(r.code, 1)
+    assert(r.err.contains("Streamlet 'graph' is built in and takes no image."), r.err)
+  }
+
   test("nothing in the resource names the sidecar image (FR-020)") {
     val r = generate()
     assertEquals(r.code, 0, r.err)

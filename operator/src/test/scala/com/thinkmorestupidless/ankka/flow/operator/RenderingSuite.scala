@@ -302,3 +302,128 @@ class RenderingSuite extends munit.FunSuite:
     )
     assertEquals(status(render(cart(), short)).phase, AnkkaFlowStatus.Degraded)
   }
+
+  // ── Built-in streamlets (feature 002) ─────────────────────────────────────────────────────────
+
+  private def sinkOf(r: Rendering.Rendered): Deployment =
+    deployments(r).find(_.getMetadata.getName == "flow-checkouts-graph").get
+
+  private def refusals(r: Rendering.Rendered): Vector[String] =
+    events(r).filter(_.reason == "Refused").map(_.note)
+
+  test(
+    "a built-in streamlet's pod has only the sidecar, with the Secret mounted and no process address"
+  ) {
+    val r   = render(graph(), graphObserved)
+    val pod = sinkOf(r).getSpec.getTemplate.getSpec
+    assertEquals(pod.getContainers.asScala.map(_.getName).toList, List("sidecar"))
+    val sidecar = pod.getContainers.get(0)
+    val env     = sidecar.getEnv.asScala.map(_.getName).toSet
+    assert(!env.contains("FLOW_PROCESS_ADDRESS"), env.toString)
+    assert(env.contains("FLOW_CONFIG_DIR") && env.contains("FLOW_POD_NAME"), env.toString)
+    val mounts = sidecar.getVolumeMounts.asScala.map(m => m.getName -> m.getMountPath).toMap
+    assertEquals(mounts.keySet, Set("config", "api-token", "neo4j"))
+    assertEquals(mounts("neo4j"), "/etc/flow/neo4j")
+    assert(sidecar.getVolumeMounts.asScala.forall(_.getReadOnly))
+    val volume = pod.getVolumes.asScala.find(_.getName == "neo4j").get
+    assertEquals(volume.getSecret.getSecretName, "neo4j-shop")
+    assertEquals(volume.getSecret.getDefaultMode.intValue, 256)
+    assert(sidecar.getReadinessProbe != null && sidecar.getLivenessProbe != null)
+  }
+
+  test("the mapper beside a built-in keeps its two containers and no stage Secret") {
+    val r      = render(graph(), graphObserved)
+    val mapper = deployments(r).find(_.getMetadata.getName == "flow-checkouts-mapper").get
+    val pod    = mapper.getSpec.getTemplate.getSpec
+    assertEquals(pod.getContainers.asScala.map(_.getName).toList, List("sidecar", "process"))
+    assert(!pod.getVolumes.asScala.exists(_.getName == "neo4j"))
+    assert(!events(r).exists(_.reason == "Refused"), events(r).toString)
+  }
+
+  test("the stage's config names the mounted directory and never the password") {
+    val r = render(graph(), graphObserved)
+    val conf = r.actions.collect {
+      case Action.EnsureSecret(s) if s.getMetadata.getName == "flow-checkouts-graph" =>
+        s.getStringData.get("streamlet.conf")
+    }.head
+    assert(conf.contains("stage {"), conf)
+    assert(conf.contains("name = \"neo4j-merge-sink\""), conf)
+    assert(conf.contains("credentials-dir = \"/etc/flow/neo4j\""), conf)
+    assert(!conf.contains("password"), conf)
+  }
+
+  test("a missing Secret is refused with nothing applied") {
+    val r = render(graph(), observed)
+    assertEquals(r.actions.size, 2)
+    assertEquals(
+      refusals(r),
+      Vector(
+        "streamlet 'graph' names Secret 'neo4j-shop', which does not exist in namespace 'shop'"
+      )
+    )
+    assertEquals(status(r).phase, AnkkaFlowStatus.Failed)
+  }
+
+  test("a Secret without a required key is refused, one message per missing key") {
+    val r = render(
+      graph(),
+      observed.copy(secrets = Map("neo4j-shop" -> SecretState("1", Set("uri"))))
+    )
+    assertEquals(r.actions.size, 3)
+    assertEquals(
+      refusals(r),
+      Vector(
+        "streamlet 'graph': Secret 'neo4j-shop' has no key 'username'",
+        "streamlet 'graph': Secret 'neo4j-shop' has no key 'password'"
+      )
+    )
+  }
+
+  test("an image on a built-in streamlet, no secret parameter, or an unknown built-in is refused") {
+    assertEquals(
+      refusals(render(graph(sinkImage = "registry/x:1"), graphObserved)),
+      Vector("streamlet 'graph' is built in and takes no image")
+    )
+    assertEquals(
+      refusals(render(graph(sinkConfig = Map.empty), graphObserved)),
+      Vector("streamlet 'graph' is built in and names no Secret in its 'secret' parameter")
+    )
+    val renamed = neo4jMergeSink.deepCopy[com.fasterxml.jackson.databind.node.ObjectNode]()
+    renamed.put("name", "graph-writer")
+    assertEquals(
+      refusals(render(graph(sinkDescriptor = renamed), graphObserved)),
+      Vector("streamlet 'graph' names built-in 'graph-writer', which this operator does not know")
+    )
+  }
+
+  test("a new version of the stage's Secret changes only the sink's config hash") {
+    val before = render(graph(), graphObserved).hashes
+    val after = render(
+      graph(),
+      observed.copy(secrets = Map("neo4j-shop" -> neo4jSecret.copy(resourceVersion = "42")))
+    ).hashes
+    assertNotEquals(before("graph"), after("graph"))
+    assertEquals(before("mapper"), after("mapper"))
+  }
+
+  test("a built-in streamlet settles with an empty image on both sides") {
+    val hashes = render(graph(), graphObserved).hashes
+    val settled = graphObserved.copy(
+      deployments = Map(
+        "mapper" -> DeploymentState(
+          hashes("mapper"),
+          "ghcr.io/example/checkout-graph:0.1.0",
+          1,
+          1,
+          1,
+          2,
+          2
+        ),
+        "graph" -> DeploymentState(hashes("graph"), "", 1, 1, 1, 2, 2)
+      ),
+      topics = Map("cart-checkouts" -> TopicState.Exists(3, 1, Map.empty))
+    )
+    val r = render(graph(), settled)
+    assertEquals(status(r).phase, AnkkaFlowStatus.Ready)
+    assert(!events(r).exists(_.reason == "StreamletRolled"), events(r).toString)
+  }

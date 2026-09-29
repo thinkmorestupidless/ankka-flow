@@ -186,6 +186,68 @@ class VerifySuite extends munit.FunSuite:
     assertEquals(verify(dir).code, 0)
   }
 
+  test("a built-in streamlet verifies with no descriptor file for it") {
+    val r = verify(graph, "--conf", graph.resolve("overrides.conf").toString)
+    assertEquals(r.code, 0, r.err)
+    assertEquals(r.out.trim, "verified: 2 streamlets, 2 topics")
+  }
+
+  test("the mapper's descriptor is canonical and valid") {
+    val text = Files.readString(graph.resolve("descriptors/mapper.json"))
+    val spec = DescriptorJson.read(text).toOption.get
+    assertEquals(DescriptorJson.write(spec), text)
+    assertEquals(
+      spec.getStreamlet.outlets.map(_.getContract.fingerprint),
+      Seq(Fingerprint.fingerprint("ankka.graph-delta.v1"))
+    )
+  }
+
+  test("an outlet of another contract connected to the built-in's inlet is refused naming both") {
+    val dir =
+      graphVariant(mapper =
+        _.replace("ankka.graph-delta.v1", "other.v1").replace(
+          Fingerprint.fingerprint("ankka.graph-delta.v1"),
+          Fingerprint.fingerprint("other.v1")
+        )
+      )
+    refused(
+      verify(dir, "--conf", graph.resolve("overrides.conf").toString),
+      "mapper.deltas",
+      "graph.in",
+      "other.v1",
+      "ankka.graph-delta.v1"
+    )
+  }
+
+  test("an unknown built-in is refused listing the built-ins that exist") {
+    val dir = graphVariant(blueprint = _.replace("builtin/neo4j-merge-sink", "builtin/nope"))
+    refused(verify(dir), "builtin/nope", "the built-ins are: neo4j-merge-sink")
+  }
+
+  test("a blueprint of built-ins alone verifies with no --descriptors") {
+    val dir = Files.createTempDirectory("builtin-only")
+    Files.writeString(
+      dir.resolve("blueprint.conf"),
+      """blueprint {
+        |  streamlets { graph = builtin/neo4j-merge-sink }
+        |  topics {
+        |    deltas { managed = false, bootstrap.servers = "kafka:9092", consumers = [graph.in] }
+        |  }
+        |}
+        |""".stripMargin
+    )
+    val conf = Files.writeString(dir.resolve("o.conf"), "flow.streamlets.graph.config.secret = s")
+    val r    = flow("verify", dir.resolve("blueprint.conf").toString, "--conf", conf.toString)
+    assertEquals(r.code, 0, r.err)
+  }
+
+  test("the built-in's parameters are checked like any streamlet's") {
+    refused(verify(graph), "streamlet 'graph': parameter 'secret' has no default and no value")
+    val conf = Files.createTempFile("graph", ".conf")
+    Files.writeString(conf, "flow.streamlets.graph.config { secret = s, batch-size = 3 }")
+    refused(verify(graph, "--conf", conf.toString), "parameter 'batch-size' is not declared")
+  }
+
   test("usage errors exit 2") {
     assertEquals(flow("verify").code, 2)
     assertEquals(flow("frobnicate").code, 2)

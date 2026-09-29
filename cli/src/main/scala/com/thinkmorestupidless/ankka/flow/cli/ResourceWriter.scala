@@ -33,12 +33,13 @@ object ResourceWriter:
     val streamlets = v.streamlets.toList.map { s =>
       StreamletSpec(
         name = s.name,
-        image = images(s.name),
+        image = if s.descriptor.builtin then "" else images(s.name),
         replicas = verified.replicas(s.name),
         config = verified.parameters(s.name).map((k, j) => k -> node(j)).toMap,
         inlets = portsOf(s.name, outlets = false),
         outlets = portsOf(s.name, outlets = true),
-        descriptor = node(DescriptorJson.streamletToJson(s.descriptor.proto))
+        descriptor = node(DescriptorJson.streamletToJson(s.descriptor.proto)),
+        builtin = s.descriptor.builtin
       )
     }
     val topics = v.topics.toList.map(t => topic(t, verified, pipeline))

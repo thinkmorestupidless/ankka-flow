@@ -86,12 +86,39 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
       .mapValues(_.size)
       .toMap
     val (clusters, clusterProblems) = kafkaClusters()
+    val (secrets, secretProblems)   = stageSecrets(resource)
     Observed(
       deployments = states.toMap,
       labelledStreamlets = states.map(_._1).toSet,
       pods = pods,
       clusters = clusters,
-      clusterProblems = clusterProblems
+      clusterProblems = clusterProblems,
+      secrets = secrets,
+      secretProblems = secretProblems
+    )
+
+  /**
+   * The Secret each built-in streamlet names, from the resource's own namespace (a pod mounts only
+   * its own namespace's Secrets). Only the version and the keys are kept: the values stay in the
+   * cluster and reach the sidecar as a mounted volume.
+   */
+  private def stageSecrets(resource: AnkkaFlow): (Map[String, SecretState], Map[String, String]) =
+    val namespace = resource.getMetadata.getNamespace
+    val names = resource.getSpec.streamlets
+      .filter(_.builtin)
+      .flatMap(BuiltinStages.secretName)
+      .distinct
+    val read = names.map { name =>
+      name -> Try(Option(client.secrets.inNamespace(namespace).withName(name).get())).toEither
+    }
+    (
+      read.collect { case (n, Right(Some(s))) =>
+        n -> SecretState(
+          Option(s.getMetadata.getResourceVersion).getOrElse(""),
+          decode(s).keySet
+        )
+      }.toMap,
+      read.collect { case (n, Left(e)) => n -> s"could not be read: ${e.getMessage}" }.toMap
     )
 
   private def kafkaClusters(): (Map[String, KafkaCluster], Map[String, String]) =

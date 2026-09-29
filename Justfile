@@ -70,6 +70,14 @@ down:
 render overlay="local":
     kubectl kustomize kustomization/overlays/{{overlay}}
 
+# A development Neo4j and the Secret `neo4j-local` in `shop`, for a pipeline with a Neo4j merge sink.
+neo4j-up:
+    kubectl --context kind-{{cluster}} apply -k kustomization/overlays/neo4j && kubectl --context kind-{{cluster}} -n neo4j rollout status statefulset/neo4j --timeout=180s
+
+# Removes Neo4j and its Secret, never the `shop` namespace the overlay also creates.
+neo4j-down:
+    kubectl --context kind-{{cluster}} delete namespace neo4j --ignore-not-found && kubectl --context kind-{{cluster}} -n shop delete secret neo4j-local --ignore-not-found
+
 # Check every page, then build the site, llms.txt, llms-full.txt, docs-index.json and the skills.
 docs:
     uv run --project tools/docs docs build

@@ -93,3 +93,67 @@ object Fixtures:
     resource.getMetadata.setUid("uid-1")
     resource.getMetadata.setGeneration(1L)
     resource
+
+  private def streamletOf(path: String): JsonNode =
+    mapper.readTree(Files.readString(root.resolve(path))).get("streamlet")
+
+  /** The Neo4j merge sink's descriptor, from its committed canonical JSON. */
+  val neo4jMergeSink: JsonNode = streamletOf("protocol/fixtures/builtin/neo4j-merge-sink.json")
+
+  val neo4jSecret: SecretState =
+    SecretState("41", Set("uri", "username", "password", "database"))
+
+  /** What a reconcile of the graph pipeline sees when its sink's Secret exists. */
+  val graphObserved: Observed = observed.copy(secrets = Map("neo4j-shop" -> neo4jSecret))
+
+  /** A mapper in front of the built-in Neo4j merge sink (feature 002). */
+  def graph(
+      sinkImage: String = "",
+      sinkConfig: Map[String, JsonNode] = Map(
+        "secret"              -> mapper.readTree("\"neo4j-shop\""),
+        "transaction-timeout" -> mapper.readTree("\"30s\"")
+      ),
+      sinkDescriptor: JsonNode = neo4jMergeSink
+  ): AnkkaFlow =
+    val mapperStreamlet = StreamletSpec(
+      name = "mapper",
+      image = "ghcr.io/example/checkout-graph:0.1.0",
+      inlets = Map("in" -> "cart-checkouts"),
+      outlets = Map("deltas" -> "graph-deltas"),
+      descriptor = streamletOf("cli/src/test/resources/blueprints/graph/descriptors/mapper.json")
+    )
+    val sink = StreamletSpec(
+      name = "graph",
+      image = sinkImage,
+      config = sinkConfig,
+      inlets = Map("in" -> "graph-deltas"),
+      descriptor = sinkDescriptor,
+      builtin = true
+    )
+    val resource = AnkkaFlow(
+      "shop",
+      "checkouts",
+      AnkkaFlowSpec(
+        pipeline = "checkouts",
+        version = "0.1.0",
+        protocolVersion = "1.0",
+        streamlets = List(mapperStreamlet, sink),
+        topics = List(
+          TopicSpec(
+            id = "cart-checkouts",
+            name = "cart-checkouts",
+            managed = false,
+            cluster = Some("default")
+          ),
+          TopicSpec(
+            id = "graph-deltas",
+            name = "checkouts.graph-deltas",
+            partitions = Some(3),
+            replicas = Some(1)
+          )
+        )
+      )
+    )
+    resource.getMetadata.setUid("uid-2")
+    resource.getMetadata.setGeneration(1L)
+    resource
