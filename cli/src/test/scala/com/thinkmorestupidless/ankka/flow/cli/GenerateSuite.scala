@@ -4,7 +4,7 @@ import java.nio.file.Files
 
 import scala.jdk.CollectionConverters.*
 
-import com.thinkmorestupidless.ankka.flow.crd.FlowSerialization
+import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, OnDelete}
 import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json}
 
 import CliFixtures.*
@@ -107,6 +107,19 @@ class GenerateSuite extends munit.FunSuite:
     )
     assert(
       resource.getMetadata.getLabels.asScala.contains("flow.ankka.thinkmorestupidless.com/pipeline")
+    )
+  }
+
+  test("managed topics are kept on delete unless --delete-managed-topics says otherwise") {
+    // Deleting a topic loses its data, so it is never the default: the flag is the only way to ask.
+    val kept = generate()
+    assertEquals(kept.code, 0, kept.err)
+    assertEquals(FlowSerialization.fromYaml(kept.out).getSpec.onDelete, OnDelete(OnDelete.Keep))
+    val deleted = generate("--delete-managed-topics")
+    assertEquals(deleted.code, 0, deleted.err)
+    assertEquals(
+      FlowSerialization.fromYaml(deleted.out).getSpec.onDelete,
+      OnDelete(OnDelete.Delete)
     )
   }
 

@@ -9,7 +9,7 @@ import scala.util.Try
 import cats.syntax.all.*
 import com.monovore.decline.*
 import com.thinkmorestupidless.ankka.flow.blueprint.{BlueprintProblem, MissingImage}
-import com.thinkmorestupidless.ankka.flow.crd.FlowSerialization
+import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, OnDelete}
 import com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion
 
 /**
@@ -29,7 +29,8 @@ object Main:
         pipeline: Option[String],
         version: Option[String],
         namespace: Option[String],
-        out: Option[Path]
+        out: Option[Path],
+        deleteManagedTopics: Boolean
     )
     case ResetCmd(pipeline: String, streamlets: List[String], namespace: Option[String])
     case VersionCmd
@@ -56,7 +57,13 @@ object Main:
         .orNone,
       Opts.option[String]("version", "Pipeline version (default: git describe).").orNone,
       Opts.option[String]("namespace", "Namespace for the resource.", "n").orNone,
-      Opts.option[Path]("output", "Write here instead of stdout.", "o").orNone
+      Opts.option[Path]("output", "Write here instead of stdout.", "o").orNone,
+      Opts
+        .flag(
+          "delete-managed-topics",
+          "Delete the topics the pipeline created when its resource is deleted (default: keep them)."
+        )
+        .orFalse
     ).mapN(Cmd.GenerateCmd.apply)
   )
 
@@ -143,8 +150,10 @@ object Main:
     else
       val v        = verified.toOption.get
       val version  = g.version.getOrElse(gitVersion(g.in.blueprint))
-      val resource = ResourceWriter.write(v, images.toOption.get, pipeline, version, g.namespace)
-      val yaml     = FlowSerialization.toYaml(resource)
+      val onDelete = OnDelete(if g.deleteManagedTopics then OnDelete.Delete else OnDelete.Keep)
+      val resource =
+        ResourceWriter.write(v, images.toOption.get, pipeline, version, g.namespace, onDelete)
+      val yaml = FlowSerialization.toYaml(resource)
       v.notes.foreach(err.println)
       g.out match
         case Some(p) =>

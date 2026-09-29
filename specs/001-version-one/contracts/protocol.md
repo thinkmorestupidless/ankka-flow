@@ -29,6 +29,8 @@ protocol/
 
 The process binds loopback only (FR-007). The sidecar binds no gRPC port in version one; 9011
 and `FLOW_SIDECAR_PORT` are reserved (R2).
+The sidecar sends no HTTP/2 keepalive pings, so a process keeps its gRPC library's default ping
+policy (added after quickstart tier 7 found `GOAWAY too_many_pings` on quiet streams).
 
 ## `payload.proto`
 

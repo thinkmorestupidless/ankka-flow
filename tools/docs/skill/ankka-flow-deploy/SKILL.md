@@ -37,7 +37,8 @@ the streamlet's container and the sidecar.
 2. **Deploy-time configuration is merged by the CLI.** `--conf` files override topics
    (`flow.topics.<id>`) and streamlets (`flow.streamlets.<name>`: `replicas`, `config`); `--image` or
    `--images` (`generate` only; `--image` wins for the same streamlet) name each streamlet's image.
-   `onDelete` defaults to `Keep`; nothing in the CLI sets `Delete`. The generated resource says exactly what will run.
+   Managed topics are kept when the resource is deleted unless `generate` is given
+   `--delete-managed-topics`. The generated resource says exactly what will run.
 3. **The operator adds only what only it knows.** The sidecar image comes from the operator's own
    setting (`FLOW_SIDECAR_IMAGE`), never from a pipeline; upgrading the platform upgrades every
    sidecar on its next rollout. Kafka connection settings come from the `kafka-cluster-<name>` Secret

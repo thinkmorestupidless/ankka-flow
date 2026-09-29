@@ -21,8 +21,9 @@ A managed topic needs a partition count and a replication factor from somewhere:
 deploy-time override, or the defaults of its Kafka cluster. A managed topic with neither is refused
 and nothing in the pipeline is applied.
 
-When the `AnkkaFlow` resource is deleted, its managed topics are kept. Setting
-`spec.onDelete.managedTopics: Delete` on the resource deletes them with it.
+When the `AnkkaFlow` resource is deleted, its managed topics are kept. A resource generated with
+`flow generate --delete-managed-topics` carries `spec.onDelete.managedTopics: Delete` and deletes them
+with it.
 
 ## Unmanaged topics
 

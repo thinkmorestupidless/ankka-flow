@@ -9,12 +9,15 @@ line), 2 usage error.
 ## `flow verify`
 
 ```
-flow verify <blueprint.conf> --descriptors <dir> [--images <images.conf>] [--image name=ref]... [--conf <overrides.conf>]...
+flow verify <blueprint.conf> --descriptors <dir> [--conf <overrides.conf>]...
 ```
 
 Reads every `*.json` in `--descriptors` as a descriptor (contracts/descriptor.md), validates each,
 parses the blueprint, and verifies (FR-004, FR-006). Prints `verified: <n> streamlets, <m> topics`
-on success. Refuses, listing every problem in one pass, when:
+on success. Refuses, listing every problem in one pass, when the conditions below hold. The message
+shapes are the design's; the exact wording the code writes is on `docs/reference/cli.md`, which the
+build keeps honest (for example `Inlet cart.router.in is not connected.`, `Streamlet 'sink' has no
+image.`).
 
 | problem | message shape |
 |---|---|
@@ -40,7 +43,7 @@ Unconnected outlets are printed as `note: outlet <path> is not connected` and do
 ## `flow generate`
 
 ```
-flow generate <blueprint.conf> --descriptors <dir> (--images <file> | --image name=ref...) [--conf <file>]... [--pipeline <id>] [--version <v>] [--namespace <ns>] [-o <file>]
+flow generate <blueprint.conf> --descriptors <dir> [--images <file>] [--image name=ref]... [--conf <file>]... [--pipeline <id>] [--version <v>] [--namespace <ns>] [-o <file>] [--delete-managed-topics]
 ```
 
 Everything `verify` does, then writes the `AnkkaFlow` resource (contracts/resource-and-operator.md)
@@ -48,7 +51,10 @@ to `-o` or stdout. `--pipeline` defaults to the blueprint's `blueprint.name`, or
 name; `--version` defaults to `git describe --tags --always --dirty` in the blueprint's directory,
 or `unversioned`. Deploy-time overrides from `--conf` are applied over the blueprint here (R12), so
 the emitted resource is exactly what will run except for what only the cluster knows (its Kafka
-secrets). Applying it needs nothing else (S2.5).
+secrets). Applying it needs nothing else (S2.5). `--images` and `--image` combine, and `--image`
+wins for the same streamlet. The pipeline id must be 1–40 characters of `[a-z0-9-]`, not starting or
+ending with `-`. `spec.onDelete.managedTopics` is `Keep` unless `--delete-managed-topics` is given,
+which writes `Delete`.
 
 `--conf` files are HOCON:
 
@@ -64,9 +70,9 @@ flow.streamlets.router { replicas = 3, config { review-threshold = 250 } }
 flow reset <pipeline> [--streamlet <name>]... [-n <namespace>]
 ```
 
-Needs a kubeconfig. Reads the `AnkkaFlow`, then refuses (exit 1) when a named streamlet does not
-exist or has no inlets, when any target's `replicas` is not 0 (`router is not scaled to 0; set
-spec.streamlets[router].replicas = 0 and apply`), or when a target still has pods (`router still
+Needs a kubeconfig. Refuses (exit 1) when Kubernetes cannot be reached or the pipeline's `AnkkaFlow`
+does not exist. Otherwise reads it, then refuses when a named streamlet does not
+exist or has no inlets, when any target's `replicas` is not 0 (`cannot reset offsets while streamlets are running: [router] is not scaled to 0 …`), or when a target still has pods (`router still
 has 2 pod(s)`). Otherwise patches the annotation
 `flow.ankka.thinkmorestupidless.com/reset-offsets` with `{"id":"<uuid>","streamlets":[…]}` and
 prints the id. The operator carries it out (FR-023). With no `--streamlet`, every streamlet with an
