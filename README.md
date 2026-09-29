@@ -23,6 +23,8 @@ uv run python produce.py && uv run python verify.py
 
 ## On Kubernetes
 
+![ankka-flow on Kubernetes: a developer or CI job writes an AnkkaFlow resource with flow generate and applies it. The operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka; they speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the pipeline's managed topics.](docs/assets/diagrams/platform.svg)
+
 ```bash
 just up                                          # kind, the CRD, the operator, a development Kafka
 sbt cli/stage

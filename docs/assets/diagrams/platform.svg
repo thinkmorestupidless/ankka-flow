@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" aria-labelledby="title desc">
+  <title id="title">ankka-flow on Kubernetes</title>
+  <desc id="desc">A developer or CI job writes an AnkkaFlow resource with flow generate and applies it with kubectl. The ankka-flow operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka. They speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the managed topics before it commits.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .ink { fill: #1f2328; }
+    .muted { fill: #59636e; }
+    .box { fill: #f6f8fa; stroke: #afb8c1; stroke-width: 1.2; }
+    .hot { fill: #fff4ec; stroke: #c2410c; stroke-width: 1.5; }
+    .cluster { fill: none; stroke: #59636e; stroke-width: 1.5; }
+    .ns { fill: none; stroke: #8c959f; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .deploy { fill: none; stroke: #afb8c1; stroke-width: 1.2; stroke-dasharray: 3 3; }
+    .line { stroke: #1f2328; stroke-width: 1.4; fill: none; }
+    .dash { stroke: #59636e; stroke-width: 1.3; fill: none; stroke-dasharray: 4 3; }
+    .head { fill: #1f2328; }
+    .headmuted { fill: #59636e; }
+    text { font-size: 13px; }
+    .title { font-size: 14px; font-weight: 600; }
+    .small { font-size: 11.5px; }
+    .mono { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .ink { fill: #e6edf3; }
+      .muted { fill: #9198a1; }
+      .box { fill: #161b22; stroke: #3d444d; }
+      .hot { fill: #2a1a10; stroke: #ff8a4c; }
+      .cluster { stroke: #9198a1; }
+      .ns { stroke: #656c76; }
+      .deploy { stroke: #3d444d; }
+      .line { stroke: #e6edf3; }
+      .dash { stroke: #9198a1; }
+      .head { fill: #e6edf3; }
+      .headmuted { fill: #9198a1; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="head"/>
+    </marker>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="headmuted"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="900" rx="12"/>
+
+  <!-- Outside the cluster -->
+  <text class="label muted" x="24" y="72">OUTSIDE THE CLUSTER</text>
+
+  <rect class="box" x="24" y="306" width="170" height="86" rx="8"/>
+  <text class="title ink" x="109" y="334" text-anchor="middle">Developer or CI</text>
+  <text class="small muted" x="109" y="354" text-anchor="middle">flow verify · flow generate</text>
+  <text class="small muted" x="109" y="370" text-anchor="middle">kubectl apply</text>
+
+  <!-- The cluster -->
+  <rect class="cluster" x="240" y="40" width="940" height="840" rx="14"/>
+  <text class="label muted" x="258" y="64">KUBERNETES CLUSTER</text>
+
+  <!-- The operator's namespace -->
+  <rect class="ns" x="258" y="84" width="598" height="176" rx="10"/>
+  <text class="small muted" x="270" y="102">ankka-flow</text>
+  <rect class="hot" x="274" y="112" width="346" height="100" rx="8"/>
+  <text class="title ink" x="447" y="138" text-anchor="middle">Operator</text>
+  <text class="small muted" x="447" y="158" text-anchor="middle">watches AnkkaFlow resources in every namespace</text>
+  <text class="small muted" x="447" y="175" text-anchor="middle">renders each streamlet as a Deployment and a Secret</text>
+  <text class="small muted" x="447" y="192" text-anchor="middle">adds the sidecar image and the Kafka settings</text>
+
+  <rect class="box" x="636" y="112" width="204" height="64" rx="8"/>
+  <text class="mono ink" x="738" y="134" text-anchor="middle">kafka-cluster-&lt;name&gt;</text>
+  <text class="small muted" x="738" y="151" text-anchor="middle">Secret per Kafka cluster</text>
+  <text class="small muted" x="738" y="167" text-anchor="middle">brokers · credentials · defaults</text>
+  <line class="dash" x1="636" y1="144" x2="622" y2="144" marker-end="url(#m)"/>
+
+  <!-- operator -> Kafka -->
+  <line class="line" x1="620" y1="200" x2="964" y2="200" marker-end="url(#a)"/>
+  <text class="small ink" x="640" y="193">creates the managed topics</text>
+
+  <!-- Kafka -->
+  <rect class="ns" x="950" y="84" width="214" height="780" rx="10"/>
+  <text class="small muted" x="962" y="102">kafka, or any brokers</text>
+  <rect class="box" x="966" y="112" width="182" height="720" rx="8"/>
+  <text class="title ink" x="1057" y="138" text-anchor="middle">Kafka</text>
+  <text class="small muted" x="1057" y="158" text-anchor="middle">the brokers the Secrets name</text>
+  <text class="small muted" x="1057" y="174" text-anchor="middle">not part of the platform</text>
+
+  <text class="label muted" x="980" y="286">MANAGED</text>
+  <rect class="hot" x="980" y="296" width="154" height="56" rx="6"/>
+  <text class="mono ink" x="1057" y="319" text-anchor="middle">cart.valid-carts</text>
+  <text class="small muted" x="1057" y="338" text-anchor="middle">the pipeline's own</text>
+  <rect class="hot" x="980" y="378" width="154" height="56" rx="6"/>
+  <text class="mono ink" x="1057" y="401" text-anchor="middle">cart.review-carts</text>
+  <text class="small muted" x="1057" y="420" text-anchor="middle">the pipeline's own</text>
+
+  <text class="label muted" x="980" y="530">UNMANAGED</text>
+  <rect class="box" x="980" y="540" width="154" height="80" rx="6"/>
+  <text class="mono ink" x="1057" y="563" text-anchor="middle">shop.cart-events.v1</text>
+  <text class="small muted" x="1057" y="582" text-anchor="middle">the ankka service's</text>
+  <text class="small muted" x="1057" y="598" text-anchor="middle">only ever read</text>
+
+  <!-- The pipeline's namespace -->
+  <rect class="ns" x="258" y="290" width="672" height="444" rx="10"/>
+  <text class="small muted" x="636" y="308">shop — the pipeline's namespace</text>
+
+  <!-- developer -> resource -->
+  <line class="line" x1="194" y1="349" x2="272" y2="349" marker-end="url(#a)"/>
+  <text class="small muted" x="235" y="342" text-anchor="end">apply</text>
+
+  <rect class="hot" x="274" y="318" width="246" height="62" rx="8"/>
+  <text class="title ink" x="397" y="343" text-anchor="middle">AnkkaFlow: cart</text>
+  <text class="small muted" x="397" y="363" text-anchor="middle">one per pipeline · spec in, status out</text>
+
+  <!-- operator <-> resource -->
+  <line class="dash" x1="300" y1="316" x2="300" y2="214" marker-end="url(#m)"/>
+  <text class="small muted" x="308" y="279">watches</text>
+  <line class="line" x1="460" y1="214" x2="460" y2="316" marker-end="url(#a)"/>
+  <text class="small ink" x="468" y="279">writes status</text>
+
+  <!-- operator -> streamlet -->
+  <line class="line" x1="580" y1="214" x2="580" y2="408" marker-end="url(#a)"/>
+  <text class="small ink" x="588" y="340">creates and owns</text>
+  <text class="small muted" x="588" y="356">Deployment and Secret</text>
+  <text class="small muted" x="588" y="372">per streamlet</text>
+
+  <!-- The streamlet -->
+  <rect class="deploy" x="274" y="410" width="426" height="290" rx="8"/>
+  <text class="title ink" x="288" y="432">flow-cart-router</text>
+  <text class="small muted" x="406" y="432">Deployment · replicas share each group</text>
+
+  <rect class="deploy" x="290" y="446" width="394" height="238" rx="8"/>
+  <text class="small muted" x="302" y="464">pod</text>
+
+  <rect class="box" x="304" y="474" width="156" height="100" rx="6"/>
+  <text class="title ink" x="382" y="498" text-anchor="middle">process</text>
+  <text class="small muted" x="382" y="517" text-anchor="middle">the streamlet's image</text>
+  <text class="small muted" x="382" y="534" text-anchor="middle">your code, any language</text>
+  <text class="small muted" x="382" y="551" text-anchor="middle">no Kafka client, ports,</text>
+  <text class="small muted" x="382" y="566" text-anchor="middle">probes or secrets</text>
+
+  <rect class="hot" x="500" y="474" width="170" height="100" rx="6"/>
+  <text class="title ink" x="585" y="498" text-anchor="middle">sidecar</text>
+  <text class="small muted" x="585" y="517" text-anchor="middle">the operator's image</text>
+  <text class="small muted" x="585" y="534" text-anchor="middle">everything Kafka</text>
+  <text class="small muted" x="585" y="551" text-anchor="middle">commits after the write</text>
+  <text class="small muted" x="585" y="566" text-anchor="middle">probes · metrics :2050</text>
+
+  <line class="line" x1="462" y1="524" x2="498" y2="524" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="small ink" x="382" y="596" text-anchor="middle">gRPC on 127.0.0.1</text>
+  <text class="small muted" x="382" y="612" text-anchor="middle">batches in; emits and</text>
+  <text class="small muted" x="382" y="627" text-anchor="middle">an ack back</text>
+
+  <rect class="bg" x="500" y="620" width="170" height="54" rx="5"/>
+  <rect class="deploy" x="500" y="620" width="170" height="54" rx="5"/>
+  <text class="small ink" x="585" y="637" text-anchor="middle">Secret flow-cart-router</text>
+  <text class="small muted" x="585" y="652" text-anchor="middle">descriptor, streamlet.conf</text>
+  <text class="small muted" x="585" y="667" text-anchor="middle">mounted in the sidecar</text>
+  <line class="dash" x1="585" y1="618" x2="585" y2="576" marker-end="url(#m)"/>
+
+  <!-- sidecar -> managed topics -->
+  <path class="line" d="M 672 510 L 850 510 L 850 324 L 978 324" marker-end="url(#a)"/>
+  <path class="line" d="M 850 406 L 978 406" marker-end="url(#a)"/>
+  <text class="small ink" x="690" y="502">produces</text>
+  <text class="small muted" x="858" y="316">valid</text>
+  <text class="small muted" x="858" y="398">review</text>
+
+  <!-- unmanaged topic -> sidecar -->
+  <path class="line" d="M 978 575 L 780 575 L 780 552 L 672 552" marker-end="url(#a)"/>
+  <text class="small ink" x="790" y="567">consumes as group</text>
+  <text class="mono muted" x="790" y="591">cart.router.in</text>
+
+  <text class="small muted" x="274" y="722">also per pipeline: ServiceAccount, Role and RoleBinding flow-cart</text>
+
+  <!-- An ankka project -->
+  <rect class="ns" x="258" y="754" width="672" height="110" rx="10"/>
+  <text class="small muted" x="636" y="772">ankka-shop — an ankka project</text>
+  <rect class="box" x="274" y="782" width="246" height="66" rx="8"/>
+  <text class="title ink" x="397" y="806" text-anchor="middle">shopping-cart</text>
+  <text class="small muted" x="397" y="826" text-anchor="middle">an ankka service</text>
+  <text class="small muted" x="397" y="841" text-anchor="middle">a consumer that produces</text>
+
+  <!-- ankka service -> unmanaged topic -->
+  <path class="line" d="M 520 815 L 940 815 L 940 605 L 978 605" marker-end="url(#a)"/>
+  <text class="small ink" x="540" y="807">publishes its events</text>
+</svg>

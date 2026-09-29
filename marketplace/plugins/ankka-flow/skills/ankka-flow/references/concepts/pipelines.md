@@ -58,6 +58,8 @@ chosen, and where its connection settings come from.
 
 ## From blueprint to cluster
 
+![ankka-flow on Kubernetes: a developer or CI job writes an AnkkaFlow resource with flow generate and applies it. The operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka; they speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the pipeline's managed topics.](../assets/diagrams/platform.svg)
+
 1. The SDK writes each streamlet's descriptor.
 2. `flow verify` checks the blueprint against the descriptors and reports every problem in one pass.
 3. `flow generate` writes the `AnkkaFlow` resource: every descriptor, image, binding and topic, with
