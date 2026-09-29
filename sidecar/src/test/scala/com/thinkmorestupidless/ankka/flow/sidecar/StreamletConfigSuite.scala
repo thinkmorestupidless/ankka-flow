@@ -91,3 +91,51 @@ class StreamletConfigSuite extends munit.FunSuite:
   test("a missing field is a problem, not an exception") {
     assert(StreamletConfig.parseString("flow { pipeline = x }").isLeft)
   }
+
+  private val sink =
+    com.thinkmorestupidless.ankka.flow.protocol.Builtins.neo4jMergeSink.getStreamlet
+
+  private def stageConf(stage: String) = s"""
+    flow {
+      pipeline  = checkouts
+      streamlet = graph
+      config    = { secret = neo4j-shop }
+      $stage
+      inlets { in { topic = "checkouts.graph-deltas", bootstrap.servers = "kafka:9092" } }
+    }
+  """
+
+  test("a stage block selects a built-in stage and names its credentials directory") {
+    val c = StreamletConfig
+      .parseString(
+        stageConf(
+          """stage { name = neo4j-merge-sink, neo4j { credentials-dir = "/etc/flow/neo4j" } }"""
+        )
+      )
+      .toOption
+      .get
+    assertEquals(
+      c.stage,
+      Some(StageConfig("neo4j-merge-sink", Some(Neo4jStageConfig("/etc/flow/neo4j"))))
+    )
+    assertEquals(c.outlets, Map.empty)
+    assertEquals(c.check(sink), Vector.empty)
+  }
+
+  test("no stage block means a process") {
+    assertEquals(StreamletConfig.parseString(example).toOption.get.stage, None)
+  }
+
+  test("a stage this sidecar does not have, or a merge sink without credentials, is refused") {
+    val unknown = StreamletConfig.parseString(stageConf("stage { name = nope }")).toOption.get
+    assertEquals(
+      unknown.check(sink),
+      Vector("stage 'nope' is not built into this sidecar; it has: neo4j-merge-sink")
+    )
+    val noCredentials =
+      StreamletConfig.parseString(stageConf("stage { name = neo4j-merge-sink }")).toOption.get
+    assertEquals(
+      noCredentials.check(sink),
+      Vector("stage 'neo4j-merge-sink' needs flow.stage.neo4j.credentials-dir")
+    )
+  }

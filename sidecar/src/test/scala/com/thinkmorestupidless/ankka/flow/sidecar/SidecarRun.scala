@@ -49,9 +49,10 @@ final class SidecarRun(
   val config = StreamletConfig
     .load(dir.resolve("streamlet.conf"))
     .fold(e => throw new IllegalStateException(e.mkString), identity)
-  val probes     = new Probes(stateDir)
-  val stalls     = new Stalls(stallAfter, events)
-  val supervisor = new Supervisor(settings, descriptor, config, probes, stalls)
+  val probes = new Probes(stateDir)
+  val stalls = new Stalls(stallAfter, events)
+  val supervisor =
+    new Supervisor(settings, config, probes, stalls, new ProcessStage(settings, descriptor, config))
 
   private val exitCode = Promise[Int]()
   private val thread =
