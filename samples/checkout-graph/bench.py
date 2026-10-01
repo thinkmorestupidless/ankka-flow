@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 
+from ankka_flow import graph
 from kafka import KafkaAdminClient, KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.admin import NewTopic
 from kafka.errors import CoordinatorNotAvailableError, GroupIdNotFoundError, TopicAlreadyExistsError
@@ -29,14 +30,21 @@ GROUP = "checkouts-graph.graph.in"
 PARTITIONS = 3
 
 
-def deltas(cart: str, at: int) -> list[tuple[str, dict[str, object]]]:
-    cart_id, checkout_id = f"cart:{cart}", f"checkout:{cart}:{at}"
+def deltas(cart: str, at: int) -> list[tuple[bytes, dict[str, object]]]:
+    """The three deltas the mapper writes for one notice, each under its element key."""
+    cart_id, checkout_id, edge_id = f"cart:{cart}", f"checkout:{cart}:{at}", f"checked-out:{cart}:{at}"
     return [
-        (cart_id, {"kind": "node", "id": cart_id, "version": at, "labels": ["Cart"], "properties": {"cartId": cart}}),
-        (checkout_id, {"kind": "node", "id": checkout_id, "version": at, "labels": ["Checkout"], "properties": {"cartId": cart}}),
         (
-            f"checked-out:{cart}:{at}",
-            {"kind": "edge", "id": f"checked-out:{cart}:{at}", "version": at, "type": "CHECKED_OUT",
+            graph.node_key(cart_id),
+            {"kind": "node", "id": cart_id, "version": at, "labels": ["Cart"], "properties": {"cartId": cart}},
+        ),
+        (
+            graph.node_key(checkout_id),
+            {"kind": "node", "id": checkout_id, "version": at, "labels": ["Checkout"], "properties": {"cartId": cart}},
+        ),
+        (
+            graph.edge_key(edge_id),
+            {"kind": "edge", "id": edge_id, "version": at, "type": "CHECKED_OUT",
              "from": cart_id, "to": checkout_id, "properties": {}},
         ),
     ]
@@ -79,7 +87,7 @@ def main() -> None:
     total = 0
     for i in range(args.notices):
         for key, delta in deltas(f"cart-{i % args.carts}", 1_790_000_000_000 + i):
-            producer.send(DELTAS, key=key.encode(), value=json.dumps(delta).encode())
+            producer.send(DELTAS, key=key, value=json.dumps(delta).encode())
             total += 1
     producer.flush()
     consumer = KafkaConsumer(bootstrap_servers=args.bootstrap)

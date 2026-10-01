@@ -39,6 +39,23 @@ The graph is in Neo4j's browser at <http://localhost:7474> (`neo4j` / `flow-loca
 MATCH (c:Cart)-[:CHECKED_OUT]->(k:Checkout) RETURN c, k LIMIT 50
 ```
 
+The deltas the mapper wrote, with their keys:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 \
+  --topic checkouts-graph.graph-deltas --from-beginning --property print.key=true --max-messages 3
+```
+
+```text
+node:cart:cart-0	{"kind":"node","id":"cart:cart-0","version":1790000000000,"labels":["Cart"],"properties":{"cartId":"cart-0"}}
+node:checkout:cart-0:1790000000000	{"kind":"node","id":"checkout:cart-0:1790000000000",…}
+edge:checked-out:cart-0:1790000000000	{"kind":"edge","id":"checked-out:cart-0:1790000000000",…}
+```
+
+Each record's key is its element's (`node:<id>` or `edge:<id>`), built by the SDK's
+`GraphDeltaOutlet`, and the delta topic is compacted by default, so it keeps the latest delta of
+every element and the graph can be rebuilt from it alone.
+
 Throughput, with nothing else running:
 
 ```bash

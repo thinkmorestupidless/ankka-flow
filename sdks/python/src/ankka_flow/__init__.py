@@ -1,7 +1,8 @@
 """ankka-flow: write streamlets in Python. The sidecar owns Kafka; this package owns the protocol."""
 
-from . import json
+from . import graph, json
 from .descriptor import PROTOCOL_VERSION
+from .graph import GraphDeltaOutlet
 from .parameters import (
     BooleanParameter,
     Config,
@@ -27,6 +28,7 @@ __all__ = [
     "DoubleParameter",
     "DurationParameter",
     "Emit",
+    "GraphDeltaOutlet",
     "IntegerParameter",
     "JsonInlet",
     "JsonOutlet",
@@ -35,6 +37,7 @@ __all__ = [
     "Record",
     "StringParameter",
     "Streamlet",
+    "graph",
     "json",
     "serve",
 ]
