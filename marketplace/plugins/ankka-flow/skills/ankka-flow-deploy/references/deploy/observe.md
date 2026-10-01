@@ -132,18 +132,21 @@ warning appears even though every failure tears the stream down and starts it ag
 ## A built-in stage
 
 A built-in streamlet's pod, such as the [Neo4j merge sink](../reference/neo4j-merge-sink.md), exports
-every inlet metric, plus three counters of its own per inlet partition:
+every inlet metric, plus four counters of its own per inlet partition:
 
 | Metric | Meaning |
 |---|---|
 | `ankka_flow_stage_deltas_written_total` | deltas applied to the graph |
 | `ankka_flow_stage_deltas_stale_total` | deltas found stale: folded away within a batch, or older than what the graph holds |
 | `ankka_flow_stage_batches_failed_total` | batches whose transaction failed or whose records could not be read |
+| `ankka_flow_stage_delete_markers_total` | records with no value, which remove a key from a compacted topic, passed over |
 
 A rising written count with lag near zero is a healthy sink. A replay from the start, or a burst of
 redelivery, shows as stale deltas rather than written ones: nothing in the graph changed. Failed
-batches beside growing lag mean the database is refusing or not answering; the sidecar's log and the
-`PartitionStalled` note carry the reason.
+batches beside growing lag mean the database is refusing or not answering, or a delta is unreadable or
+wrongly keyed; the sidecar's log and the `PartitionStalled` note carry the reason. Delete markers are
+counted on their own and are never a failure. During a
+[rebuild from the delta topic](rebuild-a-graph.md) the written count rises until the lag is zero.
 
 A sink whose credentials may not create the uniqueness constraint it needs records one
 `ConstraintNotCreated` Warning on its pod each time it opens, and keeps going. Merges then scan the

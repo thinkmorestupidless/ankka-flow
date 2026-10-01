@@ -68,6 +68,18 @@ A port's format and fingerprint. Two ports on one topic connect only when their 
 One `Run` stream between the sidecar and the process, opened with `Start` and carrying every batch until
 it stops or fails. See [Streamlet protocol](../reference/protocol.md).
 
+### Delete marker
+
+A Kafka record with a key and no value, which removes that key from a compacted topic. It is not a graph
+delta: the Neo4j merge sink passes over it and counts it, and the platform never writes one. See
+[Graph deltas](graph-deltas.md#delete-markers).
+
+### Delta topic
+
+A topic with any port of the graph delta contract. A managed one is compacted by default, so it keeps
+the latest delta of every element and the graph can be rebuilt from it. See
+[Topics and Kafka clusters](../concepts/topics.md#delta-topics).
+
 ### Descriptor
 
 The streamlet as the platform sees it — name, ports, contracts and parameters — written as canonical
@@ -82,6 +94,11 @@ before any record flows. See [The sidecar](../concepts/sidecar.md).
 
 A node or an edge of a graph the Neo4j merge sink writes, found by its global id and holding the version
 of the last delta applied to it. See [Neo4j merge sink](neo4j-merge-sink.md).
+
+### Element key
+
+The Kafka record key every graph delta carries: `node:<id>` or `edge:<id>`, the element's kind and its
+id. The sink refuses a delta under any other key. See [Graph deltas](graph-deltas.md#the-record-key).
 
 ### Emit
 
@@ -156,7 +173,9 @@ The streamlet's own container and the program in it, serving the streamlet proto
 ### Reset
 
 Moving a pipeline's consumer groups back to the earliest offset so its streamlets reread their inputs
-from the start. See [Rebuild from the start](../deploy/reset.md).
+from the start. See [Rebuild from the start](../deploy/reset.md). Resetting the merge sink alone
+rebuilds a graph from its delta topic; see
+[Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
 
 ### Sidecar
 
@@ -191,7 +210,8 @@ The gRPC services, `ankka.flow.v1`, between the sidecar and the process. See
 ### Tombstone
 
 A graph delta that marks an element deleted at a version rather than removing it, so an older delta
-cannot bring the element back. See [Graph deltas](graph-deltas.md).
+cannot bring the element back. It has a value and its element's key, which makes it a different thing
+from a delete marker. See [Graph deltas](graph-deltas.md).
 
 ### Unmanaged topic
 

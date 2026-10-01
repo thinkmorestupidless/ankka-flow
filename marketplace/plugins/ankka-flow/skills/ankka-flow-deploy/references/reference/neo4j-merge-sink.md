@@ -42,7 +42,9 @@ blueprint {
 ```
 
 The sink's inlet is verified against the topic's producers like any port, so an outlet of another
-contract is refused before anything runs. Its parameters are set at deploy time:
+contract is refused before anything runs. `graph-deltas` carries graph deltas, so it is compacted by
+default; `flow verify` says so in a note (see [Blueprint](blueprint.md#delta-topics)). The sink's
+parameters are set at deploy time:
 
 ```hocon
 flow.streamlets.graph { config { secret = neo4j-shop } }
@@ -135,10 +137,13 @@ For one element, by the incoming version `v` against the stored `_version` `s`:
 
 ## Processing a batch
 
-1. Every record is parsed as a delta. A record that breaks the contract fails the batch; see
-   [Graph deltas](graph-deltas.md#validation).
-2. The batch is folded to one delta per element: the highest version, the first on a tie. The rest
-   count as stale.
+1. Every record is read. A record with no value, or an empty one, is a
+   [delete marker](graph-deltas.md#delete-markers): it is set aside and counted. Any other record
+   is parsed as a delta, and its key must be the delta's
+   [element key](graph-deltas.md#the-record-key). A record that breaks the contract, or whose key is
+   missing or is another's, fails the batch; see [Graph deltas](graph-deltas.md#validation).
+2. The deltas are folded to one per element: the highest version, the first on a tie. The rest
+   count as stale. A batch of markers alone runs no transaction and is acknowledged.
 3. One write transaction runs four statements — node merges, edge merges, node tombstones, edge
    tombstones — each an `UNWIND` over its list, with the `transaction-timeout`. The driver retries a
    transient failure, such as a deadlock between two partitions' transactions, by running the whole
@@ -185,7 +190,9 @@ A failed transaction, an unreadable record, or a database that does not answer f
   altogether; the message is `the transaction did not complete within …`.
 - The driver of a failed batch is discarded, never reused.
 - The failure message names the inlet and partition:
-  `neo4j merge failed for inlet 'in' partition 2: offset 4711: unknown kind 'nod'`.
+  `neo4j merge failed for inlet 'in' partition 2: offset 4711: unknown kind 'nod'`. For a wrongly
+  keyed delta it also gives the key expected:
+  `… offset 42: key 'cart-1' is not this delta's element key 'node:cart:cart-1'`.
 - A partition that stays uncommitted past `FLOW_STALL_WARNING_AFTER` raises one `PartitionStalled`
   warning on the pod, carrying the last error.
 
@@ -198,8 +205,9 @@ Beside every inlet metric the sidecar exports, per inlet partition:
 | Metric | Meaning |
 |---|---|
 | `ankka_flow_stage_deltas_written_total` | deltas applied |
-| `ankka_flow_stage_deltas_stale_total` | deltas found stale, folded away in a batch or filtered by version |
+| `ankka_flow_stage_deltas_stale_total` | deltas found stale, folded away in a batch or filtered by version; delete markers are not counted here |
 | `ankka_flow_stage_batches_failed_total` | batches that failed |
+| `ankka_flow_stage_delete_markers_total` | records with no value passed over |
 
 Each carries the labels `inlet` and `partition`.
 

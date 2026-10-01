@@ -1,6 +1,6 @@
 # Build a graph from a pipeline
 
-> Turn a service's events into a Neo4j graph — choose ids and versions, map events to graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
+> Turn a service's events into a Neo4j graph — choose ids and versions, map events to keyed graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
 
 Source: https://flow.ankka.cloud/build/graph-sink/
 A graph built from several services' events is the kind of job a pipeline does well: every service
@@ -39,15 +39,17 @@ Every element of the graph needs a global id and a version that only rises.
 
 ## Map events to deltas
 
-The mapper reads the notice, decides what it means for the graph, and emits one delta per element,
-keyed by the element's id so every delta for one element is applied in order:
+The mapper reads the notice, decides what it means for the graph, and emits one delta per element
+through a `GraphDeltaOutlet`. The outlet builds each record and gives it its
+[element key](../reference/graph-deltas.md#the-record-key), `node:<id>` or `edge:<id>`, so every delta
+for one element is applied in order and the topic can be compacted. The mapper never chooses a key:
 
 ```python
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from ankka_flow import Batch, Emit, JsonInlet, JsonOutlet, Streamlet, json
+from ankka_flow import Batch, Emit, GraphDeltaOutlet, JsonInlet, Streamlet, json
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ class CheckoutGraph(Streamlet):
     name = "checkout-graph"
     description = "Maps checkout notices to graph deltas: a cart, a checkout, and the edge between them."
     notices = JsonInlet("in", schema_name="ankka.checkout-notice.v1")
-    deltas = JsonOutlet("deltas", schema_name="ankka.graph-delta.v1")
+    deltas = GraphDeltaOutlet("deltas")
 
     def process(self, batch: Batch) -> Iterable[Emit]:
         for record in batch:
@@ -68,34 +70,36 @@ class CheckoutGraph(Streamlet):
                 continue
             cart_id, checkout_id = f"cart:{cart}", f"checkout:{cart}:{at}"
             checked_out_at = datetime.fromtimestamp(at / 1000, UTC).isoformat(timespec="milliseconds")
-            # Each delta is the element's whole state, versioned by the notice's time, and keyed by
-            # the element's id so every delta for one element is applied in order.
-            for delta in (
-                {"kind": "node", "id": cart_id, "version": at, "labels": ["Cart"], "properties": {"cartId": cart}},
-                {
-                    "kind": "node",
-                    "id": checkout_id,
-                    "version": at,
-                    "labels": ["Checkout"],
-                    "properties": {"cartId": cart, "checkedOutAt": checked_out_at},
-                },
-                {
-                    "kind": "edge",
-                    "id": f"checked-out:{cart}:{at}",
-                    "version": at,
-                    "type": "CHECKED_OUT",
-                    "from": cart_id,
-                    "to": checkout_id,
-                    "properties": {},
-                },
-            ):
-                yield self.deltas.emit(record, value=json.dumps(delta), key=delta["id"].encode())
+            # Each delta is the element's whole state, versioned by the notice's time. The outlet
+            # keys each record by its element (`node:<id>`, `edge:<id>`), so every delta for one
+            # element is applied in order and a compacted topic keeps the latest of each.
+            yield self.deltas.node(record, id=cart_id, version=at, labels=["Cart"], properties={"cartId": cart})
+            yield self.deltas.node(
+                record,
+                id=checkout_id,
+                version=at,
+                labels=["Checkout"],
+                properties={"cartId": cart, "checkedOutAt": checked_out_at},
+            )
+            yield self.deltas.edge(
+                record,
+                id=f"checked-out:{cart}:{at}",
+                version=at,
+                type="CHECKED_OUT",
+                from_id=cart_id,
+                to_id=checkout_id,
+            )
 ```
 
 Each delta is the element's whole state. Nothing about Neo4j appears in the mapper: it knows the
 contract, not the database. A record that is not a notice is skipped by emitting nothing for it,
-which is the mapper's decision to make. `emit(record, …)` derives each delta from the input record,
-so ankka's CloudEvents headers travel with it.
+which is the mapper's decision to make. Passing `record` derives each delta from the input record,
+so ankka's CloudEvents headers travel with it, while the key is the element's and not the notice's.
+The outlet refuses what the sink would refuse — an empty id, a negative version, a label that is not
+an identifier, a nested property — by raising in the mapper, where the mistake is.
+
+A mapper in a language with no SDK helper writes the same JSON and sets the record key itself; the
+sink refuses a delta under any other key.
 
 The harness proves the mapping with no Kafka, sidecar or database:
 
@@ -104,18 +108,24 @@ def test_a_notice_becomes_a_cart_a_checkout_and_the_edge_between_them() -> None:
     h = Harness(CheckoutGraph())
     h.inlet("in").put(key=b"cart-1", value=notice("cart-1", 1_790_000_000_000), headers=[("ce-id", b"n-1")])
     h.run()
-    deltas = [json.loads(r.value) for r in h.outlet("deltas").records]
-    assert [(d["kind"], d["id"]) for d in deltas] == [
+    records = h.outlet("deltas").records
+    deltas = [graph.read(r) for r in records]
+    assert [(d.kind, d.id) for d in deltas] == [
         ("node", "cart:cart-1"),
         ("node", "checkout:cart-1:1790000000000"),
         ("edge", "checked-out:cart-1:1790000000000"),
     ]
-    assert all(d["version"] == 1_790_000_000_000 for d in deltas)
-    assert deltas[1]["properties"]["checkedOutAt"] == "2026-09-21T14:13:20.000+00:00"
-    assert deltas[2]["from"] == "cart:cart-1" and deltas[2]["to"] == "checkout:cart-1:1790000000000"
-    # keyed by element id, with ankka's headers carried along
-    assert [r.key for r in h.outlet("deltas").records] == [d["id"].encode() for d in deltas]
-    assert all(r.headers == [("ce-id", b"n-1")] for r in h.outlet("deltas").records)
+    assert all(d.version == 1_790_000_000_000 for d in deltas)
+    assert deltas[1].properties["checkedOutAt"] == "2026-09-21T14:13:20.000+00:00"
+    assert (deltas[2].from_id, deltas[2].to_id) == ("cart:cart-1", "checkout:cart-1:1790000000000")
+    # each record is keyed by its element, never by the cart the notice was keyed by
+    assert [r.key for r in records] == [
+        b"node:cart:cart-1",
+        b"node:checkout:cart-1:1790000000000",
+        b"edge:checked-out:cart-1:1790000000000",
+    ]
+    # ankka's headers are carried along, and the notice was not skipped
+    assert all(r.headers == [("ce-id", b"n-1")] for r in records)
     assert h.skipped == []
 ```
 
@@ -154,6 +164,10 @@ blueprint {
 `flow verify` checks the sink's inlet against `mapper.deltas` like any pair of ports: an outlet of any
 contract other than `ankka.graph-delta.v1` is refused before anything is deployed.
 
+`graph-deltas` sets no `cleanup.policy`, and it carries graph deltas, so it is compacted by default:
+`flow generate` writes `cleanup.policy: compact` into the resource and the operator creates the topic
+compacted. It then keeps the latest delta of every element for as long as the pipeline lives.
+
 The sink's `secret` parameter has no default, so verification needs the deploy-time configuration
 that names the Secret, as generation does:
 
@@ -162,6 +176,7 @@ flow verify blueprint.conf --descriptors flow --conf k8s/in-cluster.conf
 ```
 
 ```text
+note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact).
 verified: 2 streamlets, 2 topics
 ```
 
@@ -247,14 +262,21 @@ kubectl -n neo4j exec neo4j-0 -- cypher-shell -u neo4j -p flow-local-password \
 
 ## Rebuild it
 
-The graph is a projection of the topics, so it can be rebuilt from them. Scale both streamlets to
-zero, run `flow reset checkouts-graph`, and scale them up: every event is mapped and every delta
-merged again, and the graph ends as it was. See [Rebuild from the start](../deploy/reset.md).
+The graph is a projection of the topics, so it can be rebuilt from them, in two ways.
+
+From the delta topic alone: scale the sink to zero, empty the database, run
+`flow reset checkouts-graph --streamlet graph`, and scale it up. The sink reads the compacted topic,
+about one record per element, and the mapper is not involved. See
+[Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
+
+From the services' events: scale both streamlets to zero, run `flow reset checkouts-graph`, and scale
+them up. Every event is mapped and every delta merged again, and the graph ends as it was. This is the
+one to use after changing the mapping. See [Rebuild from the start](../deploy/reset.md).
 
 ## Watch it
 
 The sink's pod exports `ankka_flow_stage_deltas_written_total`,
-`ankka_flow_stage_deltas_stale_total` and `ankka_flow_stage_batches_failed_total` beside the inlet's
-lag. When Neo4j is unreachable, the pod goes not ready, the lag grows, nothing is committed, and a
+`ankka_flow_stage_deltas_stale_total`, `ankka_flow_stage_batches_failed_total` and
+`ankka_flow_stage_delete_markers_total` beside the inlet's lag. When Neo4j is unreachable, the pod goes not ready, the lag grows, nothing is committed, and a
 `PartitionStalled` warning names the error; when it comes back, the backlog drains. See
 [Observe a pipeline](../deploy/observe.md).

@@ -78,6 +78,16 @@ different value for a `topicConfig` entry. The operator never alters an existing
 it is and warned. The pipeline still runs, on the topic as it exists. To change the topic, change it with
 Kafka's own tools, or delete it so the operator creates it afresh.
 
+## `TopicNotCompacted`
+
+A managed topic that carries graph deltas already exists and is not compacted, while the resource asks
+for `cleanup.policy = compact`: typically a topic created before delta topics were compacted by default.
+The note reads `topic '<name>' exists and is not compacted (cleanup.policy = delete); the resource asks
+for compact. Left as it is: …`. The pipeline runs, but the topic is trimmed by time, so it will not hold
+the whole graph and cannot be relied on to
+[rebuild it](rebuild-a-graph.md). Alter the topic's `cleanup.policy` with Kafka's own tools, or delete
+the topic so the operator creates it compacted and reset the streamlets that write to it.
+
 ## A pod never becomes ready
 
 The pod's readiness is the sidecar's: a conversation with the process is running and every inlet is
@@ -125,6 +135,15 @@ For the Neo4j merge sink, the note names the reason: `neo4j merge failed for inl
 followed by a record that breaks the delta contract (`offset <n>: …`, fixed in the streamlet that wrote
 it), the database's refusal, or `the transaction did not complete within …` when the database stopped
 answering. A database outage drains on its own once the database is back.
+
+A reason of `offset <n>: key '<found>' is not this delta's element key '<expected>'`, or
+`offset <n>: no key; this delta's element key is '<expected>'`, is a delta written under the wrong
+record key. The sink requires every delta's key to be its element key, `node:<id>` or `edge:<id>`, and
+the message gives the one expected. The writer is the thing to fix: in Python, build deltas with
+`GraphDeltaOutlet` rather than by hand. A topic that already holds wrongly keyed records has to be
+replaced as well; the steps are on
+[Graph deltas](../reference/graph-deltas.md#for-a-writer-built-before-the-key-rule). A record with no
+value is never the cause: the sink passes over a delete marker.
 
 The fix is in the streamlet: skip the record by acknowledging the batch without emitting for it, or
 correct the code that fails. Deploying the fixed image resumes from the last committed offset. See

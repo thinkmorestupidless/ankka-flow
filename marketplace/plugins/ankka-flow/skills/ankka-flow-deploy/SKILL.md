@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-deploy
-description: Install ankka-flow on Kubernetes and deploy, configure, rebuild, observe and troubleshoot pipelines — the flow CLI (verify, generate, reset, version), the AnkkaFlow resource and its status, the operator and its settings, Kafka cluster Secrets, deploy-time overrides with --conf and images, managed topic creation, rollouts per streamlet, the sidecar's environment, probes and metrics, consumer lag, PartitionStalled and the operator's events, and resetting consumer groups to the earliest offset. Use when the task names flow verify/generate/reset, an AnkkaFlow resource, the operator, kind, kubectl, a Kafka cluster Secret, lag, a stalled partition, or a pipeline that is not Ready. Also the built-in Neo4j merge sink, with its connection Secret, refusals, metrics and readiness.
+description: Install ankka-flow on Kubernetes and deploy, configure, rebuild, observe and troubleshoot pipelines — the flow CLI (verify, generate, reset, version), the AnkkaFlow resource and its status, the operator and its settings, Kafka cluster Secrets, deploy-time overrides with --conf and images, managed topic creation, rollouts per streamlet, the sidecar's environment, probes and metrics, consumer lag, PartitionStalled and the operator's events, and resetting consumer groups to the earliest offset. Use when the task names flow verify/generate/reset, an AnkkaFlow resource, the operator, kind, kubectl, a Kafka cluster Secret, lag, a stalled partition, or a pipeline that is not Ready. Also the built-in Neo4j merge sink, with its connection Secret, refusals, metrics and readiness, compacted delta topics, TopicNotCompacted, and rebuilding a graph from its delta topic.
 ---
 
 # Deploying and operating ankka-flow pipelines
@@ -43,6 +43,20 @@ the streamlet's container and the sidecar.
    parameter names a Secret in the pipeline's namespace with `uri`, `username`, `password` and
    optionally `database`, which the operator mounts read-only at `/etc/flow/neo4j` with mode `0440`.
    A missing or incomplete Secret is `Refused`; the sink needs Neo4j 5.26 or later.
+10. **A managed delta topic is compacted by default.** For a managed topic with a port of
+   `ankka.graph-delta.v1` and no `cleanup.policy` set, `flow generate` writes `cleanup.policy: compact`
+   into the resource and prints a note; a policy set in the blueprint or `--conf` is kept and the note
+   says what it costs. An existing topic that is not compacted is left alone and reported as
+   `TopicNotCompacted`. An unmanaged delta topic is its owner's.
+11. **A graph is rebuilt from its delta topic by resetting the sink alone.** Set the sink's `replicas`
+   to 0, empty the database, `flow reset <pipeline> --streamlet <sink>`, set `replicas` back. No
+   mapper is stopped and no upstream topic is read; the rebuild is done when the sink's lag is zero.
+   The rebuilt graph has every live element; a tombstoned element whose record a writer removed with
+   a delete marker is not in it.
+12. **The sink refuses a delta under the wrong key.** Every delta's record key must be `node:<id>` or
+   `edge:<id>`; otherwise the batch fails and the partition stalls with
+   `key '<found>' is not this delta's element key '<expected>'` or `no key; …`. Records with no value
+   are delete markers: passed over and counted in `ankka_flow_stage_delete_markers_total`.
 
 ## Troubleshooting order
 
@@ -51,7 +65,9 @@ the sidecar container's log → its `/metrics` (lag under `client_id="<pipeline>
 Common shapes: `SidecarImageMissing` means the operator has no sidecar image configured; a pod that
 restarts with a descriptor difference in both containers' logs means the image and the deployed
 descriptor disagree (the sidecar refuses at discovery and exits 1); `TopicMissing` means an unmanaged input does not exist yet; growing lag with a
-`PartitionStalled` event means one batch fails every time and the streamlet's code must change.
+`PartitionStalled` event means one batch fails every time and the streamlet's code must change; on a
+merge sink, a note ending `is not this delta's element key '…'` means the writer keys its deltas wrongly
+and both the writer and the topic's old records have to be replaced.
 
 ## Mistakes to check for
 
@@ -62,6 +78,10 @@ descriptor disagree (the sidecar refuses at discovery and exits 1); `TopicMissin
 - Reading lag without the client id; Kafka reports topic names with dots replaced by underscores.
 - An `--image` for a built-in streamlet, or the Neo4j Secret in the operator's namespace instead of
   the pipeline's.
+- Resetting the whole pipeline, mappers included, to refill a lost graph database when the delta topic
+  is compacted; reset the sink alone.
+- Expecting the operator to make an existing delta topic compacted; it reports `TopicNotCompacted`
+  and leaves the topic as it is.
 - A merge sink that never becomes ready: read its log for credentials, a server below 5.26, or an
   unreachable `uri`; `ConstraintNotCreated` is a warning, not a failure.
 
@@ -82,7 +102,7 @@ Open the one a task needs; each is one topic and stands alone.
 ### Build
 
 - `references/build/ankka-topics.md` — Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
-- `references/build/graph-sink.md` — Turn a service's events into a Neo4j graph — choose ids and versions, map events to graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
+- `references/build/graph-sink.md` — Turn a service's events into a Neo4j graph — choose ids and versions, map events to keyed graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
 - `references/build/images.md` — Package a streamlet as a container image that holds only its process — no Kafka client, no exposed ports — and make it available to a cluster.
 
 ### Run and operate
@@ -91,6 +111,7 @@ Open the one a task needs; each is one topic and stands alone.
 - `references/deploy/deploy-a-pipeline.md` — Verify a blueprint, generate the AnkkaFlow resource with each streamlet's image, apply it, and update, roll out or delete the pipeline afterwards.
 - `references/deploy/configuration.md` — Override a blueprint's topics, replica counts and parameters per environment with --conf files, and point topics at Kafka clusters through kafka-cluster Secrets.
 - `references/deploy/reset.md` — Reprocess a pipeline's inputs from the earliest offsets by stopping its streamlets, requesting a reset with flow reset, and starting them again.
+- `references/deploy/rebuild-a-graph.md` — Fill an empty Neo4j database from a compacted topic of graph deltas by resetting only the merge sink, with no mapper running and no upstream topic read.
 - `references/deploy/observe.md` — Read a running pipeline's phase, events, sidecar logs, consumer lag and stall warnings with kubectl and Prometheus.
 - `references/deploy/troubleshooting.md` — Symptom, cause and fix for every way an ankka-flow pipeline is refused, fails to start, stops being ready or stalls, from flow verify to the sidecar.
 
@@ -101,4 +122,5 @@ Open the one a task needs; each is one topic and stands alone.
 - `references/reference/resource.md` — Every field of the AnkkaFlow custom resource and its status, the Kafka cluster Secret, what the operator renders per streamlet, the events it records and the reset annotations.
 - `references/reference/operator.md` — The ankka-flow operator's settings, the namespace and permissions it runs with, and what one reconcile of an AnkkaFlow does, in order.
 - `references/reference/sidecar.md` — The ankka-flow sidecar's environment variables, the two files it reads, its start-up checks and exit codes, its probes, metrics, stall warnings and logs.
+- `references/reference/graph-deltas.md` — The ankka.graph-delta.v1 contract a mapping streamlet writes and the Neo4j merge sink reads — node merges, edge merges and tombstones, each a versioned statement of state under its element key.
 - `references/reference/neo4j-merge-sink.md` — The built-in streamlet that merges graph deltas into Neo4j in one transaction per batch — its descriptor, parameters, connection Secret, what it writes, and how it is watched.

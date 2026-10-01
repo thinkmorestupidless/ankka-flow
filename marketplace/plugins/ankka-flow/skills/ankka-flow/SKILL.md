@@ -1,6 +1,6 @@
 ---
 name: ankka-flow
-description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies. Also building a graph from events with graph deltas and the built-in Neo4j merge sink.
+description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies. Also building a graph from events with graph deltas keyed by element, compacted delta topics, and the built-in Neo4j merge sink.
 ---
 
 # ankka-flow
@@ -45,9 +45,18 @@ pod's loopback interface.
    `AnkkaFlow` resource; the operator adds only the sidecar image and Kafka cluster secrets.
 9. **A graph is built from state-shaped, versioned deltas.** Map events to `ankka.graph-delta.v1`
    in an ordinary streamlet and wire `builtin/neo4j-merge-sink` behind it. Each delta is an element's
-   whole state with a global id and a version that rises with its one source entity; key each record
-   by the element id. Redelivery, reordering and a replay from the start then leave the same graph.
-   No increments, no Cypher from the pipeline; tombstones mark rather than delete.
+   whole state with a global id and a version that rises with its one source entity. Redelivery,
+   reordering and a replay from the start then leave the same graph. No increments, no Cypher from
+   the pipeline; tombstones mark rather than delete.
+10. **A delta's record key is its element key, and the sink enforces it.** `node:<id>` for a node
+   merge or node tombstone, `edge:<id>` for an edge merge or edge tombstone, the id verbatim. The
+   sink fails the batch for a delta with no key or another key, naming the key expected. In Python,
+   `GraphDeltaOutlet` builds the key; in any other language the writer sets it.
+11. **A managed delta topic is compacted by default.** A topic with any port of the delta contract
+   gets `cleanup.policy = compact` from `flow generate` unless the blueprint or `--conf` sets a
+   policy, and `flow verify` says so in a note. It then holds the latest delta per element, so an
+   empty database is filled by resetting the sink alone. The platform writes no delete markers and
+   passes over any it reads; a tombstone stays in the topic.
 
 ## Before answering
 
@@ -66,6 +75,10 @@ pod's loopback interface.
 - Kafka settings or credentials in the streamlet's own container; they belong to the sidecar.
 - An HTTP or gRPC ingress into a pipeline; records enter through a Kafka topic.
 - A graph pipeline whose mapper writes to Neo4j itself, or emits increments rather than whole state.
+- A delta keyed by the bare element id, by the input record's key, or not at all; the key is
+  `node:<id>` or `edge:<id>`.
+- `cleanup.policy = delete` on a delta topic that is expected to rebuild the graph, or a delete
+  marker written for an element that was never tombstoned.
 
 ## Reference files
 
@@ -94,11 +107,15 @@ Open the one a task needs; each is one topic and stands alone.
 
 - `references/build/blueprints.md` — Write the blueprint that wires a pipeline's streamlets together over Kafka topics, from naming the streamlets to checking the result with flow verify.
 - `references/build/ankka-topics.md` — Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
-- `references/build/graph-sink.md` — Turn a service's events into a Neo4j graph — choose ids and versions, map events to graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
+- `references/build/graph-sink.md` — Turn a service's events into a Neo4j graph — choose ids and versions, map events to keyed graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
+
+### Run and operate
+
+- `references/deploy/rebuild-a-graph.md` — Fill an empty Neo4j database from a compacted topic of graph deltas by resetting only the merge sink, with no mapper running and no upstream topic read.
 
 ### Reference
 
 - `references/reference/blueprint.md` — Every key of the blueprint file, the HOCON that names a pipeline's streamlets and the topics connecting their ports, and every rule flow verify checks it against.
-- `references/reference/graph-deltas.md` — The ankka.graph-delta.v1 contract a mapping streamlet writes and the Neo4j merge sink reads — node merges, edge merges and tombstones, each a versioned statement of state.
+- `references/reference/graph-deltas.md` — The ankka.graph-delta.v1 contract a mapping streamlet writes and the Neo4j merge sink reads — node merges, edge merges and tombstones, each a versioned statement of state under its element key.
 - `references/reference/limitations.md` — What ankka-flow does not do — delivery guarantees, contract formats, SDKs, ingress, brokers and tooling — stated plainly so a design does not depend on it.
 - `references/reference/glossary.md` — Every term ankka-flow uses — streamlet, port, blueprint, contract, descriptor, sidecar, conversation, managed topic and the rest — each defined in a sentence with the page that explains it.

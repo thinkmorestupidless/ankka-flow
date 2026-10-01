@@ -35,6 +35,23 @@ The sidecar reads with automatic topic creation turned off, so subscribing to an
 does not exist never creates it. The operator records `TopicMissing`, and the streamlets consuming it
 stay not ready until it exists.
 
+## Delta topics
+
+A topic that carries [graph deltas](../reference/graph-deltas.md) — one with any port, producing or
+consuming, of the contract `ankka.graph-delta.v1` — is a **delta topic**. Every delta is the whole
+state of one graph element, keyed by that element, so the latest record under each key is the graph.
+
+A managed delta topic is therefore **compacted** by default: the CLI writes `cleanup.policy = compact`
+into the resource unless the blueprint or a deploy-time override sets a policy, and says so in a note
+when the blueprint is verified. A compacted topic keeps the last record per key and discards the
+versions before it, so the topic never outgrows the graph, never ages it away, and can fill an empty
+database on its own; see [Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
+
+Like any managed topic, a delta topic that already exists is never altered. When the resource asks for
+compaction and the existing topic is not compacted, the operator records a `TopicNotCompacted` warning
+and leaves it as it is. An unmanaged delta topic is its owner's: the platform reads it and decides
+nothing about it.
+
 ## Kafka names
 
 A topic's id is the name the blueprint and the resource use for it. Its Kafka name is:

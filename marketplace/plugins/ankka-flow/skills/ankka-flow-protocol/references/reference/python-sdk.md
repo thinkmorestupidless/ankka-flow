@@ -1,6 +1,6 @@
 # Python SDK
 
-> Every public name of the ankka-flow Python package — Streamlet, ports, parameters and their Python types, records, serve, the testkit Harness — and the descriptor and conformance commands.
+> Every public name of the ankka-flow Python package — Streamlet, ports, the graph delta outlet, parameters and their Python types, records, serve, the testkit Harness — and the descriptor and conformance commands.
 
 Source: https://flow.ankka.cloud/reference/python-sdk/
 The package is `ankka-flow`, imported as `ankka_flow`, in
@@ -18,6 +18,8 @@ Everything below is importable from `ankka_flow` unless another module is named.
 |---|---|
 | `Streamlet` | the base class of every streamlet |
 | `JsonInlet`, `JsonOutlet` | ports with a JSON contract |
+| `GraphDeltaOutlet` | an outlet of graph deltas, which builds each record with its element key |
+| `graph` | the module behind it: `node_key`, `edge_key`, `read`, `Delta`, `SCHEMA_NAME` |
 | `StringParameter`, `IntegerParameter`, `DoubleParameter`, `BooleanParameter`, `DurationParameter`, `MemorySizeParameter` | typed configuration parameters |
 | `Parameter` | the base class of the parameters |
 | `Config` | a streamlet's resolved parameter values |
@@ -71,6 +73,55 @@ JsonOutlet.emit(record: Record | None = None, *, value: bytes | None = None,
 With a record, `emit` forwards it: the same key, headers and value, and the same offset and timestamp,
 with any keyword argument replacing its part. `key=None` removes the key. Without a record, `value` is
 required and the other parts default to no key and no headers. Calling neither raises `ValueError`.
+
+## Graph deltas
+
+```python
+GraphDeltaOutlet(name: str)
+```
+
+A `JsonOutlet` whose contract is `ankka.graph-delta.v1`, declared like any outlet. Its four methods
+build a [graph delta](graph-deltas.md) and return an `Emit` whose key is the delta's element key,
+`node:<id>` or `edge:<id>`. No method takes a key, so a mapper cannot choose a wrong one.
+
+```python
+node(record, *, id: str, version: int, labels: Iterable[str] = (),
+     properties: Mapping[str, PropertyValue] | None = None) -> Emit
+edge(record, *, id: str, version: int, type: str, from_id: str, to_id: str,
+     properties: Mapping[str, PropertyValue] | None = None) -> Emit
+tombstone_node(record, *, id: str, version: int) -> Emit
+tombstone_edge(record, *, id: str, version: int, type: str, from_id: str, to_id: str) -> Emit
+```
+
+`record` is the input record the delta was derived from, or `None`. Its headers, offset and timestamp
+are carried, as with `emit`; its key is not. `from_id` and `to_id` are written as the contract's `from`
+and `to`. A merge always carries `labels` and `properties`, empty when none are given.
+
+Each method raises `ValueError` for what the sink would refuse, so a mistake fails the batch in the
+mapper and never reaches the topic:
+
+| Argument | Refused when |
+|---|---|
+| `id`, `from_id`, `to_id` | not a non-empty string |
+| `version` | not an integer, a `bool`, negative, or beyond 64 bits |
+| `labels`, `type` | a label or the type is not an identifier, `[A-Za-z_][A-Za-z0-9_]*`; `labels` is a bare string |
+| `properties` | a name is not a string or is `id`, `_version` or `_deleted`; a value is `None`, a mapping, a non-finite float, an integer beyond 64 bits, an empty list, or a list of more than one kind of scalar |
+
+A list or a tuple is a property list. A float with no fractional part counts as an integer, as the sink
+reads it, so `[1.5, 2.0]` is a mixed list and is refused.
+
+`ankka_flow.graph` also has:
+
+| name | what it is |
+|---|---|
+| `node_key(id) -> bytes`, `edge_key(id) -> bytes` | the element key of a node or an edge: `b"node:<id>"`, `b"edge:<id>"` |
+| `read(record) -> Delta` | parses an emitted record, for tests; raises `ValueError` when the value is not a delta or the key is not its element key |
+| `Delta` | a frozen dataclass: `kind`, `element`, `id`, `version`, `labels`, `type`, `from_id`, `to_id`, `properties`, `key` |
+| `SCHEMA_NAME` | `"ankka.graph-delta.v1"` |
+| `PropertyValue` | the type of a property value: a string, number, boolean, or list of one of those |
+
+`Delta.kind` is `"node"`, `"edge"` or `"tombstone"`, and `Delta.element` is `"node"` or `"edge"`
+whichever the kind. A streamlet in another language sets the key itself, by the same rule.
 
 ## Parameters
 

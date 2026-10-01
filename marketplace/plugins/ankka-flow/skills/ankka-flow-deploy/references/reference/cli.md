@@ -65,6 +65,11 @@ one pass:
 An outlet connected to nothing is allowed. It is printed on stderr as a note
 (`note: Outlet <streamlet>.<port> is not connected.`) and does not change the exit code.
 
+A topic with a port of the graph delta contract gets a note too, saying whether it is compacted:
+`note: Topic '<id>' carries graph deltas and is compacted (cleanup.policy = compact).`, or, for a
+blueprint that set another policy or a topic that is not managed, what that means for rebuilding the
+graph. [Blueprint](blueprint.md#delta-topics) lists the four notes.
+
 ## `flow generate`
 
 ```text
@@ -113,6 +118,10 @@ A typical deployment:
 flow generate blueprint.conf --descriptors flow --conf prod.conf \
   --image router=registry.example.com/cart-router:1.2 -n shop | kubectl apply -f -
 ```
+
+For a managed topic that carries graph deltas and sets no `cleanup.policy`, `generate` writes
+`cleanup.policy: compact` into the topic's `topicConfig`, and prints the same note `verify` does. Every
+other topic is written as the blueprint and `--conf` say.
 
 See [the resource reference](resource.md) for every field `generate` writes.
 
