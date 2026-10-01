@@ -129,7 +129,8 @@ class PrometheusRulesSuite extends munit.FunSuite:
     Seq(
       "DeltasWritten" -> "ankka_flow_stage_deltas_written_total",
       "DeltasStale"   -> "ankka_flow_stage_deltas_stale_total",
-      "BatchesFailed" -> "ankka_flow_stage_batches_failed_total"
+      "BatchesFailed" -> "ankka_flow_stage_batches_failed_total",
+      "DeleteMarkers" -> "ankka_flow_stage_delete_markers_total"
     ).foreach { (attr, _) =>
       val name =
         jmxName("ankka.flow", "type" -> "stage", "inlet" -> "in", "partition" -> "2")(attr)

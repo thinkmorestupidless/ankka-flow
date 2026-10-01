@@ -78,6 +78,37 @@ object Deltas:
 
   def keyBytes(delta: Delta): ByteString = ByteString.copyFromUtf8(key(delta))
 
+  /** What one record on a delta topic is. */
+  enum Read:
+    /** A delta, under its own element key. */
+    case Applied(delta: Delta)
+
+    /**
+     * A record with no value: compaction's way of removing a key. Not a delta; nothing to apply. A
+     * missing value and an empty one arrive alike, and neither could be a delta.
+     */
+    case Marker
+
+  /**
+   * Reads one record. A delta must be keyed by its own element: on a compacted topic a delta under
+   * any other key would replace, or be replaced by, another element's record, so it is refused
+   * rather than applied (contracts/element-keys.md).
+   */
+  def read(offset: Long, key: Option[ByteString], value: ByteString): Either[String, Read] =
+    if value.isEmpty then Right(Read.Marker)
+    else
+      parse(offset, value).flatMap { delta =>
+        val expected = Deltas.key(delta)
+        key match
+          case Some(k) if k == ByteString.copyFromUtf8(expected) => Right(Read.Applied(delta))
+          case Some(k) =>
+            Left(
+              s"offset $offset: key '${k.toStringUtf8}' is not this delta's element key '$expected'"
+            )
+          case None =>
+            Left(s"offset $offset: no key; this delta's element key is '$expected'")
+      }
+
   def parse(offset: Long, value: ByteString): Either[String, Delta] =
     parse(offset, value.toString(StandardCharsets.UTF_8))
 

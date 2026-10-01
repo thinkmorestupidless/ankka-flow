@@ -165,13 +165,16 @@ final class Neo4jMergeStage(
         state.failed.flatMap(Future.failed)
       case None => Future.failed(new StreamFailed("the stage is not open"))
       case Some(_) =>
-        val parsed = batch.records.map(r => Deltas.parse(r.offset, r.getRecord.value))
-        parsed.collectFirst { case Left(problem) => problem } match
+        val reads =
+          batch.records.map(r => Deltas.read(r.offset, r.getRecord.key, r.getRecord.value))
+        reads.collectFirst { case Left(problem) => problem } match
           case Some(problem) =>
             record.failed(batch.inlet, batch.partition)
             Future.failed(failure(batch, problem))
           case None =>
-            val folded = Deltas.fold(parsed.collect { case Right(d) => d })
+            // Delete markers carry nothing to apply; a batch of them alone runs no transaction.
+            val markers = reads.count(_ == Right(Deltas.Read.Marker))
+            val folded  = Deltas.fold(reads.collect { case Right(Deltas.Read.Applied(d)) => d })
             // The transaction timeout is enforced by the server; a server that stops answering
             // enforces nothing, so the batch also has a deadline of its own.
             val deadline = after(timeout + DeadlineMargin)(
@@ -183,7 +186,13 @@ final class Neo4jMergeStage(
             )(using system)
             Future.firstCompletedOf(Seq(Future(write(folded)), deadline)).transform {
               case Success(written) =>
-                record.applied(batch.inlet, batch.partition, written, batch.records.size - written)
+                record.applied(
+                  batch.inlet,
+                  batch.partition,
+                  written,
+                  batch.records.size - markers - written,
+                  markers
+                )
                 Success(Outcome.Acked(Vector.empty))
               case Failure(e) =>
                 record.failed(batch.inlet, batch.partition)
@@ -276,13 +285,14 @@ object Neo4jMergeStage:
 
   /** What the stage reports per batch; the metrics beans implement it (StageMetrics). */
   trait Record:
-    def applied(inlet: String, partition: Int, written: Int, stale: Int): Unit
+    def applied(inlet: String, partition: Int, written: Int, stale: Int, markers: Int): Unit
     def failed(inlet: String, partition: Int): Unit
 
   object Record:
     val None: Record = new Record:
-      def applied(inlet: String, partition: Int, written: Int, stale: Int): Unit = ()
-      def failed(inlet: String, partition: Int): Unit                            = ()
+      def applied(inlet: String, partition: Int, written: Int, stale: Int, markers: Int): Unit =
+        ()
+      def failed(inlet: String, partition: Int): Unit = ()
 
   /** `transaction-timeout` from the resolved parameters, else the descriptor's default. */
   def transactionTimeout(config: StreamletConfig): FiniteDuration =

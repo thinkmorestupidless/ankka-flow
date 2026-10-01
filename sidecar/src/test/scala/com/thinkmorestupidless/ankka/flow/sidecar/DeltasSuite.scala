@@ -123,3 +123,49 @@ class DeltasSuite extends munit.FunSuite:
       assertEquals(delta.map(Deltas.keyBytes(_).toStringUtf8), Right(expected), s"row $i")
     }
   }
+
+  private def bytes(s: String) = com.google.protobuf.ByteString.copyFromUtf8(s)
+  private val cart             = """{"kind":"node","id":"cart:cart-1","version":1}"""
+  private val tombstone = """{"kind":"tombstone","element":"node","id":"cart:cart-1","version":2}"""
+
+  test("a delta under its own element key is read; a tombstone's key is its element's") {
+    assert(
+      Deltas
+        .read(0, Some(bytes("node:cart:cart-1")), bytes(cart))
+        .exists(_.isInstanceOf[Deltas.Read.Applied])
+    )
+    assertEquals(
+      Deltas.read(0, Some(bytes("node:cart:cart-1")), bytes(tombstone)),
+      Right(Deltas.Read.Applied(Delta.NodeTombstone("cart:cart-1", 2)))
+    )
+  }
+
+  test("any other key, the wrong kind, and no key are refused, naming the key expected") {
+    assertEquals(
+      Deltas.read(7, Some(bytes("cart:cart-1")), bytes(cart)),
+      Left("offset 7: key 'cart:cart-1' is not this delta's element key 'node:cart:cart-1'")
+    )
+    assertEquals(
+      Deltas.read(7, Some(bytes("edge:cart:cart-1")), bytes(cart)),
+      Left("offset 7: key 'edge:cart:cart-1' is not this delta's element key 'node:cart:cart-1'")
+    )
+    assertEquals(
+      Deltas.read(7, None, bytes(cart)),
+      Left("offset 7: no key; this delta's element key is 'node:cart:cart-1'")
+    )
+    val notUtf8 = com.google.protobuf.ByteString.copyFrom(Array[Byte](-1, -2))
+    assert(
+      Deltas
+        .read(7, Some(notUtf8), bytes(cart))
+        .left
+        .exists(_.contains("is not this delta's element key"))
+    )
+  }
+
+  test("a record with no value is a delete marker whatever its key; one byte is not") {
+    val empty = com.google.protobuf.ByteString.EMPTY
+    assertEquals(Deltas.read(0, Some(bytes("node:cart:cart-1")), empty), Right(Deltas.Read.Marker))
+    assertEquals(Deltas.read(0, None, empty), Right(Deltas.Read.Marker))
+    assertEquals(Deltas.read(0, Some(bytes("anything at all")), empty), Right(Deltas.Read.Marker))
+    assertEquals(Deltas.read(3, Some(bytes("k")), bytes("x")), Left("offset 3: not a JSON object"))
+  }

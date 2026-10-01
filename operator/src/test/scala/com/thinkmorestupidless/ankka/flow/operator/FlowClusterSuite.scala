@@ -672,7 +672,7 @@ class FlowClusterSuite extends munit.FunSuite:
     produce(
       "shop.graph-deltas",
       Seq(
-        "cart:k3s" -> """{"kind":"node","id":"cart:k3s","version":1,"labels":["Cart"],"properties":{"cartId":"k3s"}}"""
+        "node:cart:k3s" -> """{"kind":"node","id":"cart:k3s","version":1,"labels":["Cart"],"properties":{"cartId":"k3s"}}"""
       )
     )
     val bolt = s"bolt://localhost:${k3s.getMappedPort(BoltNodePort)}"

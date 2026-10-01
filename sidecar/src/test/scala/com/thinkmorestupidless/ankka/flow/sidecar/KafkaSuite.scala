@@ -22,9 +22,18 @@ import org.testcontainers.utility.DockerImageName
  */
 trait KafkaSuite extends munit.FunSuite:
 
-  val kafka = new KafkaContainer(
-    DockerImageName.parse(sys.props.getOrElse("flow.kafka.image", "apache/kafka:3.9.1"))
-  )
+  /**
+   * Broker settings a suite needs beyond the image's defaults, as the image's `KAFKA_*` variables:
+   * a suite that waits for compaction shortens the log cleaner's backoff here.
+   */
+  protected def kafkaEnv: Map[String, String] = Map.empty
+
+  lazy val kafka: KafkaContainer =
+    val container = new KafkaContainer(
+      DockerImageName.parse(sys.props.getOrElse("flow.kafka.image", "apache/kafka:3.9.1"))
+    )
+    kafkaEnv.foreach((k, v) => container.withEnv(k, v))
+    container
   given system: ActorSystem = ActorSystem("kafka-suite")
 
   override val munitTimeout: FiniteDuration = 3.minutes
@@ -49,6 +58,28 @@ trait KafkaSuite extends munit.FunSuite:
   def createTopic(name: String, partitions: Int): String =
     admin(_.createTopics(java.util.List.of(new NewTopic(name, partitions, 1.toShort))).all().get())
     name
+
+  /** A topic with its own settings, such as `cleanup.policy`. */
+  def createTopic(name: String, partitions: Int, config: Map[String, String]): String =
+    admin(
+      _.createTopics(
+        java.util.List.of(new NewTopic(name, partitions, 1.toShort).configs(config.asJava))
+      ).all().get()
+    )
+    name
+
+  /** Records with a key and no value: what compaction reads as "remove this key". */
+  def publishMarkers(topic: String, keys: Seq[String]): Unit =
+    val props = new Properties()
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap)
+    val producer = new KafkaProducer(props, new ByteArraySerializer, new ByteArraySerializer)
+    try
+      keys.foreach(k =>
+        producer
+          .send(new ProducerRecord[Array[Byte], Array[Byte]](topic, k.getBytes("UTF-8"), null))
+          .get()
+      )
+    finally producer.close()
 
   def publish(
       topic: String,

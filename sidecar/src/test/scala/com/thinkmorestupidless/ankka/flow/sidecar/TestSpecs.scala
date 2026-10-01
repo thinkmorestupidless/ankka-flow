@@ -34,3 +34,11 @@ object TestSpecs:
       headers: Seq[(String, Array[Byte])] = Nil
   ) =
     InputRecord(offset, 0L, Some(record(key, value, headers)))
+
+  /** A record with exactly this key (or none) and this value (empty: a record with no value). */
+  def keyed(offset: Long, key: Option[String], value: String): InputRecord =
+    InputRecord(
+      offset,
+      0L,
+      Some(Record(key = key.map(ByteString.copyFromUtf8), value = ByteString.copyFromUtf8(value)))
+    )
