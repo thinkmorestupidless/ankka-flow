@@ -190,3 +190,41 @@ hand-built deltas), `ankka-flow-deploy` (compaction, `TopicNotCompacted`, the re
    the operator for that streamlet's group only.
 6. **Non-ASCII ids**: the SDK's key bytes and the sink's computed key agree for an id with
    non-ASCII characters (a row of `keys.json`).
+
+## Found during implementation
+
+- **Item 1, compaction within a test** — answered, and faster than feared: with the cleaner's
+  backoff at 500 ms and the topic settings of R7 (`segment.bytes=65536` added, so segments roll by
+  size as well as time), `apache/kafka:3.9.1` compacts within seconds. `CompactionKafkaSuite` wrote
+  19,990 records for 1,999 elements, found 2,000 left, and the rebuild read 1,999 deltas and
+  produced a graph identical to the one built from the whole history. The suite takes about 50 s.
+  The broker had in fact compacted before the first build read the topic, so the "original" graph
+  is built from an uncompacted twin of the same history rather than from the compacted topic.
+- **Item 2, a null value** — answered by `Neo4jSinkKafkaSuite`: a record a plain producer sends
+  with a null value, and one with a zero-length value, both reach the stage as empty bytes and are
+  counted as delete markers; neither stalls the partition.
+- **Item 3, `describeConfigs` reports the default** — answered on k3s by `FlowClusterSuite`: a
+  topic created without a policy is observed as `cleanup.policy = delete`, so `TopicNotCompacted`
+  fires for it, and it is not repeated under `TopicSettingsIgnored`.
+- **Item 4, the policy's path** — answered by the CLI suites: `topic { cleanup.policy = … }` in a
+  blueprint and in `--conf` both arrive under exactly `cleanup.policy`, and `--conf` wins. A policy
+  naming both must be quoted (`"compact,delete"`): an unquoted comma ends the field in HOCON.
+- **Item 5, resetting one streamlet** — answered by `CliResetSuite`: the existing guard checks only
+  the targets; no production change was needed.
+- **Item 6, non-ASCII ids** — answered by the shared fixture: the row `café:žluťoučký` gives the
+  same key in the sink's suite and the SDK's.
+- **When both policies are set on an existing topic**: a resource asking for `compact` over a topic
+  that has `compact,delete` records no `TopicNotCompacted` (it is compacted) but does list
+  `cleanup.policy` under `TopicSettingsIgnored`, because the value differs.
+- **The SDK helper is stricter than the contract listed**, in ways the sink would also refuse or
+  JSON cannot carry: non-finite floats, integers beyond 64 bits, a bare string passed as `labels`,
+  non-string property names; and a whole-number float in a list of floats counts as an integer, as
+  the sink's number rule reads it, so `[1.5, 2.0]` is a mixed list.
+
+## Measurements at the end
+
+`samples/checkout-graph/bench.py` on the compose file, 60,000 deltas over 3 partitions, with the
+key check in place, three runs on 2026-10-01 with the kind cluster also running on the machine:
+1,332/s per partition (the first, against a cold Neo4j), then 1,772/s and 1,929/s. The measurement
+before this feature was 1,782/s: the key check, a byte comparison per record, costs nothing
+measurable.
