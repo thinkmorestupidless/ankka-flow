@@ -5,7 +5,7 @@ import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from ankka_flow import Batch, Emit, JsonInlet, JsonOutlet, Streamlet, json
+from ankka_flow import Batch, Emit, GraphDeltaOutlet, JsonInlet, Streamlet, json
 
 log = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ class CheckoutGraph(Streamlet):
     name = "checkout-graph"
     description = "Maps checkout notices to graph deltas: a cart, a checkout, and the edge between them."
     notices = JsonInlet("in", schema_name="ankka.checkout-notice.v1")
-    deltas = JsonOutlet("deltas", schema_name="ankka.graph-delta.v1")
+    deltas = GraphDeltaOutlet("deltas")
 
     def process(self, batch: Batch) -> Iterable[Emit]:
         for record in batch:
@@ -26,26 +26,23 @@ class CheckoutGraph(Streamlet):
                 continue
             cart_id, checkout_id = f"cart:{cart}", f"checkout:{cart}:{at}"
             checked_out_at = datetime.fromtimestamp(at / 1000, UTC).isoformat(timespec="milliseconds")
-            # Each delta is the element's whole state, versioned by the notice's time, and keyed by
-            # the element's id so every delta for one element is applied in order.
-            for delta in (
-                {"kind": "node", "id": cart_id, "version": at, "labels": ["Cart"], "properties": {"cartId": cart}},
-                {
-                    "kind": "node",
-                    "id": checkout_id,
-                    "version": at,
-                    "labels": ["Checkout"],
-                    "properties": {"cartId": cart, "checkedOutAt": checked_out_at},
-                },
-                {
-                    "kind": "edge",
-                    "id": f"checked-out:{cart}:{at}",
-                    "version": at,
-                    "type": "CHECKED_OUT",
-                    "from": cart_id,
-                    "to": checkout_id,
-                    "properties": {},
-                },
-            ):
-                yield self.deltas.emit(record, value=json.dumps(delta), key=delta["id"].encode())
+            # Each delta is the element's whole state, versioned by the notice's time. The outlet
+            # keys each record by its element (`node:<id>`, `edge:<id>`), so every delta for one
+            # element is applied in order and a compacted topic keeps the latest of each.
+            yield self.deltas.node(record, id=cart_id, version=at, labels=["Cart"], properties={"cartId": cart})
+            yield self.deltas.node(
+                record,
+                id=checkout_id,
+                version=at,
+                labels=["Checkout"],
+                properties={"cartId": cart, "checkedOutAt": checked_out_at},
+            )
+            yield self.deltas.edge(
+                record,
+                id=f"checked-out:{cart}:{at}",
+                version=at,
+                type="CHECKED_OUT",
+                from_id=cart_id,
+                to_id=checkout_id,
+            )
     # docs:end mapper
