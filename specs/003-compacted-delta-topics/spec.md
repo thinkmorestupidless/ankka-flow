@@ -69,6 +69,11 @@ to build a delta that cannot be keyed wrongly.
   record, so the topic is bounded by the elements ever created and a rebuild always has deletions
   marked. A writer that wants a record gone writes the delete marker itself; the platform writes
   none and only has to pass over them.
+- Found in planning: a delta topic is recognised by any port of the delta contract, not only a
+  consumer's, so that a pipeline that only writes deltas (its sink is in another pipeline) still
+  gets a compacted topic. And the rebuild guarantee is about the live graph with markers written
+  after tombstones: because a marker applies nothing, a marker on a live element is rebuilt
+  differently before and after the broker compacts it, which the requirements now say.
 - Q: Does the contract's name change now that the key is required and includes the element's kind?
   → A: No. It stays `ankka.graph-delta.v1`. A writer built before this feature passes verification
   and is refused by the sink at run time, with a message naming the key it should have used; the
@@ -132,7 +137,7 @@ the topic cannot be relied on to rebuild the graph.
 
 **Acceptance Scenarios**:
 
-1. **Given** a managed topic with a consumer port of the graph delta contract and no cleanup setting
+1. **Given** a managed topic with a port of the graph delta contract and no cleanup setting
    of its own, **When** the blueprint is verified, **Then** the topic is reported as compacted, with
    the reason, and the generated resource says so.
 2. **Given** that resource, **When** the operator creates the topic, **Then** the topic is compacted.
@@ -198,9 +203,11 @@ absent, every live element is unchanged, and the sink did not stall on the marke
    **Then** the element is present and marked deleted.
 2. **Given** a tombstoned element whose record a delete marker has removed, **When** the graph is
    rebuilt, **Then** the element is absent and nothing else differs.
-3. **Given** a delete marker for an element that was never tombstoned, **When** the graph is rebuilt,
-   **Then** the element is absent from the rebuilt graph, and the documentation says a delete marker
-   on a live element removes it from every future rebuild.
+3. **Given** a delete marker for an element that was never tombstoned, **When** the graph is rebuilt
+   after the broker has compacted the marker's key, **Then** the element is absent; before that, it
+   is rebuilt in its last state. The documentation says a delete marker belongs after an element's
+   tombstone, and that one written for a live element makes rebuilds differ from the graph that was
+   built as the records arrived.
 4. **Given** a tombstoned element and no writer that removes it, **When** any amount of time passes,
    **Then** its tombstone is still the last record under its key: the platform writes no delete
    marker of its own.
@@ -271,8 +278,8 @@ absent, every live element is unchanged, and the sink did not stall on the marke
 
 **Compaction**
 
-- **FR-008**: A managed topic with at least one consumer port of the graph delta contract MUST be
-  compacted by default: when the blueprint and the deploy-time configuration set no cleanup policy
+- **FR-008**: A managed topic with at least one port of the graph delta contract, producing or
+  consuming, MUST be compacted by default: when the blueprint and the deploy-time configuration set no cleanup policy
   for it, the generated resource sets compaction.
 - **FR-009**: `flow verify` and `flow generate` MUST report, for each such topic, that it is
   compacted and why, and for a delta topic whose blueprint sets another cleanup policy, that the
@@ -290,13 +297,14 @@ absent, every live element is unchanged, and the sink did not stall on the marke
   produce a graph whose live elements are identical — labels, type, endpoints, properties and
   version — to those of a graph built from the same topic as the records arrived.
 - **FR-014**: A rebuild MUST NOT depend on compaction having run: an uncompacted or partly compacted
-  topic rebuilds the same graph.
+  topic rebuilds the same live graph, provided every delete marker in it follows its element's
+  tombstone.
 
 **Tombstones over time**
 
 - **FR-015**: A tombstoned element whose record is in the topic MUST be rebuilt marked deleted; one
-  whose record has been removed by a delete marker MUST be absent from a rebuilt graph, with no other
-  element affected.
+  whose record has been removed by a delete marker and compacted away MUST be absent from a rebuilt
+  graph, with no other element affected. Either way it is not a live element.
 - **FR-016**: The platform MUST NOT write delete markers: a tombstone remains its element's last
   record until a writer of that topic removes it. The documentation MUST say that a delete marker is
   the writer's to send, what it changes (future rebuilds) and what it does not (a graph that already
@@ -321,8 +329,8 @@ absent, every live element is unchanged, and the sink did not stall on the marke
 
 - **Element key**: the record key of a delta: the element's kind and id. The unit compaction keeps
   one record of.
-- **Delta topic**: a topic with at least one consumer port of the graph delta contract. Compacted by
-  default when the pipeline owns it.
+- **Delta topic**: a topic with at least one port of the graph delta contract, producing or
+  consuming. Compacted by default when the pipeline owns it.
 - **Delete marker**: a record with a key and no value. Removes the key's earlier records from a
   compacted topic; not a delta.
 - **Tombstone**: a delta that marks an element deleted at a version. It is the element's latest
