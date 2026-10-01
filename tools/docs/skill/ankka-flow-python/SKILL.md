@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-python
-description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet, its tests, its descriptor, its Dockerfile, or running it on a laptop.
+description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet, its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink.
 pages:
   - build/python-streamlet.md
   - build/testing.md
@@ -11,6 +11,7 @@ pages:
   - concepts/contracts.md
   - concepts/delivery.md
   - get-started/first-streamlet.md
+  - reference/graph-deltas.md
 ---
 
 # Writing a streamlet in Python
@@ -46,6 +47,11 @@ what the sidecar compares with the running process before it starts.
    ports to expose, no probes. The image holds only the streamlet's code.
 8. **Test with the Harness first.** `ankka_flow.testkit.Harness` calls `process` with batches it
    builds and applies the protocol's rules, with no Kafka, sidecar or gRPC.
+9. **Deltas for the graph sink are whole state, keyed by element id.** Declare
+   `JsonOutlet("deltas", schema_name="ankka.graph-delta.v1")` and yield
+   `self.deltas.emit(record, value=json.dumps(delta), key=delta["id"].encode())` for each node, edge or
+   tombstone, with a version that rises with the source entity. Deriving from `record` keeps its
+   headers and tells the Harness the record was not skipped.
 
 ## Before writing
 

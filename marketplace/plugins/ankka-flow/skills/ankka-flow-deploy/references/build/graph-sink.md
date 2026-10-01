@@ -1,0 +1,260 @@
+# Build a graph from a pipeline
+
+> Turn a service's events into a Neo4j graph — choose ids and versions, map events to graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
+
+Source: https://flow.ankka.cloud/build/graph-sink/
+A graph built from several services' events is the kind of job a pipeline does well: every service
+publishes what happened to it, and a pipeline projects those events into one eventually consistent
+graph. ankka-flow splits the job in two. The part that is the same for every domain — merging into
+Neo4j so that redelivery, reordering and a rebuild from the start all leave the same graph — is the
+built-in [Neo4j merge sink](../reference/neo4j-merge-sink.md). The part that is different every time —
+which events become which nodes and edges — is a streamlet you write, which maps events to
+[graph deltas](../reference/graph-deltas.md).
+
+This page builds the pipeline in
+[`samples/checkout-graph`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/samples/checkout-graph):
+ankka's shopping cart publishes a checkout notice to `cart-checkouts` whenever a cart is checked out,
+and the graph gains a `Cart`, a `Checkout` and a `CHECKED_OUT` edge between them.
+
+```text
+shopping-cart (ankka) ──► cart-checkouts ──► mapper ──► graph-deltas ──► graph (Neo4j merge sink) ──► Neo4j
+```
+
+A single service that writes its own graph needs none of this. Reach for it when the graph is fed by
+topics the services already publish, when it must be rebuildable from those topics, or when several
+services contribute to it.
+
+## Decide the ids and the versions
+
+Every element of the graph needs a global id and a version that only rises.
+
+- **Ids** are stable strings, prefixed by the kind of thing so two sources cannot collide:
+  `cart:cart-1`, `checkout:cart-1:1790627790360`.
+- **Versions** come from the source entity's own history: its sequence number, or an event time in
+  milliseconds when there is at most one event per entity per millisecond. The shopping cart's notice
+  carries `at`, the time of the checkout, and each cart is checked out once per notice, so `at` is the
+  version of everything the notice produces.
+- **One writer per element.** Two source entities never write the same element; a node several
+  sources describe is modelled as several nodes joined by edges.
+
+## Map events to deltas
+
+The mapper reads the notice, decides what it means for the graph, and emits one delta per element,
+keyed by the element's id so every delta for one element is applied in order:
+
+```python
+import logging
+from collections.abc import Iterable
+from datetime import UTC, datetime
+
+from ankka_flow import Batch, Emit, JsonInlet, JsonOutlet, Streamlet, json
+
+log = logging.getLogger(__name__)
+
+
+class CheckoutGraph(Streamlet):
+    name = "checkout-graph"
+    description = "Maps checkout notices to graph deltas: a cart, a checkout, and the edge between them."
+    notices = JsonInlet("in", schema_name="ankka.checkout-notice.v1")
+    deltas = JsonOutlet("deltas", schema_name="ankka.graph-delta.v1")
+
+    def process(self, batch: Batch) -> Iterable[Emit]:
+        for record in batch:
+            try:
+                notice = json.loads(record.value)
+                cart, at = str(notice["cartId"]), int(notice["at"])
+            except (ValueError, KeyError, TypeError):
+                log.warning("skipping a record at offset %d that is not a checkout notice", record.offset)
+                continue
+            cart_id, checkout_id = f"cart:{cart}", f"checkout:{cart}:{at}"
+            checked_out_at = datetime.fromtimestamp(at / 1000, UTC).isoformat(timespec="milliseconds")
+            # Each delta is the element's whole state, versioned by the notice's time, and keyed by
+            # the element's id so every delta for one element is applied in order.
+            for delta in (
+                {"kind": "node", "id": cart_id, "version": at, "labels": ["Cart"], "properties": {"cartId": cart}},
+                {
+                    "kind": "node",
+                    "id": checkout_id,
+                    "version": at,
+                    "labels": ["Checkout"],
+                    "properties": {"cartId": cart, "checkedOutAt": checked_out_at},
+                },
+                {
+                    "kind": "edge",
+                    "id": f"checked-out:{cart}:{at}",
+                    "version": at,
+                    "type": "CHECKED_OUT",
+                    "from": cart_id,
+                    "to": checkout_id,
+                    "properties": {},
+                },
+            ):
+                yield self.deltas.emit(record, value=json.dumps(delta), key=delta["id"].encode())
+```
+
+Each delta is the element's whole state. Nothing about Neo4j appears in the mapper: it knows the
+contract, not the database. A record that is not a notice is skipped by emitting nothing for it,
+which is the mapper's decision to make. `emit(record, …)` derives each delta from the input record,
+so ankka's CloudEvents headers travel with it.
+
+The harness proves the mapping with no Kafka, sidecar or database:
+
+```python
+def test_a_notice_becomes_a_cart_a_checkout_and_the_edge_between_them() -> None:
+    h = Harness(CheckoutGraph())
+    h.inlet("in").put(key=b"cart-1", value=notice("cart-1", 1_790_000_000_000), headers=[("ce-id", b"n-1")])
+    h.run()
+    deltas = [json.loads(r.value) for r in h.outlet("deltas").records]
+    assert [(d["kind"], d["id"]) for d in deltas] == [
+        ("node", "cart:cart-1"),
+        ("node", "checkout:cart-1:1790000000000"),
+        ("edge", "checked-out:cart-1:1790000000000"),
+    ]
+    assert all(d["version"] == 1_790_000_000_000 for d in deltas)
+    assert deltas[1]["properties"]["checkedOutAt"] == "2026-09-21T14:13:20.000+00:00"
+    assert deltas[2]["from"] == "cart:cart-1" and deltas[2]["to"] == "checkout:cart-1:1790000000000"
+    # keyed by element id, with ankka's headers carried along
+    assert [r.key for r in h.outlet("deltas").records] == [d["id"].encode() for d in deltas]
+    assert all(r.headers == [("ce-id", b"n-1")] for r in h.outlet("deltas").records)
+    assert h.skipped == []
+```
+
+## Wire the sink
+
+The sink is a streamlet whose descriptor is built in. Name it `builtin/neo4j-merge-sink`; it needs no
+image and no descriptor file:
+
+```hocon
+blueprint {
+  name = checkouts-graph
+  streamlets {
+    mapper = checkout-graph
+    # Built into the sidecar: no image, and a pod with only the sidecar in it.
+    graph  = builtin/neo4j-merge-sink
+  }
+  topics {
+    # Published by the ankka shopping cart's CheckoutNotifier. The platform only reads it.
+    cart-checkouts {
+      managed    = false
+      topic.name = "cart-checkouts"
+      cluster    = default
+      consumers  = [mapper.in]
+      consumer-config { auto.offset.reset = earliest }
+    }
+    graph-deltas {
+      producers  = [mapper.deltas]
+      consumers  = [graph.in]
+      partitions = 3
+      replicas   = 1
+    }
+  }
+}
+```
+
+`flow verify` checks the sink's inlet against `mapper.deltas` like any pair of ports: an outlet of any
+contract other than `ankka.graph-delta.v1` is refused before anything is deployed.
+
+The sink's `secret` parameter has no default, so verification needs the deploy-time configuration
+that names the Secret, as generation does:
+
+```bash
+flow verify blueprint.conf --descriptors flow --conf k8s/in-cluster.conf
+```
+
+```text
+verified: 2 streamlets, 2 topics
+```
+
+## Give it a connection
+
+The sink reaches Neo4j through a Secret in the pipeline's namespace, named by its `secret` parameter,
+with the keys `uri`, `username`, `password` and optionally `database`. In the sample's deploy-time
+configuration:
+
+```hocon
+flow.streamlets.graph.config { secret = neo4j-local }
+```
+
+The operator mounts the Secret into the sink's sidecar and refuses the resource if the Secret is
+missing or incomplete. `just neo4j-up` installs a development Neo4j and the `neo4j-local` Secret on a
+local cluster.
+
+## Run it on a laptop
+
+The sample's compose file runs Kafka, Neo4j and two sidecars: the mapper's, which calls the mapper on
+the host, and the sink's, which runs the built-in stage from this configuration and a directory of
+credential files:
+
+```hocon
+# The merge sink's sidecar on the compose network: a stage block and no process. In a cluster the
+# operator renders the same file and mounts the connection Secret at /etc/flow/neo4j.
+# descriptor.json beside it is the built-in's, a copy of protocol/fixtures/builtin/neo4j-merge-sink.json.
+flow {
+  pipeline  = checkouts-graph
+  streamlet = graph
+  config    = { secret = "neo4j-local", transaction-timeout = "30s" }
+  stage {
+    name = "neo4j-merge-sink"
+    neo4j { credentials-dir = "/etc/flow/neo4j" }
+  }
+  inlets {
+    in {
+      topic             = "checkouts-graph.graph-deltas"
+      bootstrap.servers = "kafka:9092"
+      consumer-config { auto.offset.reset = earliest }
+      batch { max-records = 500, max-bytes = 1 MiB }
+    }
+  }
+}
+```
+
+```bash
+(cd ../.. && sbt sidecar/docker:publishLocal)
+cd samples/checkout-graph
+uv sync && uv run pytest -q && uv run descriptor --check
+uv run python produce.py                          # creates the topics, then 20 notices over 5 carts
+docker compose up -d
+uv run python -m checkout_graph.main &
+uv run python verify.py                           # 5 carts, 20 checkouts, 20 edges
+uv run python produce.py && uv run python verify.py   # the same notices again: the graph is unchanged
+```
+
+The second run is the point: every delta arrives again, every one is stale, and the graph does not
+change.
+
+## Deploy it beside ankka
+
+With the shopping cart publishing to `cart-checkouts` (see
+[Read an ankka service's topic](ankka-topics.md)) and ankka-flow installed:
+
+```bash
+just neo4j-up
+docker build -f samples/checkout-graph/Dockerfile -t sample-checkout-graph .
+kind load docker-image --name ankka sample-checkout-graph
+flow generate samples/checkout-graph/blueprint.conf --descriptors samples/checkout-graph/flow \
+  --conf samples/checkout-graph/k8s/in-cluster.conf \
+  --image mapper=sample-checkout-graph:latest -n shop | kubectl apply -f -
+kubectl -n shop get aflow checkouts-graph -w
+```
+
+The sink's pod has one container. Check a cart out through the shopping cart's API, then read the
+graph:
+
+```bash
+kubectl -n neo4j exec neo4j-0 -- cypher-shell -u neo4j -p flow-local-password \
+  'MATCH (c:Cart)-[:CHECKED_OUT]->(k:Checkout) RETURN c.cartId, k.checkedOutAt'
+```
+
+## Rebuild it
+
+The graph is a projection of the topics, so it can be rebuilt from them. Scale both streamlets to
+zero, run `flow reset checkouts-graph`, and scale them up: every event is mapped and every delta
+merged again, and the graph ends as it was. See [Rebuild from the start](../deploy/reset.md).
+
+## Watch it
+
+The sink's pod exports `ankka_flow_stage_deltas_written_total`,
+`ankka_flow_stage_deltas_stale_total` and `ankka_flow_stage_batches_failed_total` beside the inlet's
+lag. When Neo4j is unreachable, the pod goes not ready, the lag grows, nothing is committed, and a
+`PartitionStalled` warning names the error; when it comes back, the backlog drains. See
+[Observe a pipeline](../deploy/observe.md).

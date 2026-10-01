@@ -6,7 +6,7 @@ import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
 import ankka.flow.v1.discovery.StreamletDescriptor
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorValidation, Json}
+import com.thinkmorestupidless.ankka.flow.protocol.{Builtins, DescriptorValidation, Json}
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 
 /**
@@ -38,6 +38,15 @@ final case class OutletConfig(
     producerConfig: Map[String, String]
 )
 
+/** The Neo4j settings of the `neo4j-merge-sink` stage: where its credentials are mounted. */
+final case class Neo4jStageConfig(credentialsDir: String)
+
+/**
+ * `flow.stage`: present when the sidecar runs a built-in stage instead of talking to a process
+ * (feature 002). `name` is the built-in descriptor's name.
+ */
+final case class StageConfig(name: String, neo4j: Option[Neo4jStageConfig])
+
 /**
  * `streamlet.conf`: what one pod does. Rendered by the operator into the streamlet's Secret, or
  * written by hand beside a compose file (contracts/sidecar.md).
@@ -47,7 +56,8 @@ final case class StreamletConfig(
     streamlet: String,
     config: Config,
     inlets: Map[String, InletConfig],
-    outlets: Map[String, OutletConfig]
+    outlets: Map[String, OutletConfig],
+    stage: Option[StageConfig] = None
 ):
 
   /**
@@ -82,7 +92,18 @@ final case class StreamletConfig(
         )
     names("inlet", inlets.keySet, descriptor.inlets.map(_.name).toSet) ++
       names("outlet", outlets.keySet, descriptor.outlets.map(_.name).toSet) ++
-      configJson(descriptor).left.toSeq.flatten
+      configJson(descriptor).left.toSeq.flatten ++
+      stage.toVector.flatMap(checkStage)
+
+  private def checkStage(s: StageConfig): Vector[String] =
+    Builtins.byName(s.name) match
+      case None =>
+        Vector(
+          s"stage '${s.name}' is not built into this sidecar; it has: ${Builtins.names.mkString(", ")}"
+        )
+      case Some(_) if s.name == Builtins.neo4jMergeSink.getStreamlet.name && s.neo4j.isEmpty =>
+        Vector(s"stage '${s.name}' needs flow.stage.neo4j.credentials-dir")
+      case Some(_) => Vector.empty
 
 object StreamletConfig:
 
@@ -128,7 +149,15 @@ object StreamletConfig:
           producerConfig = props(o, "producer-config")
         )
       }.toMap
-      StreamletConfig(pipeline, streamlet, config, inlets, outlets)
+      val stage = Option.when(c.hasPath("stage"))(c.getConfig("stage")).map { s =>
+        StageConfig(
+          name = s.getString("name"),
+          neo4j = Option
+            .when(s.hasPath("neo4j.credentials-dir"))(s.getString("neo4j.credentials-dir"))
+            .map(Neo4jStageConfig(_))
+        )
+      }
+      StreamletConfig(pipeline, streamlet, config, inlets, outlets, stage)
     }.toEither.left.map(e => Vector(e.getMessage))
 
   private def str(c: Config, key: String, default: String) =

@@ -15,7 +15,7 @@ object ClusterImages:
     try docker.inspectImageCmd(image).exec(): Unit
     catch
       case _: NotFoundException =>
-        if image.startsWith("apache/kafka") then
+        if image.startsWith("apache/kafka") || image.startsWith("neo4j") then
           docker.pullImageCmd(image).start().awaitCompletion(): Unit
         else
           throw new IllegalStateException(

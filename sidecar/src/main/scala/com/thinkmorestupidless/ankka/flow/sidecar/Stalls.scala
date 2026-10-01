@@ -42,6 +42,12 @@ final class Stalls(threshold: FiniteDuration, events: EventSink, clock: Clock = 
   def forget(inlet: String, partition: Int): Unit =
     entries.remove((inlet, partition)): Unit
 
+  /** Forgets every stall of `inlet` except those of `partitions`: what an assignment moved away. */
+  def retain(inlet: String, partitions: Set[Int]): Unit =
+    entries.keySet.asScala.toVector
+      .filter((i, p) => i == inlet && !partitions.contains(p))
+      .foreach(entries.remove(_))
+
   def stalledSeconds(inlet: String, partition: Int): Long =
     Option(entries.get((inlet, partition))).fold(0L)(e => (clock.millis - e.since) / 1000)
 

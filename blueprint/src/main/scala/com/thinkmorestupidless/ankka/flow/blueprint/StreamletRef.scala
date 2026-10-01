@@ -16,6 +16,8 @@
 
 package com.thinkmorestupidless.ankka.flow.blueprint
 
+import com.thinkmorestupidless.ankka.flow.protocol.Builtins
+
 /**
  * A streamlet the blueprint uses, carried from Cloudflow's `cloudflow.blueprint.StreamletRef`: a
  * streamlet names a descriptor (research R6), where Cloudflow's named a class it then searched for.
@@ -31,8 +33,12 @@ final case class StreamletRef(
       if NameUtils.isDnsLabelCompatible(name) then None else Some(InvalidStreamletName(name))
     val descriptorFound: Either[BlueprintProblem, StreamletDescriptor] =
       streamletDescriptors
-        .find(_.name == descriptorName)
-        .toRight(StreamletDescriptorNotFound(name, descriptorName))
+        .find(_.ref == descriptorName)
+        .toRight(
+          if descriptorName.startsWith(Builtins.Prefix) then
+            UnknownBuiltin(name, descriptorName, streamletDescriptors.filter(_.builtin).map(_.name))
+          else StreamletDescriptorNotFound(name, descriptorName)
+        )
     copy(
       problems = nameProblem.toVector ++ descriptorFound.left.toSeq,
       verified = descriptorFound.toOption.map(descriptor => VerifiedStreamlet(name, descriptor))

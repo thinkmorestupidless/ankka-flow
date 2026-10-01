@@ -1,6 +1,6 @@
 ---
 name: ankka-flow
-description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies.
+description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies. Also building a graph from events with graph deltas and the built-in Neo4j merge sink.
 pages:
   - index.md
   - concepts/pipelines.md
@@ -14,6 +14,8 @@ pages:
   - get-started/coding-agents.md
   - build/blueprints.md
   - build/ankka-topics.md
+  - build/graph-sink.md
+  - reference/graph-deltas.md
   - reference/blueprint.md
   - reference/limitations.md
   - reference/glossary.md
@@ -38,8 +40,10 @@ pod's loopback interface.
 2. **Ports connect by contract, checked before anything runs.** A contract is a format (only `json`)
    and a schema name such as `cart-events.v1`; the fingerprint is Base64 of the SHA-256 of that name.
    An outlet and an inlet on one topic must carry equal contracts. A new version is a new name.
-3. **The sidecar never decodes.** A record's value is bytes from Kafka to the process and back.
-   Decoding, and deciding what to do with a record that will not decode, is the streamlet's job.
+3. **The sidecar never decodes for a process.** A record's value is bytes from Kafka to the process
+   and back. Decoding, and deciding what to do with a record that will not decode, is the streamlet's
+   job. A built-in streamlet (`builtin/<name>`, no image, a pod with only the sidecar) decodes its own
+   contract and nothing else.
 4. **Delivery is at least once.** Offsets are committed only after every emit of the batch is
    confirmed by the broker. A crash between the write and the commit delivers the record again, so
    streamlet logic must tolerate repeats. There is no exactly-once.
@@ -57,6 +61,11 @@ pod's loopback interface.
    overridden at deploy time.
 8. **The resource says what runs.** `flow generate` merges deploy-time configuration into the
    `AnkkaFlow` resource; the operator adds only the sidecar image and Kafka cluster secrets.
+9. **A graph is built from state-shaped, versioned deltas.** Map events to `ankka.graph-delta.v1`
+   in an ordinary streamlet and wire `builtin/neo4j-merge-sink` behind it. Each delta is an element's
+   whole state with a global id and a version that rises with its one source entity; key each record
+   by the element id. Redelivery, reordering and a replay from the start then leave the same graph.
+   No increments, no Cypher from the pipeline; tombstones mark rather than delete.
 
 ## Before answering
 
@@ -74,3 +83,4 @@ pod's loopback interface.
 - A blueprint that produces to an unmanaged topic, or leaves an inlet connected to nothing.
 - Kafka settings or credentials in the streamlet's own container; they belong to the sidecar.
 - An HTTP or gRPC ingress into a pipeline; records enter through a Kafka topic.
+- A graph pipeline whose mapper writes to Neo4j itself, or emits increments rather than whole state.

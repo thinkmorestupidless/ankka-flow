@@ -46,6 +46,11 @@ class CrdSchemaSuite extends munit.FunSuite:
     assertEquals(props(item(status, "topics")), fields(classOf[TopicStatus]))
   }
 
+  test("a streamlet requires a name and a descriptor, and an image only when it is not built in") {
+    val spec = schema.getProperties.get("spec")
+    assertEquals(item(spec, "streamlets").getRequired.asScala.toSet, Set("name", "descriptor"))
+  }
+
   test("a resource round-trips, the descriptor object and optional numbers intact") {
     val mapper = FlowSerialization.mapper()
     val descriptor = mapper.readTree(
@@ -64,6 +69,14 @@ class CrdSchemaSuite extends munit.FunSuite:
           Map("in"               -> "cart-events"),
           Map("valid"            -> "valid-carts"),
           descriptor
+        ),
+        StreamletSpec(
+          name = "graph",
+          replicas = 1,
+          config = Map("secret" -> mapper.readTree("\"neo4j-shop\"")),
+          inlets = Map("in" -> "valid-carts"),
+          descriptor = descriptor,
+          builtin = true
         )
       ),
       topics = List(
@@ -93,5 +106,10 @@ class CrdSchemaSuite extends munit.FunSuite:
     assertEquals(back.getSpec.topics(1).partitions.map(_ + 1), Some(7))
     assertEquals(back.getSpec.streamlets.head.descriptor.get("name").asText, "cart-router")
     assert(!yaml.contains("empty"), yaml)
+    assertEquals(
+      back.getSpec.streamlets.map(s => s.name -> s.builtin),
+      List("router" -> false, "graph" -> true)
+    )
+    assertEquals(back.getSpec.streamlets(1).image, "")
     val _: JsonNode = back.getSpec.streamlets.head.config("review-threshold")
   }

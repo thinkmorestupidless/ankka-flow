@@ -20,6 +20,10 @@ final class Metrics(stalls: Stalls):
 
   private val server     = ManagementFactory.getPlatformMBeanServer
   private val registered = mutable.Set.empty[(String, Int)]
+  private val stageSeen  = mutable.Set.empty[(String, Int)]
+
+  /** A built-in stage's counters; its beans appear for partitions it has processed. */
+  val stage: StageMetrics = new StageMetrics
 
   /** Registers beans for partitions seen since the last call. Called every second. */
   def refresh(): Unit = synchronized {
@@ -31,10 +35,20 @@ final class Metrics(stalls: Stalls):
       Try(server.registerMBean(new StandardMBean(bean, classOf[PartitionMetricsMBean]), name))
       registered += inlet -> partition
     }
+    stage.seen.filterNot(stageSeen).foreach { (inlet, partition) =>
+      val name = Metrics.name(inlet, partition, "stage")
+      Try(
+        server.registerMBean(
+          new StandardMBean(stage.of(inlet, partition), classOf[StageMetricsMBean]),
+          name
+        )
+      )
+      stageSeen += inlet -> partition
+    }
   }
 
 object Metrics:
-  def name(inlet: String, partition: Int): ObjectName =
+  def name(inlet: String, partition: Int, kind: String = "sidecar"): ObjectName =
     new ObjectName(
-      s"ankka.flow:type=sidecar,inlet=${ObjectName.quote(inlet).drop(1).dropRight(1)},partition=$partition"
+      s"ankka.flow:type=$kind,inlet=${ObjectName.quote(inlet).drop(1).dropRight(1)},partition=$partition"
     )

@@ -28,13 +28,13 @@ export PATH="$PWD/cli/target/universal/stage/bin:$PATH"
 ## `flow verify`
 
 ```text
-flow verify <blueprint.conf> --descriptors <dir> [--conf <file>]...
+flow verify <blueprint.conf> [--descriptors <dir>] [--conf <file>]...
 ```
 
 | option | meaning |
 |---|---|
 | `<blueprint.conf>` | the blueprint, HOCON; see [the blueprint reference](blueprint.md) |
-| `--descriptors <dir>` | a directory whose `*.json` files are streamlet descriptors; other files are ignored |
+| `--descriptors <dir>` | a directory whose `*.json` files are streamlet descriptors; other files are ignored. Optional when every streamlet is built in (`builtin/<name>`), whose descriptors the CLI already knows |
 | `--conf <file>` | deploy-time configuration, HOCON; repeatable, later files win; see [Configure at deploy time](../deploy/configuration.md) |
 
 It reads and validates every descriptor, parses the blueprint, checks it against the descriptors, and
@@ -72,7 +72,7 @@ An outlet connected to nothing is allowed. It is printed on stderr as a note
 ## `flow generate`
 
 ```text
-flow generate <blueprint.conf> --descriptors <dir> [--conf <file>]...
+flow generate <blueprint.conf> [--descriptors <dir>] [--conf <file>]...
               [--images <file>] [--image <name>=<ref>]...
               [--pipeline <id>] [--version <v>] [-n|--namespace <ns>] [-o|--output <file>]
               [--delete-managed-topics]
@@ -98,7 +98,8 @@ refuses when:
 
 | problem | message |
 |---|---|
-| a streamlet has no image | `Streamlet '<name>' has no image.` |
+| a streamlet has no image | `Streamlet '<name>' has no image.` A built-in streamlet needs none |
+| an image is given for a built-in streamlet | `Streamlet '<name>' is built in and takes no image.` |
 | an `--images` file does not parse | `images: <reason>` |
 | an `--image` is not `name=ref` | `--image '<value>' is not name=reference` |
 | the pipeline id is not a DNS label of at most 40 characters | `pipeline id '<id>' must be 1-40 of [a-z0-9-], not starting or ending with '-'` |

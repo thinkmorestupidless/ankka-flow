@@ -12,9 +12,18 @@ groups, lag and resets. The two talk over a small gRPC protocol on the pod's loo
 | `process` (the streamlet's image) | the streamlet's logic. It listens on `127.0.0.1:$FLOW_PROCESS_PORT` and has no ports, probes, mounts or secrets. |
 | `sidecar` (the platform's image) | Kafka, the descriptor check, readiness and liveness, the Prometheus metrics, the Kafka credentials. |
 
-Because the sidecar never decodes a record, one sidecar serves every language. Nothing in a pipeline
+Because the sidecar never decodes a record for a process, one sidecar serves every language. Nothing in a pipeline
 names the sidecar's image: the operator knows it from its own configuration, so upgrading the platform
 upgrades every pipeline's sidecar on its next rollout.
+
+## A pod with only the sidecar
+
+A streamlet whose descriptor is built into the platform — named `builtin/<name>` in a blueprint — has
+no process container at all. Its logic runs inside the sidecar as a **stage**: batches from Kafka go
+to the stage instead of across the protocol, and the offsets are committed only once the stage's own
+write has completed. A built-in stage is the one thing in the sidecar that decodes records, and it
+decodes only its own contract. The [Neo4j merge sink](../reference/neo4j-merge-sink.md) is the one
+built-in stage; it merges [graph deltas](../reference/graph-deltas.md) into Neo4j.
 
 ## Start-up
 

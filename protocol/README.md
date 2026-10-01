@@ -51,7 +51,9 @@ policy; one that ends connections for too many pings is never provoked.
 - **Skipping is acking without emitting.** The sidecar never knows a record was skipped.
 - **A rebalance discards.** An emit or ack for a partition the sidecar no longer owns is dropped
   silently and nothing is committed for it; the new owner reads it again. This is not a violation.
-- **The sidecar never decodes a value.** A contract is a format and a fingerprint.
+- **The sidecar never decodes a value it passes to a process.** A contract is a format and a
+  fingerprint. A stage built into the sidecar, which has no process, decodes its own contract and
+  nothing else.
 - **A keyless emit is partitioned by Kafka's default partitioner.** Per-key order is promised for
   keyed records only.
 - **A new `Start` voids everything.** State tied to an older `conversation_id` must be discarded.

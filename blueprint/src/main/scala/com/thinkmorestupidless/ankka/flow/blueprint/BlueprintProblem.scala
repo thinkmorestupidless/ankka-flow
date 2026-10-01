@@ -77,6 +77,11 @@ object BlueprintProblem:
         s"Topic '$topic' is not managed and names no bootstrap.servers or cluster."
       case MissingImage(streamlet) =>
         s"Streamlet '$streamlet' has no image."
+      case UnknownBuiltin(streamletRef, descriptorName, known) =>
+        val list = if known.isEmpty then "none" else known.mkString(", ")
+        s"Streamlet '$streamletRef' names built-in descriptor '$descriptorName', which this version does not have; the built-ins are: $list."
+      case BuiltinHasImage(streamlet) =>
+        s"Streamlet '$streamlet' is built in and takes no image."
       case UnconnectedInlets(unconnectedInlets) =>
         val list = unconnectedInlets.map(ui => s"${ui.streamletRef}.${ui.port.name}").mkString(",")
         if unconnectedInlets.size > 1 then s"Inlets ($list) are not connected."
@@ -132,6 +137,16 @@ final case class UnmanagedTopicHasProducers(topic: String, paths: immutable.Inde
     extends BlueprintProblem
 final case class UnmanagedTopicWithoutBrokers(topic: String) extends BlueprintProblem
 final case class MissingImage(streamlet: String)             extends BlueprintProblem
+
+/** A `builtin/<name>` this version does not ship; `known` lists the built-ins that exist. */
+final case class UnknownBuiltin(
+    streamletRef: String,
+    descriptorName: String,
+    known: immutable.IndexedSeq[String]
+) extends BlueprintProblem
+
+/** An image given for a streamlet whose descriptor is built in: its pod has only the sidecar. */
+final case class BuiltinHasImage(streamlet: String) extends BlueprintProblem
 
 sealed trait UnconnectedPorts extends BlueprintProblem:
   def nonEmpty: Boolean

@@ -102,3 +102,9 @@ jobs:
           uv sync
           uv run descriptor --check
           uv run pytest -q
+      - name: Sample graph
+        working-directory: samples/checkout-graph
+        run: |
+          uv sync
+          uv run descriptor --check
+          uv run pytest -q

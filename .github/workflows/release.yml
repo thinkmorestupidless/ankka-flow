@@ -36,6 +36,8 @@ jobs:
           docker push "ghcr.io/thinkmorestupidless/sample-cart-router:${version}"
           docker build -f samples/checkout-feed/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}" .
           docker push "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}"
+          docker build -f samples/checkout-graph/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-checkout-graph:${version}" .
+          docker push "ghcr.io/thinkmorestupidless/sample-checkout-graph:${version}"
 
   sdk-python:
     # The Python SDK to PyPI, as the package `ankka-flow`: https://pypi.org/project/ankka-flow/. The

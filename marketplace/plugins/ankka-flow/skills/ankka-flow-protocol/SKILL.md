@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-protocol
-description: The streamlet protocol between the ankka-flow sidecar and a streamlet's process, and the descriptor file — the Discovery and Streamlet gRPC services in ankka.flow.v1, Discover and ReportError, the Run conversation (Start, Batch, Emit, Ack, Fail, Stop), ordering and concurrency rules, rebalances, message limits, protocol versioning, and the canonical JSON descriptor with its fingerprints. Use when implementing a streamlet in a language with no SDK, debugging what an SDK sends the sidecar, reading a conformance failure, or generating or validating a descriptor by hand.
+description: The streamlet protocol between the ankka-flow sidecar and a streamlet's process, and the descriptor file — the Discovery and Streamlet gRPC services in ankka.flow.v1, Discover and ReportError, the Run conversation (Start, Batch, Emit, Ack, Fail, Stop), ordering and concurrency rules, rebalances, message limits, protocol versioning, and the canonical JSON descriptor with its fingerprints. Use when implementing a streamlet in a language with no SDK, debugging what an SDK sends the sidecar, reading a conformance failure, or generating or validating a descriptor by hand. Also the graph delta contract a built-in stage reads.
 ---
 
 # The streamlet protocol
@@ -66,5 +66,6 @@ Open the one a task needs; each is one topic and stands alone.
 ### Reference
 
 - `references/reference/descriptor.md` — The descriptor file a streamlet's SDK writes from its declaration — its fields, the canonical JSON every SDK produces byte for byte, contract fingerprints, and the validation rules.
+- `references/reference/graph-deltas.md` — The ankka.graph-delta.v1 contract a mapping streamlet writes and the Neo4j merge sink reads — node merges, edge merges and tombstones, each a versioned statement of state.
 - `references/reference/protocol.md` — The gRPC protocol between the sidecar and a streamlet's process — the Discovery and Streamlet services, the Run conversation, the rules the messages do not state, failure, rebalances, message limits and versioning.
 - `references/reference/python-sdk.md` — Every public name of the ankka-flow Python package — Streamlet, ports, parameters and their Python types, records, serve, the testkit Harness — and the descriptor and conformance commands.

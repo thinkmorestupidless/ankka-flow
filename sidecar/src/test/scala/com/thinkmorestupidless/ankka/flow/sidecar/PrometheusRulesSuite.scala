@@ -124,3 +124,20 @@ class PrometheusRulesSuite extends munit.FunSuite:
       "type=sidecar,inlet=in,partition=3"
     )
   }
+
+  test("export a built-in stage's written, stale and failed counters by inlet and partition") {
+    Seq(
+      "DeltasWritten" -> "ankka_flow_stage_deltas_written_total",
+      "DeltasStale"   -> "ankka_flow_stage_deltas_stale_total",
+      "BatchesFailed" -> "ankka_flow_stage_batches_failed_total"
+    ).foreach { (attr, _) =>
+      val name =
+        jmxName("ankka.flow", "type" -> "stage", "inlet" -> "in", "partition" -> "2")(attr)
+      val m = firstMatch(name).findFirstMatchIn(name).get
+      assertEquals((m.group(1), m.group(2)), ("in", "2"))
+    }
+    assertEquals(
+      Metrics.name("in", 2, "stage").getKeyPropertyListString,
+      "type=stage,inlet=in,partition=2"
+    )
+  }

@@ -49,6 +49,13 @@ final class InletGraph(
   private val subscribedPromise = Promise[Unit]()
   private val generations       = new AtomicLong(0L)
 
+  /**
+   * Set before the sidecar shuts this graph down itself (a failed stream, or stopping). Its
+   * substreams then end without the partitions having moved anywhere, so their stalls are kept: the
+   * batch will be sent again after the reconnect and the stall is measured from its first try.
+   */
+  private val tearingDown = new AtomicBoolean(false)
+
   /** Completes when the consumer has joined its group and been given its (possibly empty) share. */
   def subscribed: Future[Unit] = subscribedPromise.future
 
@@ -70,6 +77,8 @@ final class InletGraph(
         assignedTps.map(_.partition).toSeq.sorted
       )
       assignedTps.foreach(tp => stalls.assigned(inlet.name, tp.partition))
+      // A partition that went to another pod while this sidecar was reconnecting is not stalled here.
+      stalls.retain(inlet.name, assignedTps.map(_.partition))
       // An empty assignment means "subscribed, nothing for this pod" only when the topic exists.
       // A topic that does not exist also assigns nothing, and must never make the pod ready.
       val exists = assignedTps.nonEmpty ||
@@ -108,7 +117,7 @@ final class InletGraph(
       .mapAsyncUnordered(MaxPartitions)((tp, source) => partition(tp, source))
       .toMat(Sink.ignore)(Keep.both)
       .run()
-    Running(control, done, subscribed)
+    Running(control, done, subscribed, () => tearingDown.set(true))
 
   private def partition(
       tp: TopicPartition,
@@ -121,10 +130,13 @@ final class InletGraph(
       .watchTermination() { (_, terminated) =>
         // The substream ended: the partition is no longer ours. Its batch in flight, if any, is
         // discarded and nothing more is committed for it; the next owner reads it again.
-        terminated.onComplete { _ =>
+        terminated.onComplete { ended =>
           revoked.set(true)
           processor.revoke(inlet.name, p, generation)
-          stalls.forget(inlet.name, p)
+          // Only a partition taken away is no longer stalled here. A substream that failed (its
+          // batch failed) or that the sidecar is shutting down will be read again from the same
+          // offset after the reconnect, and its stall is measured from the first attempt.
+          if ended.isSuccess && !tearingDown.get then stalls.forget(inlet.name, p)
         }
       }
       .map { msg =>
@@ -176,7 +188,13 @@ object InletGraph:
   /** Upper bound on partitions of one inlet a single pod runs at once. */
   val MaxPartitions = 1024
 
-  final case class Running(control: Consumer.Control, done: Future[Done], subscribed: Future[Unit])
+  final case class Running(
+      control: Consumer.Control,
+      done: Future[Done],
+      subscribed: Future[Unit],
+      /** Call before shutting the graph down on purpose; see `tearingDown`. */
+      tearingDown: () => Unit = () => ()
+  )
 
   def weight(r: ConsumerRecord[Array[Byte], Array[Byte]]): Long =
     val k = Option(r.key).fold(0)(_.length)

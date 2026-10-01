@@ -1,0 +1,31 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "ankka-flow-python",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "description": "Maps checkout notices to graph deltas: a cart, a checkout, and the edge between them.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "e0Cpauo32y7LOU2bHaYdQmq4QhXWvD/caczQKff53R0=",
+          "format": "json",
+          "schema_name": "ankka.checkout-notice.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "checkout-graph",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "/m1g0K1CRmTMgMek+Dhbceu1GNHdtD0Tx+vY4MhQ8KE=",
+          "format": "json",
+          "schema_name": "ankka.graph-delta.v1"
+        },
+        "name": "deltas"
+      }
+    ]
+  }
+}

@@ -27,6 +27,15 @@ object Dependencies {
 
     /** The Prometheus JMX exporter agent baked into the sidecar image (research R7). */
     val jmxExporter = "1.0.1"
+
+    /** The Neo4j Java driver the graph merge sink writes with (feature 002, research R7). */
+    val neo4jDriver = "5.28.5"
+
+    /**
+     * The Neo4j the graph merge sink is tested against: 5.26 LTS, the first with dynamic labels in
+     * MERGE, which the sink's statements need.
+     */
+    val neo4jImage = "neo4j:5.26-community"
   }
 
   private def pekko(m: String) = "org.apache.pekko" %% s"pekko-$m" % V.pekko
@@ -49,10 +58,12 @@ object Dependencies {
   val jsoniterMacros =
     "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % V.jsoniter
 
-  val logback             = "ch.qos.logback"     % "logback-classic" % V.logback
-  val munit               = "org.scalameta"     %% "munit"           % V.munit
-  val testcontainersKafka = "org.testcontainers" % "kafka"           % V.testcontainers
-  val testcontainersK3s   = "org.testcontainers" % "k3s"             % V.testcontainers
+  val logback             = "ch.qos.logback"     % "logback-classic"   % V.logback
+  val munit               = "org.scalameta"     %% "munit"             % V.munit
+  val testcontainersKafka = "org.testcontainers" % "kafka"             % V.testcontainers
+  val testcontainersK3s   = "org.testcontainers" % "k3s"               % V.testcontainers
+  val testcontainersNeo4j = "org.testcontainers" % "neo4j"             % V.testcontainers
+  val neo4jDriver         = "org.neo4j.driver"   % "neo4j-java-driver" % V.neo4jDriver
 
   val fabric8           = "io.fabric8"                       % "kubernetes-client"       % V.fabric8
   val fabric8ServerMock = "io.fabric8"                       % "kubernetes-server-mock"  % V.fabric8

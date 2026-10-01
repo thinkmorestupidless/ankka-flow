@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path}
 import scala.util.Try
 
 import com.thinkmorestupidless.ankka.flow.blueprint.*
-import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.protocol.{Builtins, Json}
 import com.typesafe.config.ConfigFactory
 
 /**
@@ -14,7 +14,8 @@ import com.typesafe.config.ConfigFactory
  */
 object Verify:
 
-  final case class Inputs(blueprint: Path, descriptors: Path, conf: List[Path])
+  /** `descriptors` is absent when the blueprint uses only built-in descriptors. */
+  final case class Inputs(blueprint: Path, descriptors: Option[Path], conf: List[Path])
 
   final case class Verified(
       blueprint: VerifiedBlueprint,
@@ -27,7 +28,7 @@ object Verify:
   )
 
   def run(in: Inputs): Either[Vector[String], Verified] =
-    val loaded = Descriptors.load(in.descriptors)
+    val loaded = in.descriptors.fold(Descriptors.Loaded(Map.empty, Vector.empty))(Descriptors.load)
     val overrides =
       in.conf.foldLeft[Either[Vector[String], Overrides]](Right(Overrides.empty)) { (acc, f) =>
         acc.flatMap { o =>
@@ -45,7 +46,8 @@ object Verify:
           .map(c =>
             Blueprint.parseConfig(
               c,
-              loaded.byName.values.toVector.map(s => StreamletDescriptor(s.getStreamlet))
+              loaded.byName.values.toVector.map(s => StreamletDescriptor(s.getStreamlet)) ++
+                Builtins.all.map(s => StreamletDescriptor(s.getStreamlet, builtin = true))
             )
           )
 

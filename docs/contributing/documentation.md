@@ -64,9 +64,10 @@ a reader most often needs next.
 A code block preceded by `<!-- include: path#region -->` is filled from a region marked
 `# docs:start region` and `# docs:end region` in a source file, and the check fails when the copy has
 drifted. Without `#region` the whole file is included. The regions this documentation includes are in
-the cart router sample (`samples/cart-router/src/cart_router/router.py` and its tests), and the sample's
-blueprint, Dockerfile and configuration files are included whole, so every sample shown is one the
-build runs.
+three samples — the cart router, the checkout feed and the checkout graph (each one's streamlet source
+and its tests) — and the samples' blueprints, Dockerfiles and configuration files are included whole,
+so every sample shown is one the build runs. Markers never go in `protocol/`, which the SDKs copy byte
+for byte.
 
 ## The generated table
 

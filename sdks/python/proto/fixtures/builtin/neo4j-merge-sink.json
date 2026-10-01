@@ -1,0 +1,33 @@
+{
+  "protocol_version": "1.0",
+  "sdk": {
+    "name": "ankka-flow-sidecar",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "description": "The Secret in the pipeline's namespace holding uri, username, password and optionally database.",
+        "key": "secret"
+      },
+      {
+        "default_value": "30s",
+        "description": "How long one batch's transaction may take before it fails and the batch is retried.",
+        "key": "transaction-timeout",
+        "type": "DURATION"
+      }
+    ],
+    "description": "Merges graph deltas into Neo4j in one transaction per batch.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "/m1g0K1CRmTMgMek+Dhbceu1GNHdtD0Tx+vY4MhQ8KE=",
+          "format": "json",
+          "schema_name": "ankka.graph-delta.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "neo4j-merge-sink"
+  }
+}

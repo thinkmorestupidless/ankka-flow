@@ -1,7 +1,8 @@
 ---
 name: ankka-flow-protocol
-description: The streamlet protocol between the ankka-flow sidecar and a streamlet's process, and the descriptor file — the Discovery and Streamlet gRPC services in ankka.flow.v1, Discover and ReportError, the Run conversation (Start, Batch, Emit, Ack, Fail, Stop), ordering and concurrency rules, rebalances, message limits, protocol versioning, and the canonical JSON descriptor with its fingerprints. Use when implementing a streamlet in a language with no SDK, debugging what an SDK sends the sidecar, reading a conformance failure, or generating or validating a descriptor by hand.
+description: The streamlet protocol between the ankka-flow sidecar and a streamlet's process, and the descriptor file — the Discovery and Streamlet gRPC services in ankka.flow.v1, Discover and ReportError, the Run conversation (Start, Batch, Emit, Ack, Fail, Stop), ordering and concurrency rules, rebalances, message limits, protocol versioning, and the canonical JSON descriptor with its fingerprints. Use when implementing a streamlet in a language with no SDK, debugging what an SDK sends the sidecar, reading a conformance failure, or generating or validating a descriptor by hand. Also the graph delta contract a built-in stage reads.
 pages:
+  - reference/graph-deltas.md
   - reference/protocol.md
   - reference/descriptor.md
   - reference/python-sdk.md

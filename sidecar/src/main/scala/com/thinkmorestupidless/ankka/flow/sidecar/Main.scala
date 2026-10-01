@@ -36,14 +36,24 @@ object Main:
         problems.foreach(p => log.error("  {}", p))
         2
       case Right((settings, descriptor, config)) =>
-        log.info(
-          "ankka-flow sidecar {} for {}.{} (streamlet '{}'), process at {}",
-          BuildInfo.version,
-          config.pipeline,
-          config.streamlet,
-          descriptor.streamlet.name,
-          settings.processAddress
-        )
+        config.stage match
+          case Some(stage) =>
+            log.info(
+              "ankka-flow sidecar {} for {}.{}: stage '{}', no process",
+              BuildInfo.version,
+              config.pipeline,
+              config.streamlet,
+              stage.name
+            )
+          case None =>
+            log.info(
+              "ankka-flow sidecar {} for {}.{} (streamlet '{}'), process at {}",
+              BuildInfo.version,
+              config.pipeline,
+              config.streamlet,
+              descriptor.streamlet.name,
+              settings.processAddress
+            )
         given system: ActorSystem = ActorSystem("flow-sidecar")
         val probes                = new Probes(settings.stateDir)
         val events                = EventSinks.forSettings(settings)
@@ -55,7 +65,10 @@ object Main:
           stalls.check((_, _) => s"${config.pipeline}.${config.streamlet}")
           metrics.refresh()
         }
-        val supervisor = new Supervisor(settings, descriptor, config, probes, stalls)
+        val stage: Stage = config.stage match
+          case Some(_) => new Neo4jMergeStage(descriptor, config, events, metrics.stage)
+          case None    => new ProcessStage(settings, descriptor, config)
+        val supervisor = new Supervisor(settings, config, probes, stalls, stage)
         val finished   = new CountDownLatch(1)
         sys.addShutdownHook {
           shuttingDown = true

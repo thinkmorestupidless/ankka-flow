@@ -17,12 +17,13 @@ final class CapturingEventSink extends EventSink:
 
 /**
  * One whole sidecar, in-process: the real Supervisor, Discovery, Conversation and inlet graphs,
- * configured from files in a temporary directory exactly as in a pod.
+ * configured from files in a temporary directory exactly as in a pod. A `streamlet.conf` with a
+ * `stage` block runs the built-in stage instead of talking to a process, as `Main` does.
  */
 final class SidecarRun(
     deployed: Spec,
     streamletConf: String,
-    processPort: Int,
+    processPort: Int = 0,
     stallAfter: FiniteDuration = 5.minutes
 )(using system: ActorSystem):
 
@@ -49,9 +50,13 @@ final class SidecarRun(
   val config = StreamletConfig
     .load(dir.resolve("streamlet.conf"))
     .fold(e => throw new IllegalStateException(e.mkString), identity)
-  val probes     = new Probes(stateDir)
-  val stalls     = new Stalls(stallAfter, events)
-  val supervisor = new Supervisor(settings, descriptor, config, probes, stalls)
+  val probes       = new Probes(stateDir)
+  val stalls       = new Stalls(stallAfter, events)
+  val stageMetrics = new StageMetrics
+  val stage: Stage = config.stage match
+    case Some(_) => new Neo4jMergeStage(descriptor, config, events, stageMetrics)
+    case None    => new ProcessStage(settings, descriptor, config)
+  val supervisor = new Supervisor(settings, config, probes, stalls, stage)
 
   private val exitCode = Promise[Int]()
   private val thread =
@@ -73,6 +78,35 @@ final class SidecarRun(
     Await.result(exitCode.future, 40.seconds)
 
 object SidecarRun:
+
+  /** A `streamlet.conf` for the merge stage: one inlet `in`, credentials in `credentialsDir`. */
+  def stageConf(
+      pipeline: String,
+      streamlet: String,
+      bootstrap: String,
+      topic: String,
+      credentialsDir: Path,
+      maxRecords: Int = 100,
+      transactionTimeout: String = "30s"
+  ): String =
+    s"""flow {
+       |  pipeline = "$pipeline"
+       |  streamlet = "$streamlet"
+       |  config { secret = "unused-here", transaction-timeout = "$transactionTimeout" }
+       |  stage { name = "neo4j-merge-sink", neo4j { credentials-dir = "$credentialsDir" } }
+       |  inlets {
+       |    in { topic = "$topic", bootstrap.servers = "$bootstrap", consumer-config { auto.offset.reset = earliest }, batch { max-records = $maxRecords } }
+       |  }
+       |}""".stripMargin
+
+  /** Writes the credentials directory the operator would mount. */
+  def writeSecret(dir: Path, uri: String, username: String, password: String): Path =
+    Files.createDirectories(dir)
+    Files.writeString(dir.resolve("uri"), uri)
+    Files.writeString(dir.resolve("username"), username)
+    Files.writeString(dir.resolve("password"), password)
+    dir
+
   def conf(
       pipeline: String,
       streamlet: String,
