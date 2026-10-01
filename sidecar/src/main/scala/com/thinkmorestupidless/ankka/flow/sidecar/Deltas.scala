@@ -70,6 +70,14 @@ object Deltas:
   private val Identifier = "[A-Za-z_][A-Za-z0-9_]*".r
   private val Reserved   = Set("id", "_version", "_deleted")
 
+  /**
+   * A delta's element key: what its record's key must be, and the unit a compacted topic keeps one
+   * record of. Nodes and edges are separate id spaces, so the key says which.
+   */
+  def key(delta: Delta): String = s"${delta.space}:${delta.id}"
+
+  def keyBytes(delta: Delta): ByteString = ByteString.copyFromUtf8(key(delta))
+
   def parse(offset: Long, value: ByteString): Either[String, Delta] =
     parse(offset, value.toString(StandardCharsets.UTF_8))
 

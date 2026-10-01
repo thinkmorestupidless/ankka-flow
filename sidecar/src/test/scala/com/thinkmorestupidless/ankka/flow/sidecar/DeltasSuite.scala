@@ -109,3 +109,17 @@ class DeltasSuite extends munit.FunSuite:
     assertEquals(folded.nodes, Vector.empty)
     assertEquals(folded.nodeTombstones, Vector(Delta.NodeTombstone("a", 2)))
   }
+
+  test("every delta in the shared fixture has the key the fixture gives it") {
+    import com.thinkmorestupidless.ankka.flow.protocol.Json
+    val file = TestSpecs.repoRoot.resolve("protocol/fixtures/graph-deltas/keys.json")
+    val Right(Json.Arr(rows)) =
+      Json.parse(new String(java.nio.file.Files.readAllBytes(file), "UTF-8")): @unchecked
+    assert(rows.size >= 8, s"only ${rows.size} rows")
+    rows.zipWithIndex.foreach { (row, i) =>
+      val Some(Json.Str(expected)) = row.field("key"): @unchecked
+      val delta                    = Deltas.parse(i.toLong, Json.compact(row.field("delta").get))
+      assertEquals(delta.map(Deltas.key), Right(expected), s"row $i")
+      assertEquals(delta.map(Deltas.keyBytes(_).toStringUtf8), Right(expected), s"row $i")
+    }
+  }

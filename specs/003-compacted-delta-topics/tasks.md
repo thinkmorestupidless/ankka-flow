@@ -32,7 +32,7 @@ plan.md *Project Structure*.
 
 **Purpose**: one statement of what a delta's key is, readable by the sink's suite and the SDK's.
 
-- [ ] T001 Create `protocol/fixtures/graph-deltas/keys.json`: a JSON array of `{"delta": {…}, "key": "…"}` with, at least: a node merge (`cart:cart-1` → `node:cart:cart-1`), an edge merge (→ `edge:<id>`), a node tombstone and an edge tombstone (each the key of the element it marks), a node and an edge with the *same* id (two different keys), an id containing several colons, and an id with non-ASCII characters (`café:žluťoučký`). Two-space indent, one trailing newline. Run `cd sdks/python && uv run python scripts/proto.py` so `sdks/python/proto/fixtures/graph-deltas/keys.json` exists; confirm `diff -r protocol/fixtures sdks/python/proto/fixtures` is empty and `uv run pytest -q` still passes.
+- [X] T001 Create `protocol/fixtures/graph-deltas/keys.json`: a JSON array of `{"delta": {…}, "key": "…"}` with, at least: a node merge (`cart:cart-1` → `node:cart:cart-1`), an edge merge (→ `edge:<id>`), a node tombstone and an edge tombstone (each the key of the element it marks), a node and an edge with the *same* id (two different keys), an id containing several colons, and an id with non-ASCII characters (`café:žluťoučký`). Two-space indent, one trailing newline. Run `cd sdks/python && uv run python scripts/proto.py` so `sdks/python/proto/fixtures/graph-deltas/keys.json` exists; confirm `diff -r protocol/fixtures sdks/python/proto/fixtures` is empty and `uv run pytest -q` still passes.
 
 ---
 
@@ -42,7 +42,7 @@ plan.md *Project Structure*.
 
 **⚠️ CRITICAL**: no user story work begins until this passes.
 
-- [ ] T002 In `sidecar/.../sidecar/Deltas.scala` add `def key(delta: Delta): String` (`"node:" + id` for `NodeMerge` and `NodeTombstone`, `"edge:" + id` for `EdgeMerge` and `EdgeTombstone`) and `def keyBytes(delta: Delta): ByteString` (UTF-8). In `sidecar/src/test/.../sidecar/DeltasSuite.scala` add a test that reads `protocol/fixtures/graph-deltas/keys.json` (through `TestSpecs.repoRoot` and `protocol.Json`), parses each `delta` with `Deltas.parse`, and asserts `Deltas.key` equals the row's `key`, with the row's index in the failure message.
+- [X] T002 In `sidecar/.../sidecar/Deltas.scala` add `def key(delta: Delta): String` (`"node:" + id` for `NodeMerge` and `NodeTombstone`, `"edge:" + id` for `EdgeMerge` and `EdgeTombstone`) and `def keyBytes(delta: Delta): ByteString` (UTF-8). In `sidecar/src/test/.../sidecar/DeltasSuite.scala` add a test that reads `protocol/fixtures/graph-deltas/keys.json` (through `TestSpecs.repoRoot` and `protocol.Json`), parses each `delta` with `Deltas.parse`, and asserts `Deltas.key` equals the row's `key`, with the row's index in the failure message.
 
 **Checkpoint**: `sbt 'sidecar/testOnly *DeltasSuite'` green; the fixture and its Python copy committed.
 
