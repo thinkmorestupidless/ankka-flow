@@ -24,7 +24,8 @@ A blueprint sets a policy as any topic setting:
 graph-deltas { producers = [mapper.deltas], consumers = [graph.in], topic { cleanup.policy = "compact,delete", retention.ms = 2592000000 } }
 ```
 
-and `--conf` overrides it: `flow.topics.graph-deltas { topic { cleanup.policy = delete } }`.
+and `--conf` overrides it: `flow.topics.graph-deltas { topic { cleanup.policy = delete } }`. A policy
+naming both must be quoted, as above: an unquoted comma ends the field in HOCON.
 
 ## The operator
 
@@ -37,5 +38,7 @@ and `--conf` overrides it: `flow.topics.graph-deltas { topic { cleanup.policy = 
   topic 'checkouts-graph.graph-deltas' exists and is not compacted (cleanup.policy = delete); the resource asks for compact. Left as it is: it will not hold the whole graph. To compact it, alter or recreate the topic.
   ```
 
-  `cleanup.policy` is then not repeated under `TopicSettingsIgnored`.
+  `cleanup.policy` is then not repeated under `TopicSettingsIgnored`. (A topic that has
+  `compact,delete` when the resource asks for `compact` is compacted, so it draws no
+  `TopicNotCompacted`; the differing value is listed under `TopicSettingsIgnored` as any other.)
 - Never alters, deletes or writes to a topic on account of this feature.

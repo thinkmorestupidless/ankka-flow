@@ -10,7 +10,8 @@ record with no value means.
 2. **The sink refuses any other key**, and a missing one, on every delta topic: the batch fails,
    nothing of it is applied or committed, and the message names the offset, the key found and the
    key expected.
-3. **A record with no value, or an empty value, is a delete marker.** It is not a delta. The sink
+3. **A record with no value, or an empty value, is a delete marker**, whatever its key and even
+   with none. It is not a delta. The sink
    applies nothing for it, counts it, and acknowledges it. On a compacted topic it removes the
    key's earlier records once the broker compacts.
 4. **The platform writes no delete markers.** A tombstone stays its element's last record. A writer

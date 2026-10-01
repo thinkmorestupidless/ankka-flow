@@ -42,8 +42,11 @@ it with another key is refused by the sink, and the documentation says to use th
 Each method raises `ValueError`, naming the argument, for: an empty `id`; a `version` that is not a
 non-negative `int` (a `bool` is not an `int` here); a label or `type` that is not an identifier
 (`[A-Za-z_][A-Za-z0-9_]*`); an empty `from_id` or `to_id`; a property named `id`, `_version` or
-`_deleted`; a property value that is not a `str`, `int`, `float`, `bool` or a non-empty list of one
-of those types.
+`_deleted`; a property value that is not a `str`, `int`, `float`, `bool` or a non-empty list (or
+tuple) of one of those types. It also refuses what the sink would refuse or JSON cannot carry: a
+non-finite float, an integer beyond 64 bits, a bare string passed as `labels`, and a property name
+that is not a string. A whole-number float counts as an integer, as the sink's number rule reads
+it, so `[1.5, 2.0]` is a mixed list.
 
 ## Testing a mapper
 
