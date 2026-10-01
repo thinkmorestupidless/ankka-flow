@@ -60,6 +60,15 @@ spec:
           envFrom:
             - secretRef:
                 name: neo4j-auth
+          # A development database on a laptop's kind node: small and bounded, so it cannot take
+          # the memory the rest of the cluster needs (Neo4j otherwise sizes itself from the node).
+          env:
+            - { name: NEO4J_server_memory_heap_initial__size, value: 256m }
+            - { name: NEO4J_server_memory_heap_max__size, value: 512m }
+            - { name: NEO4J_server_memory_pagecache_size, value: 256m }
+          resources:
+            requests: { memory: 1Gi }
+            limits: { memory: 1Gi }
           readinessProbe:
             tcpSocket:
               port: 7687

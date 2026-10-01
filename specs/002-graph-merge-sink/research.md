@@ -399,3 +399,15 @@ its group had committed everything. On a laptop (Apple silicon, Docker Desktop),
 **59,999 deltas in 11.2 s — 5,345/s, 1,782/s per partition**, against a floor of 1,000/s per
 partition. The laptop loop (`produce.py`, `verify.py`, the same notices again) gave 5 carts, 20
 checkouts and 20 edges both times, with the second production entirely stale.
+
+## Quickstart tier 6
+
+Run on 2026-10-01 on a fresh kind cluster with ankka beside it; the record is in
+`samples/checkout-graph/README.md` (*Last run on kind beside ankka*). Every promise held: one
+container in the sink's pod, three checkouts in the graph, ankka's topic untouched, and a reset and
+replay leaving the graph identical with every replayed delta stale. Two things found on the way,
+neither in this repository's code: ankka's `deploy-local.sh` stops on a fresh cluster because the
+realm import already contains the `ankka-console` client its existence check misses (the steps it
+skipped — exporting the local CA, a smoke request — were done by hand); and the development Neo4j
+overlay now bounds Neo4j's heap and page cache (1 GiB in all), which otherwise sizes itself from the
+whole node on a laptop's single kind node.

@@ -69,3 +69,15 @@ kubectl -n neo4j exec neo4j-0 -- cypher-shell -u neo4j -p flow-local-password \
 
 `graph` needs no image: its pod has only the sidecar, which runs the stage, and the operator mounts
 the `neo4j-local` Secret into it.
+
+### Last run on kind beside ankka (2026-10-01)
+
+A fresh kind cluster: ankka's `just up` (the platform, with the shopping cart from ankka `main` and
+`ANKKA_KAFKA_BOOTSTRAP_SERVERS=kafka.kafka.svc:9092` in its descriptor), ankka-flow's `just deploy`,
+`just neo4j-up`, and the commands above. The pipeline was `Ready` 11 s after `kubectl apply`; the
+sink's pod had one container (`sidecar`), the mapper's two. Three carts checked out through the
+shopping cart's API became three `Cart`–`CHECKED_OUT`→`Checkout` paths in Neo4j, each versioned by
+its notice's time. The only topic event was `TopicCreated` for `checkouts-graph.graph-deltas`.
+Both streamlets scaled to zero, `flow reset checkouts-graph` (a `ResetOffsets` event per group),
+then scaled back up: the sink re-read 18 deltas — the 9 it had and 9 the mapper re-emitted — wrote
+none and found all 18 stale, and the graph was identical (6 nodes, 3 edges, the same versions).
