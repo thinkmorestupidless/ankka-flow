@@ -119,6 +119,93 @@ class GenerateSuite extends munit.FunSuite:
     assert(r.err.contains("Streamlet 'graph' is built in and takes no image."), r.err)
   }
 
+  // ── delta topics: compacted by default, written into the resource ────────────────────────
+
+  private def generateIn(dir: java.nio.file.Path, extra: String*) =
+    flow(
+      Seq(
+        "generate",
+        dir.resolve("blueprint.conf").toString,
+        "--descriptors",
+        dir.resolve("descriptors").toString,
+        "--images",
+        graph.resolve("images.conf").toString,
+        "--conf",
+        graph.resolve("overrides.conf").toString,
+        "--version",
+        "0.1.0",
+        "-n",
+        "shop"
+      ) ++ extra*
+    )
+
+  private def deltaTopic(r: Result) =
+    FlowSerialization.fromYaml(r.out).getSpec.topics.find(_.id == "graph-deltas").get
+
+  private def withPolicy(policy: String) =
+    graphVariant(blueprint =
+      _.replace("partitions = 3", s"partitions = 3\n      topic { cleanup.policy = $policy }")
+    )
+
+  test("a managed delta topic is generated compacted, with the note; no other topic changes") {
+    val r = generateGraph()
+    assertEquals(r.code, 0, r.err)
+    assertEquals(deltaTopic(r).topicConfig, Map("cleanup.policy" -> "compact"))
+    assert(r.out.contains("cleanup.policy: compact"), r.out)
+    assert(
+      r.err.contains(
+        "note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact)."
+      ),
+      r.err
+    )
+    val spec = FlowSerialization.fromYaml(r.out).getSpec
+    assertEquals(spec.topics.find(_.id == "cart-checkouts").get.topicConfig, Map.empty)
+  }
+
+  test("a blueprint's cleanup policy is kept in the resource, and --conf overrides it") {
+    val deleted = generateIn(withPolicy("delete"))
+    assertEquals(deleted.code, 0, deleted.err)
+    assertEquals(deltaTopic(deleted).topicConfig, Map("cleanup.policy" -> "delete"))
+    assert(deleted.err.contains("it will not hold the whole graph"), deleted.err)
+
+    val both = generateIn(withPolicy("\"compact,delete\""))
+    assertEquals(deltaTopic(both).topicConfig, Map("cleanup.policy" -> "compact,delete"))
+
+    val conf = Files.createTempFile("policy", ".conf")
+    Files.writeString(
+      conf,
+      "flow.topics.graph-deltas { topic { cleanup.policy = compact, retention.ms = 1000 } }"
+    )
+    val overridden = generateIn(withPolicy("delete"), "--conf", conf.toString)
+    assertEquals(overridden.code, 0, overridden.err)
+    assertEquals(
+      deltaTopic(overridden).topicConfig,
+      Map("cleanup.policy" -> "compact", "retention.ms" -> "1000")
+    )
+    // and a --conf policy over the default
+    Files.writeString(conf, "flow.topics.graph-deltas { topic { cleanup.policy = delete } }")
+    assertEquals(
+      deltaTopic(generateGraph("--conf", conf.toString)).topicConfig,
+      Map("cleanup.policy" -> "delete")
+    )
+  }
+
+  test("a pipeline with no delta port is generated exactly as before") {
+    val r = generate()
+    assertEquals(r.code, 0, r.err)
+    assert(!r.out.contains("cleanup.policy"), r.out)
+    assertEquals(r.err, "")
+    val topics = FlowSerialization.fromYaml(r.out).getSpec.topics.map(t => t.id -> t.topicConfig)
+    assertEquals(
+      topics.toMap,
+      Map(
+        "cart-events"  -> Map.empty[String, String],
+        "valid-carts"  -> Map("retention.ms" -> "86400000"),
+        "review-carts" -> Map.empty[String, String]
+      )
+    )
+  }
+
   test("nothing in the resource names the sidecar image (FR-020)") {
     val r = generate()
     assertEquals(r.code, 0, r.err)

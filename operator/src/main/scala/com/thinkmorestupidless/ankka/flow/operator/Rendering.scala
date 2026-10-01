@@ -2,6 +2,7 @@ package com.thinkmorestupidless.ankka.flow.operator
 
 import scala.jdk.CollectionConverters.*
 
+import com.thinkmorestupidless.ankka.flow.blueprint.DeltaTopics
 import com.thinkmorestupidless.ankka.flow.crd.*
 import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, DescriptorValidation, Json}
 import io.fabric8.kubernetes.api.model.*
@@ -99,8 +100,24 @@ object Rendering:
               s"topic '${t.name}' exists with $partitions partitions and replication $replication; the resource declares ${t.partitions.get} and ${t.replicas.get}. Left as it is."
             )
           )
+          // A topic that was to be compacted and is not: said on its own, with what it means, and
+          // then not repeated among the settings that were not applied.
+          val notCompacted =
+            for
+              wanted <- t.topicConfig.get(DeltaTopics.CleanupPolicy) if DeltaTopics.compacts(wanted)
+              actual <- configs.get(DeltaTopics.CleanupPolicy) if !DeltaTopics.compacts(actual)
+            yield Action.RecordEvent(
+              "TopicNotCompacted",
+              Events.Warning,
+              s"topic '${t.name}' exists and is not compacted (${DeltaTopics.CleanupPolicy} = $actual); the resource asks for $wanted. Left as it is: it will not hold the whole graph. To compact it, alter or recreate the topic."
+            )
           val changed = t.topicConfig
-            .collect { case (k, v) if configs.get(k).exists(_ != v) => k }
+            .collect {
+              case (k, v)
+                  if configs.get(k).exists(_ != v) &&
+                    !(k == DeltaTopics.CleanupPolicy && notCompacted.isDefined) =>
+                k
+            }
             .toVector
             .sorted
           val ignored = Option.when(changed.nonEmpty)(
@@ -110,7 +127,7 @@ object Rendering:
               s"topic '${t.name}' exists; changed settings ${changed.mkString(", ")} were not applied"
             )
           )
-          differs.toVector ++ ignored
+          differs.toVector ++ notCompacted ++ ignored
         case (false, Some(TopicState.Missing)) =>
           Vector(
             Action.RecordEvent(

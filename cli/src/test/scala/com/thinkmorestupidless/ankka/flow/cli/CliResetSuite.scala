@@ -104,7 +104,7 @@ class CliResetSuite extends munit.FunSuite:
           )
           .build()
       )
-      .create(): Unit
+      .createOr(_.update()): Unit
 
   private def reset(args: String*): (Int, String, String) =
     val out = new ByteArrayOutputStream
@@ -154,6 +154,23 @@ class CliResetSuite extends munit.FunSuite:
       err.contains("no streamlet [nope]") && err.contains("streamlet [source] has no inlets"),
       err
     )
+  }
+
+  test("reset one stopped streamlet while another runs: accepted, and only it is named") {
+    // Rebuilding a graph resets the sink alone (feature 003): the streamlets in front of it may be
+    // running, and only the targets must be stopped.
+    install(pipeline(routerReplicas = 2, sinkReplicas = 0))
+    pod("router")
+    val (code, out, err) = reset("cart", "-n", "shop", "--streamlet", "sink")
+    assertEquals(code, 0, err)
+    val request = annotation.get
+    assert(out.contains(request.id), out)
+    assertEquals(request.streamlets, List("sink"))
+
+    val (refused, _, why) = reset("cart", "-n", "shop", "--streamlet", "router")
+    assertEquals(refused, 1)
+    assert(why.contains("[router] is not scaled to 0"), why)
+    assertEquals(annotation.map(_.id), Some(request.id), "a refused request must not replace one")
   }
 
   test("refuse a pipeline that does not exist") {
