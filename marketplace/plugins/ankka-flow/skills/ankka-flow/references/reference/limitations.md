@@ -23,6 +23,12 @@ What ankka-flow does not do, stated plainly so a design does not depend on it.
 - **Graph deltas state, never change.** A delta carries an element's whole state with a version from
   one source entity; there are no increments, no merging of properties from several sources, and
   tombstones mark elements rather than removing them. See [Graph deltas](graph-deltas.md).
+- **The platform writes no delete markers.** A tombstone stays in a delta topic as its element's last
+  record; removing it from the topic is its writer's to do, and nothing removes a tombstoned element
+  from the graph database.
+- **A rebuilt graph is the live graph.** A graph rebuilt from its delta topic has every element that
+  is not marked deleted exactly as it was; tombstoned elements whose records have left the topic are
+  not in it. See [Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
 - **No per-partition state in the process.** A streamlet sees batches of whichever partitions are
   assigned to its pod, and the assignment changes on every rebalance. State that must survive belongs
   in a topic or an external store.
@@ -31,7 +37,7 @@ What ankka-flow does not do, stated plainly so a design does not depend on it.
   skipping a record is the streamlet's own decision.
 - **No HTTP or gRPC ingress into a pipeline.** Records enter a pipeline through a Kafka topic.
 - **Kafka only.** No other broker, and no single topic spread over several Kafka clusters.
-- **Existing topics are never changed.** The operator creates a managed topic once; a different
+- **Existing topics are never changed, their cleanup policy included.** The operator creates a managed topic once; a different
   partition count, replication or topic configuration on an existing topic is reported, not applied.
 - **No user interface and no hosted control plane.** A pipeline is a Kubernetes resource, operated
   with `kubectl` and the `flow` CLI.

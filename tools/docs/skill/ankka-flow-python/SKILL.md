@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-python
-description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet, its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink.
+description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet, its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink with GraphDeltaOutlet, which keys each delta by its element.
 pages:
   - build/python-streamlet.md
   - build/testing.md
@@ -47,11 +47,14 @@ what the sidecar compares with the running process before it starts.
    ports to expose, no probes. The image holds only the streamlet's code.
 8. **Test with the Harness first.** `ankka_flow.testkit.Harness` calls `process` with batches it
    builds and applies the protocol's rules, with no Kafka, sidecar or gRPC.
-9. **Deltas for the graph sink are whole state, keyed by element id.** Declare
-   `JsonOutlet("deltas", schema_name="ankka.graph-delta.v1")` and yield
-   `self.deltas.emit(record, value=json.dumps(delta), key=delta["id"].encode())` for each node, edge or
-   tombstone, with a version that rises with the source entity. Deriving from `record` keeps its
-   headers and tells the Harness the record was not skipped.
+9. **Deltas for the graph sink go through `GraphDeltaOutlet`.** Declare
+   `deltas = GraphDeltaOutlet("deltas")` and yield `self.deltas.node(record, id=…, version=…,
+   labels=[…], properties={…})`, `.edge(record, id=…, version=…, type=…, from_id=…, to_id=…)`,
+   `.tombstone_node(…)` or `.tombstone_edge(…)`. Each delta is the element's whole state, with a
+   version that rises with the source entity. The outlet sets the record key to the element key
+   (`node:<id>` or `edge:<id>`), which the sink requires, and raises `ValueError` for what the sink
+   would refuse. Passing `record` keeps its headers and tells the Harness the record was not skipped.
+   In a test, `ankka_flow.graph.read(emitted)` parses a record back and checks its key.
 
 ## Before writing
 
@@ -67,3 +70,5 @@ what the sidecar compares with the running process before it starts.
 - Per-partition or per-key state held in memory across batches.
 - `serve()` bound to anything but loopback, or a Dockerfile that exposes a port.
 - A stale `flow/descriptor.json`, or one edited by hand.
+- Graph deltas built by hand with `JsonOutlet.emit(…, key=…)`: a key that is the bare id, or the
+  input record's key, is refused by the sink. Use `GraphDeltaOutlet`.

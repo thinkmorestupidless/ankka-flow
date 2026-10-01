@@ -71,3 +71,16 @@ trait Neo4jSuite extends munit.FunSuite:
 
   def unpause(): Unit =
     neo4j.getDockerClient.unpauseContainerCmd(neo4j.getContainerId).exec(): Unit
+
+  /** Every node and edge with all its properties, for comparing whole graphs. */
+  def graphSnapshot(): (Map[String, Map[String, AnyRef]], Map[String, Map[String, AnyRef]]) =
+    def byId(rows: Vector[Map[String, AnyRef]]) =
+      rows
+        .map(r =>
+          r("id").toString -> r("p").asInstanceOf[java.util.Map[String, AnyRef]].asScala.toMap
+        )
+        .toMap
+    (
+      byId(query("MATCH (n:Element) RETURN n.id AS id, properties(n) AS p")),
+      byId(query("MATCH ()-[r]->() RETURN r.id AS id, properties(r) AS p"))
+    )

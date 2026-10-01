@@ -87,7 +87,7 @@ status:
 | `bootstrapServers` | string | brokers named directly; a topic with neither this nor `cluster` uses cluster `default` |
 | `partitions`, `replicas` | integer | a managed topic's size; each falls back to its cluster's default |
 | `connectionConfig`, `producerConfig`, `consumerConfig` | map of string | Kafka client properties, merged over the cluster's |
-| `topicConfig` | map of string | Kafka topic configuration applied when a managed topic is created, such as `retention.ms` |
+| `topicConfig` | map of string | Kafka topic configuration applied when a managed topic is created, such as `retention.ms`. `flow generate` writes `cleanup.policy: compact` here for a managed topic that carries graph deltas and sets no policy of its own |
 | `batch.maxRecords`, `batch.maxBytes` | integer | the largest batch the sidecar sends for an inlet reading this topic; default `100` records and 1 MiB |
 
 ## `status`
@@ -200,6 +200,7 @@ kubectl -n shop get events --field-selector involvedObject.kind=AnkkaFlow
 | `TopicCreated` | Normal | a managed topic was created |
 | `TopicDiffers` | Warning | an existing managed topic has other partitions or replication; left as it is |
 | `TopicSettingsIgnored` | Warning | an existing managed topic's configuration differs from `topicConfig`; not applied |
+| `TopicNotCompacted` | Warning | an existing managed topic is not compacted and `topicConfig` asks for `cleanup.policy` with `compact`; left as it is, so it will not hold the whole graph |
 | `TopicMissing` | Warning | an unmanaged topic does not exist; its consumers do not become ready |
 | `StreamletRolled` | Normal | a streamlet's image, descriptor or configuration changed and it rolls out |
 | `StreamletRemoved` | Normal | a streamlet is no longer in the spec and its Deployment and Secret were deleted |

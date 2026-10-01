@@ -51,11 +51,22 @@ class Neo4jMergeSuite extends Neo4jSuite:
       events: CapturingEventSink
   ):
     private val run = stage.open(() => false).get.toOption.get
+
+    /** Each delta under its own element key, as a correct writer sends it. */
+    private def records(values: Seq[String]) =
+      values.toVector.zipWithIndex.map { (v, i) =>
+        val key = Deltas.parse(i.toLong, v).toOption.map(Deltas.key).getOrElse(s"k$i")
+        TestSpecs.keyed(i.toLong, Some(key), v)
+      }
     def apply(values: String*): Unit =
-      val records = values.toVector.zipWithIndex.map((v, i) => TestSpecs.input(i.toLong, s"k$i", v))
-      Await.result(run.processor.process(InputBatch("in", 0, records)), 30.seconds): Unit
+      Await.result(run.processor.process(InputBatch("in", 0, records(values))), 30.seconds): Unit
     def attempt(values: String*): Either[Throwable, Unit] =
-      val records = values.toVector.zipWithIndex.map((v, i) => TestSpecs.input(i.toLong, s"k$i", v))
+      attemptKeyed(records(values))
+
+    /** Records exactly as given: any key, no key, or no value. */
+    def attemptKeyed(
+        records: Vector[ankka.flow.v1.streamlet.InputRecord]
+    ): Either[Throwable, Unit] =
       scala.util
         .Try(Await.result(run.processor.process(InputBatch("in", 0, records)), 30.seconds))
         .toEither
@@ -290,4 +301,80 @@ class Neo4jMergeSuite extends Neo4jSuite:
     assert(!Neo4jMergeStage.supported("Neo4j/5.24.2"))
     assert(!Neo4jMergeStage.supported("Neo4j/4.4.30"))
     assert(!Neo4jMergeStage.supported("Memgraph"))
+  }
+
+  test(
+    "a delta under a key that is not its element's fails the batch, naming both keys, and writes nothing"
+  ) {
+    val o = open()
+    val result = o.attemptKeyed(
+      Vector(
+        TestSpecs.keyed(0, Some("node:ok"), node("ok", 1)),
+        TestSpecs.keyed(1, Some("cart-1"), node("cart:cart-1", 1))
+      )
+    )
+    val message = result.left.toOption.map(_.getMessage).getOrElse("")
+    assert(
+      message.contains("offset 1: key 'cart-1' is not this delta's element key 'node:cart:cart-1'"),
+      message
+    )
+    assertEquals(query("MATCH (n) RETURN count(n) AS c").head("c"), Long.box(0))
+    assertEquals(o.metrics.of("in", 0).getBatchesFailed, 1L)
+  }
+
+  test("a delta with no key, or the right id under the wrong kind, is refused the same way") {
+    val o       = open()
+    val keyless = o.attemptKeyed(Vector(TestSpecs.keyed(0, None, node("n", 1))))
+    assert(
+      keyless.left.toOption
+        .exists(_.getMessage.contains("offset 0: no key; this delta's element key is 'node:n'")),
+      keyless.toString
+    )
+    val wrongKind = o.attemptKeyed(Vector(TestSpecs.keyed(0, Some("edge:n"), node("n", 1))))
+    assert(
+      wrongKind.left.toOption
+        .exists(_.getMessage.contains("key 'edge:n' is not this delta's element key 'node:n'")),
+      wrongKind.toString
+    )
+    assertEquals(query("MATCH (n) RETURN count(n) AS c").head("c"), Long.box(0))
+  }
+
+  test("a node and an edge with the same id are different elements under different keys") {
+    val o = open()
+    o(node("same", 1), edge("same", 1, "a", "b"))
+    assertEquals(query("MATCH (n:Element {id:'same'}) RETURN count(n) AS c").head("c"), Long.box(1))
+    assertEquals(
+      query("MATCH ()-[r:LINKS {id:'same'}]->() RETURN count(r) AS c").head("c"),
+      Long.box(1)
+    )
+  }
+
+  test("a delete marker is passed over and counted: not written, not stale, not a failure") {
+    val o = open()
+    val result = o.attemptKeyed(
+      Vector(
+        TestSpecs.keyed(0, Some("node:a"), node("a", 1)),
+        TestSpecs.keyed(1, Some("node:gone"), ""),
+        TestSpecs.keyed(2, Some("node:b"), node("b", 1))
+      )
+    )
+    assertEquals(result, Right(()))
+    val m = o.metrics.of("in", 0)
+    assertEquals(
+      (m.getDeltasWritten, m.getDeltasStale, m.getDeleteMarkers, m.getBatchesFailed),
+      (2L, 0L, 1L, 0L)
+    )
+  }
+
+  test("a batch of delete markers alone is acknowledged; a marker changes nothing in the graph") {
+    val o = open()
+    o(node("a", 3, props = """{"v":3}"""))
+    val before = props("a")
+    val result = o.attemptKeyed(
+      Vector(TestSpecs.keyed(0, Some("node:a"), ""), TestSpecs.keyed(1, None, ""))
+    )
+    assertEquals(result, Right(()))
+    assertEquals(props("a"), before)
+    assertEquals(o.metrics.of("in", 0).getDeleteMarkers, 2L)
+    assertEquals(o.metrics.of("in", 0).getBatchesFailed, 0L)
   }

@@ -104,6 +104,7 @@ nav:
       - Deploy a pipeline: deploy/deploy-a-pipeline.md
       - Configure at deploy time: deploy/configuration.md
       - Rebuild from the start: deploy/reset.md
+      - Rebuild a graph from its delta topic: deploy/rebuild-a-graph.md
       - Observe a pipeline: deploy/observe.md
       - Troubleshooting: deploy/troubleshooting.md
   - Reference:

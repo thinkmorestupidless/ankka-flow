@@ -72,3 +72,9 @@ rules:
     labels:
       inlet: "$1"
       partition: "$2"
+  - pattern: 'ankka\.flow<type=stage,\s*inlet=(\S+),\s*partition=([0-9]+)><>DeleteMarkers:'
+    name: ankka_flow_stage_delete_markers_total
+    type: COUNTER
+    labels:
+      inlet: "$1"
+      partition: "$2"

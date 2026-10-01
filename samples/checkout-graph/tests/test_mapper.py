@@ -1,5 +1,6 @@
 import json
 
+from ankka_flow import graph
 from ankka_flow.testkit import Harness, hash_partitioner
 
 from checkout_graph.mapper import CheckoutGraph
@@ -15,18 +16,24 @@ def test_a_notice_becomes_a_cart_a_checkout_and_the_edge_between_them() -> None:
     h = Harness(CheckoutGraph())
     h.inlet("in").put(key=b"cart-1", value=notice("cart-1", 1_790_000_000_000), headers=[("ce-id", b"n-1")])
     h.run()
-    deltas = [json.loads(r.value) for r in h.outlet("deltas").records]
-    assert [(d["kind"], d["id"]) for d in deltas] == [
+    records = h.outlet("deltas").records
+    deltas = [graph.read(r) for r in records]
+    assert [(d.kind, d.id) for d in deltas] == [
         ("node", "cart:cart-1"),
         ("node", "checkout:cart-1:1790000000000"),
         ("edge", "checked-out:cart-1:1790000000000"),
     ]
-    assert all(d["version"] == 1_790_000_000_000 for d in deltas)
-    assert deltas[1]["properties"]["checkedOutAt"] == "2026-09-21T14:13:20.000+00:00"
-    assert deltas[2]["from"] == "cart:cart-1" and deltas[2]["to"] == "checkout:cart-1:1790000000000"
-    # keyed by element id, with ankka's headers carried along
-    assert [r.key for r in h.outlet("deltas").records] == [d["id"].encode() for d in deltas]
-    assert all(r.headers == [("ce-id", b"n-1")] for r in h.outlet("deltas").records)
+    assert all(d.version == 1_790_000_000_000 for d in deltas)
+    assert deltas[1].properties["checkedOutAt"] == "2026-09-21T14:13:20.000+00:00"
+    assert (deltas[2].from_id, deltas[2].to_id) == ("cart:cart-1", "checkout:cart-1:1790000000000")
+    # each record is keyed by its element, never by the cart the notice was keyed by
+    assert [r.key for r in records] == [
+        b"node:cart:cart-1",
+        b"node:checkout:cart-1:1790000000000",
+        b"edge:checked-out:cart-1:1790000000000",
+    ]
+    # ankka's headers are carried along, and the notice was not skipped
+    assert all(r.headers == [("ce-id", b"n-1")] for r in records)
     assert h.skipped == []
     # docs:end mapper-test
 
@@ -47,9 +54,10 @@ def test_each_cart_is_mapped_in_order() -> None:
         cart = f"cart-{i % 5}"
         h.inlet("in").put(key=cart.encode(), value=notice(cart, 1_790_000_000_000 + i))
     h.run(partitions=hash_partitioner(3), max_records=4)
-    carts = [json.loads(r.value) for r in h.outlet("deltas").records if r.key.startswith(b"cart:")]
-    for cart in {c["id"] for c in carts}:
-        versions = [c["version"] for c in carts if c["id"] == cart]
+    carts = [d for d in map(graph.read, h.outlet("deltas").records) if d.key.startswith(b"node:cart:")]
+    assert len(carts) == 30
+    for cart in {c.id for c in carts}:
+        versions = [c.version for c in carts if c.id == cart]
         assert versions == sorted(versions)
 
 

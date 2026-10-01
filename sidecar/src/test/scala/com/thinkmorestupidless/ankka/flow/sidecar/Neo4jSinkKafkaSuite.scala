@@ -31,12 +31,14 @@ class Neo4jSinkKafkaSuite extends KafkaSuite with Neo4jSuite:
   private def tomb(id: String, v: Long) =
     s"""{"kind":"tombstone","element":"node","id":"$id","version":$v}"""
 
-  /** Five nodes over four versions, four edges over two, one tombstone: keyed by element id. */
+  /**
+   * Five nodes over four versions, four edges over two, one tombstone: each under its element key.
+   */
   private val sequence: Vector[(String, String)] =
-    (for v <- 1L to 4L; n <- 0 to 4 yield s"n$n" -> node(s"n$n", v)).toVector ++
+    (for v <- 1L to 4L; n <- 0 to 4 yield s"node:n$n" -> node(s"n$n", v)).toVector ++
       (for v <- 1L to 2L; e <- 0 to 3
-      yield s"e$e" -> edge(s"e$e", v, s"n$e", s"n${e + 1}")).toVector :+
-      ("n0" -> tomb("n0", 10))
+      yield s"edge:e$e" -> edge(s"e$e", v, s"n$e", s"n${e + 1}")).toVector :+
+      ("node:n0" -> tomb("n0", 10))
 
   private def publishAll(topic: String, records: Vector[(String, String)]): Unit =
     publish(topic, records.map((k, v) => (Some(k), v, Nil)))
@@ -162,7 +164,7 @@ class Neo4jSinkKafkaSuite extends KafkaSuite with Neo4jSuite:
   ) {
     clear()
     val topic = createTopic(uniqueTopic("deltas-outage"), 1)
-    publishAll(topic, Vector("a" -> node("a", 1)))
+    publishAll(topic, Vector("node:a" -> node("a", 1)))
     // The stall threshold is above the batch deadline (5 s + 5 s), as 5 min is above 35 s in a pod,
     // so the warning carries the error that stalled the partition.
     val run = sidecar(topic, "outage", stallAfter = 15.seconds, timeout = "5s")
@@ -171,7 +173,7 @@ class Neo4jSinkKafkaSuite extends KafkaSuite with Neo4jSuite:
       eventually(10.seconds)(assert(run.ready))
       pause()
       try
-        publishAll(topic, (2L to 6L).toVector.map(v => "a" -> node("a", v)))
+        publishAll(topic, (2L to 6L).toVector.map(v => "node:a" -> node("a", v)))
         eventually(120.seconds)(assert(!run.ready, "still ready with Neo4j paused"))
         assertEquals(committed(group("outage")), 1L)
         eventually(60.seconds)(
@@ -201,4 +203,23 @@ class Neo4jSinkKafkaSuite extends KafkaSuite with Neo4jSuite:
       stallAfter = 5.minutes
     )
     assertEquals(Await.result(run.exited, 30.seconds), 1)
+  }
+
+  test("a delete marker from a plain producer, and an empty value, are read past: nothing stalls") {
+    clear()
+    val topic = createTopic(uniqueTopic("deltas-markers"), 1)
+    publishAll(topic, Vector("node:a" -> node("a", 1)))
+    publishMarkers(topic, Seq("node:gone"))
+    publishAll(topic, Vector("node:empty" -> "", "node:b" -> node("b", 1)))
+    val run = sidecar(topic, "markers")
+    try
+      eventually(60.seconds)(assertEquals(committed(group("markers")), 4L))
+      assert(run.ready)
+      assertEquals(
+        query("MATCH (n:Element) RETURN n.id AS id ORDER BY id").map(_("id")),
+        Vector[AnyRef]("a", "b")
+      )
+      val m = run.stageMetrics.of("in", 0)
+      assertEquals((m.getDeltasWritten, m.getDeleteMarkers, m.getBatchesFailed), (2L, 2L, 0L))
+    finally run.stop(): Unit
   }

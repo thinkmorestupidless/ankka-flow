@@ -67,6 +67,12 @@ object Verify:
     val problems = loaded.problems ++ blueprintProblems ++ overrideProblems
     (verified, overrides) match
       case (Some(v), Right(o)) if problems.isEmpty =>
+        // What becomes of each delta topic's cleanup policy, decided on its deploy-time settings.
+        val deltaNotes = v.topics.flatMap { t =>
+          DeltaTopics
+            .decide(t, TopicSettings.fromConfig(o.topicConfig(t)).topicConfig)
+            .map(d => s"note: ${DeltaTopics.note(t, d)}")
+        }
         Right(
           Verified(
             v,
@@ -74,7 +80,7 @@ object Verify:
             o,
             v.streamlets.map(s => s.name -> o.parameters(s).toOption.get).toMap,
             v.streamlets.map(s => s.name -> o.replicas(s.name).toOption.get).toMap,
-            notes,
+            notes ++ deltaNotes,
             in.blueprint
           )
         )

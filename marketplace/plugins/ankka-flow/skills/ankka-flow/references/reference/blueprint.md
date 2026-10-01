@@ -108,6 +108,38 @@ Kafka cluster is on [Topics and Kafka clusters](../concepts/topics.md).
 A topic with no producers and no consumers is ignored: it does not reach the resource and no Kafka
 topic is created for it.
 
+### Delta topics
+
+A **delta topic** is a topic with at least one port, producing or consuming, of the graph delta
+contract `ankka.graph-delta.v1`. Its latest record per element is the graph, so a managed delta topic
+is compacted by default: when neither the blueprint nor a `--conf` file sets `cleanup.policy` for it,
+`flow generate` writes `cleanup.policy: compact` into the topic's configuration in the resource, and
+the operator creates it compacted. `flow verify` and `flow generate` say what was decided in a note
+on stderr, which does not change the exit code:
+
+| Topic | Note |
+|---|---|
+| managed, no `cleanup.policy` set, or set to `compact` | `note: Topic '<id>' carries graph deltas and is compacted (cleanup.policy = compact).` |
+| managed, a policy with both `compact` and `delete` | `note: Topic '<id>' carries graph deltas and sets cleanup.policy = compact,delete; records older than its retention are gone from a rebuild.` |
+| managed, a policy without `compact` | `note: Topic '<id>' carries graph deltas and sets cleanup.policy = <policy>; it will not hold the whole graph and cannot be relied on to rebuild it.` |
+| unmanaged | `note: Topic '<id>' carries graph deltas and is not managed; whether it is compacted is its owner's.` |
+
+A blueprint sets a policy like any topic setting, and a policy that names both must be quoted, because
+an unquoted comma ends a HOCON value:
+
+```hocon
+graph-deltas {
+  producers = [mapper.deltas]
+  consumers = [graph.in]
+  topic { cleanup.policy = "compact,delete", retention.ms = 2592000000 }
+}
+```
+
+A `--conf` file overrides it: `flow.topics.graph-deltas { topic { cleanup.policy = delete } }`. A
+topic with no port of the delta contract is written exactly as the blueprint says, with no default
+added. What a compacted delta topic makes possible is on
+[Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
+
 ### Batch limits
 
 The sidecar sends an inlet's records to the process in batches: whatever arrived on one partition
@@ -162,8 +194,10 @@ blueprint is refused when:
 
 `flow generate` also refuses when a streamlet has no image or the pipeline id is not valid.
 
-An outlet connected to no topic is allowed: `flow verify` prints it as a note and carries on.
+An outlet connected to no topic is allowed: `flow verify` prints it as a note and carries on. A
+[delta topic](#delta-topics) gets a note saying whether it is compacted.
 
 ```text
 note: Outlet router.review is not connected.
+note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact).
 ```

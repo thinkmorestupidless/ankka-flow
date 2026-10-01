@@ -88,9 +88,11 @@ Kafka. In order:
       cannot be read, or lacks `uri`, `username` or `password`. The messages are listed on
       [Neo4j merge sink](neo4j-merge-sink.md#the-connection-secret).
 2. **Topics.** Each managed topic that does not exist is created with its partitions, replication and
-   `topicConfig` (`TopicCreated`). An existing managed topic is never altered: other partitions or
-   replication is `TopicDiffers`, a differing `topicConfig` entry is `TopicSettingsIgnored`. An
-   unmanaged topic is only described; one that does not exist is `TopicMissing`. Topics are handled
+   `topicConfig` (`TopicCreated`), so a delta topic the CLI wrote `cleanup.policy: compact` for is
+   created compacted. An existing managed topic is never altered: other partitions or replication is
+   `TopicDiffers`, a differing `topicConfig` entry is `TopicSettingsIgnored`, and a topic that is not
+   compacted when the resource asks for `compact` is `TopicNotCompacted`, with `cleanup.policy` then
+   left out of `TopicSettingsIgnored`. An unmanaged topic is only described; one that does not exist is `TopicMissing`. Topics are handled
    before any Deployment.
 3. **Per pipeline**, the ServiceAccount, Role and RoleBinding `flow-<pipeline>`.
 4. **Per streamlet**, the Secret and the Deployment `flow-<pipeline>-<streamlet>`, with `StreamletRolled`

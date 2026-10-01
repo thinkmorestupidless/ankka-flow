@@ -109,3 +109,63 @@ class DeltasSuite extends munit.FunSuite:
     assertEquals(folded.nodes, Vector.empty)
     assertEquals(folded.nodeTombstones, Vector(Delta.NodeTombstone("a", 2)))
   }
+
+  test("every delta in the shared fixture has the key the fixture gives it") {
+    import com.thinkmorestupidless.ankka.flow.protocol.Json
+    val file = TestSpecs.repoRoot.resolve("protocol/fixtures/graph-deltas/keys.json")
+    val Right(Json.Arr(rows)) =
+      Json.parse(new String(java.nio.file.Files.readAllBytes(file), "UTF-8")): @unchecked
+    assert(rows.size >= 8, s"only ${rows.size} rows")
+    rows.zipWithIndex.foreach { (row, i) =>
+      val Some(Json.Str(expected)) = row.field("key"): @unchecked
+      val delta                    = Deltas.parse(i.toLong, Json.compact(row.field("delta").get))
+      assertEquals(delta.map(Deltas.key), Right(expected), s"row $i")
+      assertEquals(delta.map(Deltas.keyBytes(_).toStringUtf8), Right(expected), s"row $i")
+    }
+  }
+
+  private def bytes(s: String) = com.google.protobuf.ByteString.copyFromUtf8(s)
+  private val cart             = """{"kind":"node","id":"cart:cart-1","version":1}"""
+  private val tombstone = """{"kind":"tombstone","element":"node","id":"cart:cart-1","version":2}"""
+
+  test("a delta under its own element key is read; a tombstone's key is its element's") {
+    assert(
+      Deltas
+        .read(0, Some(bytes("node:cart:cart-1")), bytes(cart))
+        .exists(_.isInstanceOf[Deltas.Read.Applied])
+    )
+    assertEquals(
+      Deltas.read(0, Some(bytes("node:cart:cart-1")), bytes(tombstone)),
+      Right(Deltas.Read.Applied(Delta.NodeTombstone("cart:cart-1", 2)))
+    )
+  }
+
+  test("any other key, the wrong kind, and no key are refused, naming the key expected") {
+    assertEquals(
+      Deltas.read(7, Some(bytes("cart:cart-1")), bytes(cart)),
+      Left("offset 7: key 'cart:cart-1' is not this delta's element key 'node:cart:cart-1'")
+    )
+    assertEquals(
+      Deltas.read(7, Some(bytes("edge:cart:cart-1")), bytes(cart)),
+      Left("offset 7: key 'edge:cart:cart-1' is not this delta's element key 'node:cart:cart-1'")
+    )
+    assertEquals(
+      Deltas.read(7, None, bytes(cart)),
+      Left("offset 7: no key; this delta's element key is 'node:cart:cart-1'")
+    )
+    val notUtf8 = com.google.protobuf.ByteString.copyFrom(Array[Byte](-1, -2))
+    assert(
+      Deltas
+        .read(7, Some(notUtf8), bytes(cart))
+        .left
+        .exists(_.contains("is not this delta's element key"))
+    )
+  }
+
+  test("a record with no value is a delete marker whatever its key; one byte is not") {
+    val empty = com.google.protobuf.ByteString.EMPTY
+    assertEquals(Deltas.read(0, Some(bytes("node:cart:cart-1")), empty), Right(Deltas.Read.Marker))
+    assertEquals(Deltas.read(0, None, empty), Right(Deltas.Read.Marker))
+    assertEquals(Deltas.read(0, Some(bytes("anything at all")), empty), Right(Deltas.Read.Marker))
+    assertEquals(Deltas.read(3, Some(bytes("k")), bytes("x")), Left("offset 3: not a JSON object"))
+  }

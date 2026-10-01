@@ -39,6 +39,23 @@ The graph is in Neo4j's browser at <http://localhost:7474> (`neo4j` / `flow-loca
 MATCH (c:Cart)-[:CHECKED_OUT]->(k:Checkout) RETURN c, k LIMIT 50
 ```
 
+The deltas the mapper wrote, with their keys:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 \
+  --topic checkouts-graph.graph-deltas --from-beginning --property print.key=true --max-messages 3
+```
+
+```text
+node:cart:cart-0	{"kind":"node","id":"cart:cart-0","version":1790000000000,"labels":["Cart"],"properties":{"cartId":"cart-0"}}
+node:checkout:cart-0:1790000000000	{"kind":"node","id":"checkout:cart-0:1790000000000",…}
+edge:checked-out:cart-0:1790000000000	{"kind":"edge","id":"checked-out:cart-0:1790000000000",…}
+```
+
+Each record's key is its element's (`node:<id>` or `edge:<id>`), built by the SDK's
+`GraphDeltaOutlet`, and the delta topic is compacted by default, so it keeps the latest delta of
+every element and the graph can be rebuilt from it alone.
+
 Throughput, with nothing else running:
 
 ```bash
@@ -81,3 +98,18 @@ its notice's time. The only topic event was `TopicCreated` for `checkouts-graph.
 Both streamlets scaled to zero, `flow reset checkouts-graph` (a `ResetOffsets` event per group),
 then scaled back up: the sink re-read 18 deltas — the 9 it had and 9 the mapper re-emitted — wrote
 none and found all 18 stale, and the graph was identical (6 nodes, 3 edges, the same versions).
+
+### Brought across to element keys and compaction, and rebuilt (2026-10-01)
+
+The same cluster, still running the pipeline as first deployed: mapper deltas keyed by bare id, a
+delta topic that was not compacted. With this build's operator and sidecar in place, the sink
+refused the old mapper's next delta (`key 'checkout:…' is not this delta's element key
+'node:checkout:…'`) and went not ready, and the regenerated resource drew `TopicNotCompacted` for
+the existing topic. Then the migration: both streamlets scaled to zero, the delta topic deleted,
+the new mapper image loaded, `flow reset checkouts-graph`, scaled up. The operator recreated the
+topic compacted (`cleanup.policy=compact`), the mapper re-emitted every delta under its element
+key, and the graph was as before with the refused checkout now in it (8 nodes, 4 edges).
+
+The rebuild: both streamlets scaled to zero, Neo4j emptied, `flow reset checkouts-graph --streamlet
+graph`, scaled up. The sink read the delta topic from the start and the graph was identical — the
+same 8 nodes and 4 edges at the same versions — while the mapper's consumer group did not move.
