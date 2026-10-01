@@ -581,9 +581,32 @@ class FlowClusterSuite extends munit.FunSuite:
           name = "shop.graph-deltas",
           managed = false,
           bootstrapServers = Some("kafka.kafka.svc:9092")
+        ),
+        // Two topics the resource asks to be compacted, as `flow generate` writes a delta topic:
+        // one the operator creates, one that exists already without compaction.
+        TopicSpec(
+          id = "compacted-new",
+          name = "shop.compacted-new",
+          partitions = Some(1),
+          topicConfig = Map("cleanup.policy" -> "compact")
+        ),
+        TopicSpec(
+          id = "compacted-old",
+          name = "shop.compacted-old",
+          partitions = Some(1),
+          topicConfig = Map("cleanup.policy" -> "compact")
         )
       )
     )
+
+  private def cleanupPolicy(topic: String): String =
+    val resource = new org.apache.kafka.common.config.ConfigResource(
+      org.apache.kafka.common.config.ConfigResource.Type.TOPIC,
+      topic
+    )
+    admin(_.describeConfigs(java.util.List.of(resource)).all().get().get(resource))
+      .get("cleanup.policy")
+      .value
 
   private def graphStatus: Option[AnkkaFlowStatus] =
     Option(flows.withName("graphs").get()).flatMap(r => Option(r.getStatus))
@@ -619,7 +642,12 @@ class FlowClusterSuite extends munit.FunSuite:
           .mkString("\n---\n")
         throw new AssertionError(s"${e.getMessage}\nNeo4j pods:\n$described", e)
     admin(
-      _.createTopics(java.util.List.of(new NewTopic("shop.graph-deltas", 1, 1.toShort))).all().get()
+      _.createTopics(
+        java.util.List.of(
+          new NewTopic("shop.graph-deltas", 1, 1.toShort),
+          new NewTopic("shop.compacted-old", 1, 1.toShort)
+        )
+      ).all().get()
     )
     client
       .resource(AnkkaFlow(Namespace, "graphs", graphSpec("test")))
@@ -668,6 +696,22 @@ class FlowClusterSuite extends munit.FunSuite:
       sidecar.getVolumeMounts.toString
     )
     assert(!sidecar.getEnv.asScala.exists(_.getName == "FLOW_PROCESS_ADDRESS"))
+
+    // A topic the resource asks to be compacted is created compacted; one that exists without it
+    // is reported and left exactly as it is.
+    eventually(1.minute, "the compacted topic")(
+      assertEquals(Try(cleanupPolicy("shop.compacted-new")).toOption, Some("compact"))
+    )
+    eventually(1.minute, "the TopicNotCompacted event")(
+      assert(
+        events("TopicNotCompacted").exists(n =>
+          n.contains("shop.compacted-old") && n.contains("cleanup.policy = delete")
+        ),
+        events("TopicNotCompacted").toString
+      )
+    )
+    assertEquals(cleanupPolicy("shop.compacted-old"), "delete")
+    assert(!events("TopicSettingsIgnored").exists(_.contains("shop.compacted-old")))
 
     produce(
       "shop.graph-deltas",
