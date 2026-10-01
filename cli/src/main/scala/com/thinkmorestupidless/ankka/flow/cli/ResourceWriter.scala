@@ -1,7 +1,7 @@
 package com.thinkmorestupidless.ankka.flow.cli
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.thinkmorestupidless.ankka.flow.blueprint.{TopicSettings, VerifiedTopic}
+import com.thinkmorestupidless.ankka.flow.blueprint.{DeltaTopics, TopicSettings, VerifiedTopic}
 import com.thinkmorestupidless.ankka.flow.crd.*
 import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json, ProtocolVersion}
 
@@ -69,6 +69,12 @@ object ResourceWriter:
 
   private def topic(t: VerifiedTopic, verified: Verify.Verified, pipeline: String): TopicSpec =
     val s = TopicSettings.fromConfig(verified.overrides.topicConfig(t))
+    // A delta topic the pipeline owns is compacted unless the blueprint or --conf chose a policy:
+    // written here, so the resource says what runs and the operator adds nothing.
+    val topicConfig = DeltaTopics.decide(t, s.topicConfig) match
+      case Some(DeltaTopics.Decision.Compacted) =>
+        s.topicConfig + (DeltaTopics.CleanupPolicy -> DeltaTopics.Compact)
+      case _ => s.topicConfig
     TopicSpec(
       id = t.id,
       name = t.kafkaName(pipeline),
@@ -80,6 +86,6 @@ object ResourceWriter:
       connectionConfig = s.connectionConfig,
       producerConfig = s.producerConfig,
       consumerConfig = s.consumerConfig,
-      topicConfig = s.topicConfig,
+      topicConfig = topicConfig,
       batch = BatchSpec(s.batch.maxRecords, s.batch.maxBytes)
     )

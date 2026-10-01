@@ -248,6 +248,93 @@ class VerifySuite extends munit.FunSuite:
     refused(verify(graph, "--conf", conf.toString), "parameter 'batch-size' is not declared")
   }
 
+  // ── delta topics: compacted by default, and said so ──────────────────────────────────────
+
+  private val graphConf = Seq("--conf", graph.resolve("overrides.conf").toString)
+
+  private def withPolicy(policy: String) =
+    graphVariant(blueprint =
+      _.replace("partitions = 3", s"partitions = 3\n      topic { cleanup.policy = $policy }")
+    )
+
+  test("a managed delta topic is reported as compacted, and nothing else is") {
+    val r = verify(graph, graphConf*)
+    assertEquals(r.code, 0, r.err)
+    assertEquals(
+      r.lines.filter(_.contains("graph deltas")),
+      Vector(
+        "note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact)."
+      )
+    )
+    // the cart pipeline carries no deltas: no note, and its output is as it was
+    val plain = verify(cart)
+    assertEquals(plain.err, "")
+    assertEquals(plain.out.trim, "verified: 2 streamlets, 3 topics")
+  }
+
+  test("a blueprint's own cleanup policy is kept, and the note says what it gives up") {
+    val deleted = verify(withPolicy("delete"), graphConf*)
+    assertEquals(deleted.code, 0, deleted.err)
+    assert(
+      deleted.err.contains(
+        "note: Topic 'graph-deltas' carries graph deltas and sets cleanup.policy = delete; it will not hold the whole graph and cannot be relied on to rebuild it."
+      ),
+      deleted.err
+    )
+    // a comma separates fields in HOCON, so a policy naming both is quoted
+    val both = verify(withPolicy("\"compact,delete\""), graphConf*)
+    assertEquals(both.code, 0, both.err)
+    assert(
+      both.err.contains(
+        "note: Topic 'graph-deltas' carries graph deltas and sets cleanup.policy = compact,delete; records older than its retention are gone from a rebuild."
+      ),
+      both.err
+    )
+    val compact = verify(withPolicy("compact"), graphConf*)
+    assert(
+      compact.err.contains(
+        "note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact)."
+      ),
+      compact.err
+    )
+  }
+
+  test("a --conf cleanup policy wins over the blueprint's and over the default") {
+    val conf = Files.createTempFile("policy", ".conf")
+    Files.writeString(conf, "flow.topics.graph-deltas { topic { cleanup.policy = delete } }")
+    Seq(graph, withPolicy("compact")).foreach { dir =>
+      val r = verify(dir, (graphConf ++ Seq("--conf", conf.toString))*)
+      assertEquals(r.code, 0, r.err)
+      assert(
+        r.err.contains("sets cleanup.policy = delete; it will not hold the whole graph"),
+        r.err
+      )
+    }
+  }
+
+  test("an unmanaged delta topic is its owner's, and the note says so") {
+    val dir = Files.createTempDirectory("unmanaged-deltas")
+    Files.writeString(
+      dir.resolve("blueprint.conf"),
+      """blueprint {
+        |  streamlets { graph = builtin/neo4j-merge-sink }
+        |  topics {
+        |    deltas { managed = false, bootstrap.servers = "kafka:9092", consumers = [graph.in] }
+        |  }
+        |}
+        |""".stripMargin
+    )
+    val conf = Files.writeString(dir.resolve("o.conf"), "flow.streamlets.graph.config.secret = s")
+    val r    = flow("verify", dir.resolve("blueprint.conf").toString, "--conf", conf.toString)
+    assertEquals(r.code, 0, r.err)
+    assert(
+      r.err.contains(
+        "note: Topic 'deltas' carries graph deltas and is not managed; whether it is compacted is its owner's."
+      ),
+      r.err
+    )
+  }
+
   test("usage errors exit 2") {
     assertEquals(flow("verify").code, 2)
     assertEquals(flow("frobnicate").code, 2)

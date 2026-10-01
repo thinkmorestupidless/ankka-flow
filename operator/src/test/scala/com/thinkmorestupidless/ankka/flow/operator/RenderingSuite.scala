@@ -427,3 +427,88 @@ class RenderingSuite extends munit.FunSuite:
     assertEquals(status(r).phase, AnkkaFlowStatus.Ready)
     assert(!events(r).exists(_.reason == "StreamletRolled"), events(r).toString)
   }
+
+  // ── feature 003: delta topics ────────────────────────────────────────────────────────────
+
+  /** The graph pipeline as the CLI now generates it: its delta topic asks to be compacted. */
+  private def compactedGraph(
+      deltaConfig: Map[String, String] = Map("cleanup.policy" -> "compact")
+  ) =
+    val r = graph()
+    r.setSpec(
+      r.getSpec.copy(topics =
+        r.getSpec.topics.map(t =>
+          if t.id == "graph-deltas" then t.copy(topicConfig = deltaConfig) else t
+        )
+      )
+    )
+    r
+
+  private def existing(deltaConfigs: Map[String, String]): Observed =
+    graphObserved.copy(topics =
+      Map(
+        "cart-checkouts"         -> TopicState.Exists(3, 1, Map.empty),
+        "checkouts.graph-deltas" -> TopicState.Exists(3, 1, deltaConfigs)
+      )
+    )
+
+  test("an existing delta topic that is not compacted is reported, and left as it is") {
+    val r = render(compactedGraph(), existing(Map("cleanup.policy" -> "delete")))
+    assertEquals(r.actions.collect { case Action.EnsureTopic(t) => t.name }, Vector.empty)
+    val warned = events(r).filter(_.reason == "TopicNotCompacted")
+    assertEquals(warned.map(_.eventType), Vector(Events.Warning))
+    assertEquals(
+      warned.head.note,
+      "topic 'checkouts.graph-deltas' exists and is not compacted (cleanup.policy = delete); the resource asks for compact. Left as it is: it will not hold the whole graph. To compact it, alter or recreate the topic."
+    )
+    // said once: not also as a setting that was not applied
+    assert(!events(r).exists(_.reason == "TopicSettingsIgnored"), events(r).toString)
+  }
+
+  test("another setting that differs on the same topic is still reported, without the policy") {
+    val r = render(
+      compactedGraph(Map("cleanup.policy" -> "compact", "retention.ms" -> "86400000")),
+      existing(Map("cleanup.policy" -> "delete", "retention.ms" -> "1000"))
+    )
+    assert(events(r).exists(_.reason == "TopicNotCompacted"))
+    assertEquals(
+      events(r).filter(_.reason == "TopicSettingsIgnored").map(_.note),
+      Vector(
+        "topic 'checkouts.graph-deltas' exists; changed settings retention.ms were not applied"
+      )
+    )
+  }
+
+  test("an existing delta topic that is already compacted is never reported as not compacted") {
+    Seq("compact", "compact,delete", "delete, compact").foreach { policy =>
+      val r       = render(compactedGraph(), existing(Map("cleanup.policy" -> policy)))
+      val reasons = events(r).map(_.reason)
+      assert(!reasons.contains("TopicNotCompacted"), s"$policy: $reasons")
+      // compact,delete is not what the resource asked for: an ordinary setting that differs
+      assertEquals(reasons.contains("TopicSettingsIgnored"), policy != "compact", policy)
+    }
+  }
+
+  test("a resource asking for compact,delete names that policy in the warning") {
+    val r = render(
+      compactedGraph(Map("cleanup.policy" -> "compact,delete")),
+      existing(Map("cleanup.policy" -> "delete"))
+    )
+    val warned = events(r).filter(_.reason == "TopicNotCompacted").map(_.note)
+    assert(warned.exists(_.contains("the resource asks for compact,delete")), warned.toString)
+    assert(!events(r).exists(_.reason == "TopicSettingsIgnored"), events(r).toString)
+  }
+
+  test("a missing delta topic is created with the resource's cleanup policy") {
+    val r = render(compactedGraph(), graphObserved)
+    assertEquals(
+      r.actions.collect { case Action.EnsureTopic(t) if t.id == "graph-deltas" => t.topicConfig },
+      Vector(Map("cleanup.policy" -> "compact"))
+    )
+    assert(!events(r).exists(_.reason == "TopicNotCompacted"))
+  }
+
+  test("a topic the resource does not ask to compact is never reported as not compacted") {
+    val r = render(graph(), existing(Map("cleanup.policy" -> "delete")))
+    assert(!events(r).exists(_.reason == "TopicNotCompacted"), events(r).toString)
+  }
