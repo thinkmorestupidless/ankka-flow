@@ -228,3 +228,12 @@ key check in place, three runs on 2026-10-01 with the kind cluster also running 
 1,332/s per partition (the first, against a cold Neo4j), then 1,772/s and 1,929/s. The measurement
 before this feature was 1,782/s: the key check, a byte comparison per record, costs nothing
 measurable.
+
+## Quickstart tier 6
+
+Run on 2026-10-01 on the kind cluster that still ran the pipeline as first released; the record is
+in `samples/checkout-graph/README.md`. The refusal named the expected key; `TopicNotCompacted`
+named the topic and its policy; the migration of `contracts/element-keys.md` left a compacted topic
+of correctly keyed records and the graph intact; the rebuild of `contracts/rebuild.md` restored an
+identical graph with the mapper's group untouched. The guide's statement for emptying the database
+was the one used.
