@@ -92,9 +92,9 @@ and the rebuild restores it with the mapper stopped (SC-007).
 
 ## The reviewer's checklist
 
-- [ ] `keys.json` and its Python copy are byte-identical; both suites read it.
-- [ ] No test names a Kafka or Neo4j image by a literal tag.
-- [ ] The built-in descriptor's fixture is unchanged (`git diff --stat protocol/fixtures/builtin` is empty).
-- [ ] The sink's throughput is not worse than 1,782 deltas/s per partition by more than noise (`bench.py`).
-- [ ] The release notes say that a writer built for 0.2.0 is refused until it keys its deltas.
-- [ ] `docs check` passes with `deploy/rebuild-a-graph.md` in the nav and in a skill.
+- [x] `keys.json` and its Python copy are byte-identical; both suites read it.
+- [x] No test names a Kafka or Neo4j image by a literal tag.
+- [x] The built-in descriptor's fixture is unchanged (`git diff --stat protocol/fixtures/builtin` is empty).
+- [x] The sink's throughput is not worse than 1,782 deltas/s per partition by more than noise (`bench.py`).
+- [x] The release notes say that a writer built for 0.2.0 is refused until it keys its deltas.
+- [x] `docs check` passes with `deploy/rebuild-a-graph.md` in the nav and in a skill.
