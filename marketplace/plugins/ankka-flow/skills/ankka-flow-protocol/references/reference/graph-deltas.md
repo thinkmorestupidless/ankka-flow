@@ -77,6 +77,9 @@ neo4j merge failed for inlet 'in' partition 1: offset 43: no key; this delta's e
 [`protocol/fixtures/graph-deltas/keys.json`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/protocol/fixtures/graph-deltas/keys.json)
 lists deltas with their keys, including an id with colons and one with non-ASCII characters; the sink
 and the Python SDK are both tested against it.
+[`deltas.json`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/protocol/fixtures/graph-deltas/deltas.json)
+beside it lists deltas with every kind of property value, each with its key and the kind the sink
+reads each property as; a writer in another repository can test itself against both files.
 
 ## Delete markers
 
