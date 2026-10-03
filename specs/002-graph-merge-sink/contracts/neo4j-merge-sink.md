@@ -133,7 +133,8 @@ UNWIND $nodeTombstones AS d
 MERGE (n:Element {id: d.id})
   ON CREATE SET n._version = -1
 WITH n, d WHERE n._version < d.version
-SET n._version = d.version, n._deleted = true
+REMOVE n:$([l IN labels(n) WHERE l <> 'Element'])
+SET n = {id: d.id, _version: d.version, _deleted: true}
 RETURN count(n) AS written
 ```
 
@@ -146,7 +147,7 @@ MERGE (b:Element {id: d.to})   ON CREATE SET b._version = -1
 MERGE (a)-[r:$(d.type) {id: d.id}]->(b)
   ON CREATE SET r._version = -1
 WITH r, d WHERE r._version < d.version
-SET r._version = d.version, r._deleted = true
+SET r = {id: d.id, _version: d.version, _deleted: true}
 RETURN count(r) AS written
 ```
 

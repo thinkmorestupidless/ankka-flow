@@ -60,8 +60,13 @@ class Neo4jSinkKafkaSuite extends KafkaSuite with Neo4jSuite:
   private val expected: (Map[String, Map[String, AnyRef]], Map[String, Map[String, AnyRef]]) =
     val nodes = (0 to 4).map { n =>
       val base = Map[String, AnyRef]("id" -> s"n$n", "v" -> Long.box(4), "_version" -> Long.box(4))
+      // The tombstoned node is a bare marker: its tombstone cleared what the merges wrote.
       s"n$n" -> (if n == 0 then
-                   base + ("_version" -> Long.box(10)) + ("_deleted" -> java.lang.Boolean.TRUE)
+                   Map[String, AnyRef](
+                     "id"       -> "n0",
+                     "_version" -> Long.box(10),
+                     "_deleted" -> java.lang.Boolean.TRUE
+                   )
                  else base)
     }.toMap
     val edges = (0 to 3)

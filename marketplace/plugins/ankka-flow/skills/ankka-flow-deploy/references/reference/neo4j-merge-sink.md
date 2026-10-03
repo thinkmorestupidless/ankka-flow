@@ -120,7 +120,7 @@ once the sink is open and every inlet is subscribed.
 | labels or type | `Element` plus the delta's labels, replaced by every applied merge | the delta's type |
 | properties | the delta's, replaced whole by every applied merge | the same |
 | `_version` | the version of the last applied delta; `-1` on a placeholder | the same |
-| `_deleted` | `true` after a tombstone; cleared by a later applied merge | the same |
+| `_deleted` | `true` after a tombstone, which also clears the labels and properties; cleared by a later applied merge | the same |
 
 A **placeholder** is a node an edge names before the node's own delta has arrived: `Element`, its
 `id`, `_version = -1` and nothing else. The node's first delta replaces it.
@@ -132,7 +132,7 @@ For one element, by the incoming version `v` against the stored `_version` `s`:
 | absent | merge | created at `v` |
 | absent | tombstone | created, marked deleted, at `v` |
 | `s` | merge with `v > s` | state replaced, `_version = v`, `_deleted` cleared |
-| `s` | tombstone with `v > s` | `_deleted = true`, `_version = v`, properties kept |
+| `s` | tombstone with `v > s` | `_deleted = true`, `_version = v`; labels and properties cleared |
 | `s` | anything with `v ≤ s` | unchanged; counted as stale |
 
 ## Processing a batch
@@ -176,8 +176,10 @@ SET r = d.properties, r.id = d.id, r._version = d.version
 RETURN count(r) AS written
 ```
 
-The tombstone statements merge the element the same way and set `_version` and `_deleted = true`
-under the same guard.
+The tombstone statements merge the element the same way and, under the same guard, replace its
+properties with `id`, `_version` and `_deleted = true` and remove a node's labels but `Element`. A
+deleted element is the same bare marker however the records that led to it were batched, so two
+graphs built from one topic compare equal.
 
 ## When a batch fails
 
