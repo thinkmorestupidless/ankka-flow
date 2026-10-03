@@ -124,6 +124,43 @@ class DeltasSuite extends munit.FunSuite:
     }
   }
 
+  private def kindOf(value: Deltas.Value): String = value match
+    case _: Deltas.Value.Text    => "string"
+    case _: Deltas.Value.Integer => "integer"
+    case _: Deltas.Value.Decimal => "float"
+    case _: Deltas.Value.Flag    => "boolean"
+    case Deltas.Value.Many(vs)   => s"list:${kindOf(vs.head)}"
+
+  test("every delta in the shared fixture of deltas is read, keyed and typed as the fixture says") {
+    import com.thinkmorestupidless.ankka.flow.protocol.Json
+    val file = TestSpecs.repoRoot.resolve("protocol/fixtures/graph-deltas/deltas.json")
+    val Right(Json.Arr(rows)) =
+      Json.parse(new String(java.nio.file.Files.readAllBytes(file), "UTF-8")): @unchecked
+    assert(rows.size >= 12, s"only ${rows.size} rows")
+    val kinds = rows.zipWithIndex.flatMap { (row, i) =>
+      val Some(Json.Str(expected)) = row.field("key"): @unchecked
+      val Some(Json.Obj(reads))    = row.field("reads"): @unchecked
+      val value                    = Json.compact(row.field("delta").get)
+      val Right(delta)             = Deltas.parse(i.toLong, value): @unchecked
+      assertEquals(Deltas.key(delta), expected, s"row $i")
+      // The key the fixture gives is the key the sink demands of the record.
+      assert(Deltas.read(i.toLong, Some(bytes(expected)), bytes(value)).isRight, s"row $i")
+      val properties = delta match
+        case n: Deltas.Delta.NodeMerge => n.properties
+        case e: Deltas.Delta.EdgeMerge => e.properties
+        case _                         => Map.empty[String, Deltas.Value]
+      val found  = properties.view.mapValues(kindOf).toMap
+      val wanted = reads.collect { case (name, Json.Str(kind)) => name -> kind }.toMap
+      assertEquals(found, wanted, s"row $i")
+      found.values
+    }.toSet
+    // Every kind of property value the contract has is in the file at least once.
+    assertEquals(
+      kinds,
+      Set("string", "integer", "float", "boolean").flatMap(k => Set(k, s"list:$k"))
+    )
+  }
+
   private def bytes(s: String) = com.google.protobuf.ByteString.copyFromUtf8(s)
   private val cart             = """{"kind":"node","id":"cart:cart-1","version":1}"""
   private val tombstone = """{"kind":"tombstone","element":"node","id":"cart:cart-1","version":2}"""

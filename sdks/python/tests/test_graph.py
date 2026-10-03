@@ -17,6 +17,8 @@ from ankka_flow.testkit import Harness
 KEYS = pathlib.Path(__file__).resolve().parent.parent / "proto" / "fixtures" / "graph-deltas" / "keys.json"
 ROWS: list[dict[str, Any]] = stdjson.loads(KEYS.read_text(encoding="utf-8"))
 
+DELTAS: list[dict[str, Any]] = stdjson.loads((KEYS.parent / "deltas.json").read_text(encoding="utf-8"))
+
 OUT = GraphDeltaOutlet("deltas")
 
 
@@ -69,6 +71,26 @@ def test_a_delta_built_by_the_outlet_has_the_fixtures_key_and_value(row: dict[st
     assert emit.record.key == row["key"].encode("utf-8")
     assert json.loads(emit.record.value) == row["delta"]
     assert graph.read(emit.record).key == row["key"].encode("utf-8")
+
+
+def test_the_fixture_of_deltas_covers_every_kind_of_property() -> None:
+    assert len(DELTAS) >= 12
+    kinds = {kind for r in DELTAS for kind in r["reads"].values()}
+    assert kinds == {k for s in ("string", "integer", "float", "boolean") for k in (s, f"list:{s}")}
+
+
+@pytest.mark.parametrize("row", DELTAS, ids=[f"{i}:{r['key']}" for i, r in enumerate(DELTAS)])
+def test_a_delta_of_the_fixture_built_by_the_outlet_reads_back_as_the_fixtures(row: dict[str, Any]) -> None:
+    emit = build(row["delta"])
+    key = row["key"].encode("utf-8")
+    assert emit.record.key == key
+    # What the outlet wrote and what the fixture holds read as the same delta: the outlet always
+    # writes labels and properties, and a whole-number float is the integer the sink stores.
+    written = graph.read(emit.record)
+    given = graph.read(Record(key=key, value=stdjson.dumps(row["delta"]).encode("utf-8")))
+    assert written == given
+    assert written.key == key
+    assert set(written.properties) == set(row["reads"])
 
 
 def test_a_node_and_an_edge_with_one_id_have_different_keys() -> None:
