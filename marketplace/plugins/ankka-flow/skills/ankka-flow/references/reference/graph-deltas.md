@@ -131,8 +131,8 @@ graph and any other number a float. Top-level fields the contract does not name 
    placeholder for an endpoint it has not seen yet.
 5. **Property values are plain.** No `null`, no nested objects, no mixed arrays. The keys `id`,
    `_version` and `_deleted` belong to the sink.
-6. **A tombstone marks; it does not remove.** The element stays, marked, so a straggling older delta
-   cannot bring it back. A tombstone's key is the key of the element it marks.
+6. **A tombstone marks; it does not remove.** The element stays, marked, with its labels and
+   properties cleared, so a straggling older delta cannot bring it back. A tombstone's key is the key of the element it marks.
 7. **A new contract version is a new schema name.** A change a reader of `v1` could not accept is
    `ankka.graph-delta.v2`.
 

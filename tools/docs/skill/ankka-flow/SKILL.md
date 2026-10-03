@@ -15,6 +15,7 @@ pages:
   - build/blueprints.md
   - build/ankka-topics.md
   - build/graph-sink.md
+  - build/graph-from-ankka.md
   - reference/graph-deltas.md
   - deploy/rebuild-a-graph.md
   - reference/blueprint.md

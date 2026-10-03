@@ -108,6 +108,7 @@ Open the one a task needs; each is one topic and stands alone.
 - `references/build/blueprints.md` — Write the blueprint that wires a pipeline's streamlets together over Kafka topics, from naming the streamlets to checking the result with flow verify.
 - `references/build/ankka-topics.md` — Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
 - `references/build/graph-sink.md` — Turn a service's events into a Neo4j graph — choose ids and versions, map events to keyed graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
+- `references/build/graph-from-ankka.md` — Keep a Neo4j graph in step with an ankka service that publishes its own graph deltas, with a pipeline that is the built-in merge sink and nothing else.
 
 ### Run and operate
 
