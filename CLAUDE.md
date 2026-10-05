@@ -94,6 +94,20 @@ The ones that bite:
 - **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and protocol
   rules; change them in the same commit.
 
+## Living features
+
+**Specs from feature 004 on keep their acceptance scenarios in living features**, not in the spec.
+The [speckit-bdd](https://github.com/thinkmorestupidless/speckit-bdd) extension and preset are
+installed under `.specify/`: `/speckit-specify` writes a spec whose acceptance scenarios *name*
+scenarios, the `after_specify` hook runs `/speckit-bdd-features` to write them as Gherkin under
+`features/<area>/` with every word they use in the root `GLOSSARY.md`, and the `before_clarify` hook
+runs `/speckit-bdd-check`, which turns undefined words, refused synonyms, contradictions and untraced
+requirements into clarification questions. `specs-from: "004"` in
+`.specify/extensions/bdd/bdd-config.yml` leaves specs 001–003 as they were written. `just features`
+(and CI's `features` job) runs the same checker from the same config, and fails when it read nothing.
+The checker runs through `uvx`, so `uv` must be on `PATH`. Glossary terms follow
+`docs/reference/glossary.md` where the docs already define a word.
+
 ## Carried code
 
 A file derived from Cloudflow keeps Lightbend's header verbatim and arrives with its test, rewritten

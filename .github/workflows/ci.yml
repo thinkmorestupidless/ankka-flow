@@ -13,6 +13,7 @@ jobs:
     outputs:
       scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name != 'pull_request' }}
       sdk-python: ${{ steps.filter.outputs.sdk-python == 'true' || github.event_name != 'pull_request' }}
+      features: ${{ steps.filter.outputs.features == 'true' || github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -34,6 +35,15 @@ jobs:
               - 'operator/**'
               - 'cli/**'
               - 'kustomization/**'
+            # The living features, the glossary their steps are written in, the specs that name
+            # their scenarios, and the extension that checks them against each other.
+            features:
+              - *workflow
+              - '.github/features-check.sh'
+              - 'features/**'
+              - 'GLOSSARY.md'
+              - 'specs/**'
+              - '.specify/extensions/bdd/**'
             sdk-python:
               - *workflow
               - 'build.sbt'
@@ -42,6 +52,20 @@ jobs:
               - 'sidecar/**'
               - 'sdks/python/**'
               - 'samples/**'
+
+  # The living features, in the glossary's words, and the specs that name their scenarios, checked
+  # against each other by speckit-bdd: an undefined word, a refused synonym, two scenarios that give
+  # one situation different outcomes, a spec naming a scenario no feature has. The script reads the
+  # extension's own config, so it checks what `/speckit-bdd-check` checks, with the same checker, and
+  # it fails when nothing was read.
+  features:
+    needs: changes
+    if: needs.changes.outputs.features == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: .github/features-check.sh
 
   build:
     needs: changes

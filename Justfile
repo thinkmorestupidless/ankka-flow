@@ -89,3 +89,7 @@ docs-sync:
 # The site with live reload, while writing.
 docs-serve:
     uv run --project tools/docs docs serve
+
+# The living features, the glossary and the specs that name their scenarios, checked against each other.
+features:
+    .github/features-check.sh

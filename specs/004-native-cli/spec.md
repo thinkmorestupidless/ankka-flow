@@ -57,21 +57,14 @@ no JVM and have not cloned anything.
 the tap, run `flow version`; separately, download the archive, verify its checksum, unpack, run
 `flow version`.
 
-**Acceptance Scenarios**:
+**Acceptance Scenarios** *(each names a scenario in a living feature; none is written here)*:
 
-1. **Given** a Mac or Linux machine with Homebrew and no JVM, **When** the person runs the tap's
-   install command for ankka-flow, **Then** `flow` is on their path and `flow version` prints the
-   release's version and the protocol version it writes.
-2. **Given** a tagged release, **When** the person opens it, **Then** it offers one archive per
-   supported platform — macOS on Apple silicon and Intel, Linux on x64 and arm64 — each with a
-   checksum beside it.
-3. **Given** a downloaded archive, **When** the person checks it against the published checksum
-   and unpacks it, **Then** it holds one executable, `flow`, that runs without a JVM.
-4. **Given** a person who already has ankka's CLI from the tap, **When** they install ankka-flow's,
-   **Then** both are installed side by side from the same tap, and upgrading one does not touch the
-   other.
-5. **Given** a later release, **When** the person upgrades through Homebrew, **Then** they get that
-   release's `flow`, and `flow version` says so.
+- added `features/cli/install.feature`: flow is installed through the tap with one command
+- added `features/cli/install.feature`: a release offers an archive and a checksum for each platform
+- added `features/cli/install.feature`: an archive holds one native binary that runs with no Java virtual machine
+- added `features/cli/install.feature`: ankka's CLI and flow are installed side by side from one tap
+- added `features/cli/install.feature`: an upgrade through the tap installs the later release
+
 
 ---
 
@@ -90,22 +83,14 @@ safe to ship.
 JVM-built one, passes whole; and a smoke script run on the binary of each platform exercises each
 thing a native build can lose and fails loudly if any is missing.
 
-**Acceptance Scenarios**:
+**Acceptance Scenarios** *(each names a scenario in a living feature; none is written here)*:
 
-1. **Given** the CLI's test suite, **When** it is pointed at the native binary, **Then** every case
-   that passes against the JVM build passes against the binary, with no case skipped for the
-   binary's sake.
-2. **Given** a blueprint, descriptors and deploy-time configuration, **When** `flow verify` and
-   `flow generate` are run with the binary and with the JVM build, **Then** their output is
-   identical, byte for byte, including the resource YAML and every note.
-3. **Given** a cluster with a pipeline, **When** `flow reset` is run with the binary, **Then** the
-   reset is requested exactly as the JVM build requests it, with the same refusals when a streamlet
-   is still running.
-4. **Given** a native binary from which something the CLI needs at run time is missing, **When**
-   the smoke script runs it, **Then** the script fails naming what was missing, and the release
-   does not ship that binary.
-5. **Given** `flow` run with no arguments, a wrong flag, or `--help`, **When** run with the
-   binary, **Then** the usage text is the JVM build's.
+- added `features/cli/native-binary.feature`: the suite passes against the native binary with every case kept
+- added `features/cli/native-binary.feature`: verify and generate give byte-identical output from the native binary and the JVM build
+- added `features/cli/native-binary.feature`: a reset from the native binary is the JVM build's reset
+- added `features/cli/native-binary.feature`: a native binary missing something the CLI needs fails the smoke script by name
+- added `features/cli/native-binary.feature`: the usage text is the JVM build's
+
 
 ---
 
@@ -122,17 +107,13 @@ test does not update the tap.
 the tap's formula at the new version with the four checksums; `brew install` of the new version
 works. Break one platform's build on a branch and observe the tap untouched.
 
-**Acceptance Scenarios**:
+**Acceptance Scenarios** *(each names a scenario in a living feature; none is written here)*:
 
-1. **Given** a tag is pushed, **When** the release runs, **Then** it attaches four archives and four
-   checksums to the tag's release and updates the tap's formula, with no step done by hand.
-2. **Given** one platform's binary fails its build or its smoke test, **When** the release runs,
-   **Then** the other platforms' archives are still attached, the formula is not updated, and the
-   failure names the platform.
-3. **Given** the release has already attached an archive for a platform, **When** that leg is run
-   again, **Then** the archive is replaced, not duplicated, and the checksum matches the replacement.
-4. **Given** a release of ankka-flow and a release of ankka on the same day, **When** both update
-   the tap, **Then** neither overwrites the other's formula.
+- added `features/cli/release.feature`: a tag attaches four archives and updates the formula with no manual step
+- added `features/cli/release.feature`: a platform that fails leaves the formula untouched and names itself
+- added `features/cli/release.feature`: a platform's leg run again replaces its archive
+- added `features/cli/release.feature`: ankka's release and ankka-flow's release each update only their own formula
+
 
 ---
 
@@ -149,17 +130,13 @@ JVM CLI as it does today.
 guide's first command is `sbt cli/stage`; the contributor page describes the build from source; the
 docs build is clean; `just cli` works.
 
-**Acceptance Scenarios**:
+**Acceptance Scenarios** *(each names a scenario in a living feature; none is written here)*:
 
-1. **Given** the install page, **When** a reader looks for how to get `flow`, **Then** the first
-   thing offered is the tap's install command, then the archive, and the build from source is
-   not there.
-2. **Given** any guide or sample README that told the reader to build `flow`, **When** it is
-   read after this feature, **Then** it tells them to install it, or assumes they have.
-3. **Given** a contributor, **When** they look for how to build `flow` from source, **Then** the
-   contributing page says `just cli` or the sbt task, and both still work.
-4. **Given** the skills the docs site renders, **When** they describe getting started, **Then** they
-   say install, not build.
+- added `features/cli/install-page.feature`: the install page offers the tap, then the archive, and no build from source
+- added `features/cli/install-page.feature`: no guide begins by building flow
+- added `features/cli/install-page.feature`: a contributor finds the build from source, and it still works
+- added `features/cli/install-page.feature`: the skills say install
+
 
 ### Edge Cases
 
