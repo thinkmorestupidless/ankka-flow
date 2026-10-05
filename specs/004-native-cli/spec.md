@@ -173,9 +173,9 @@ docs build is clean; `just cli` works.
   resource, reset requests and refusals, the version line, usage and errors.
 - **FR-003**: `flow version` on the native binary MUST print the release's version and the
   protocol version, as the JVM build does.
-- **FR-004**: Building the binary MUST fail, not succeed with something missing, when a resource,
-  class or writer the CLI needs cannot be included; where the build cannot know, the smoke script
-  (FR-008) MUST catch it.
+- **FR-004**: The build MUST refuse to produce a fallback image that needs a JVM; what the build
+  cannot see missing — a resource, a class or a writer the CLI reaches by name — the suite (FR-005)
+  and the smoke script (FR-008) MUST catch before a binary ships.
 
 **Proof**
 
@@ -206,13 +206,16 @@ docs build is clean; `just cli` works.
 - **FR-013**: The formula MUST install the executable as `flow`, and MUST coexist with ankka's
   formula, which installs `ankka`.
 - **FR-014**: The images, the Python SDK and the marketplace plugin the release already publishes
-  MUST be published as before, whether or not the binaries' legs succeed; the formula alone waits
-  on them.
+  MUST be published as before for a release tag, whether or not the binaries' legs succeed; the
+  formula alone waits on them. A **pre-release tag** — one with a `-` in it, such as `v0.4.0-rc.1`
+  — runs only the release page, the binaries and the formula, so a rehearsal of the binaries'
+  release can never put an rc on PyPI or in the marketplace.
 
 **Documentation and the build**
 
 - **FR-015**: The install page MUST offer, in this order: the tap's install command; the archive
-  per platform with how to verify its checksum; and nothing about building from source.
+  per platform with how to verify its checksum; and no instructions for building from source. A
+  link for platforms outside the four, to where contributors build, is allowed.
 - **FR-016**: Every page and sample README that told the reader to build `flow` MUST tell them to
   install it or assume they have.
 - **FR-017**: Building from source MUST remain documented for contributors, and `just cli` and the
@@ -234,9 +237,8 @@ docs build is clean; `just cli` works.
 
 ### Measurable Outcomes
 
-- **SC-001**: On each of the four platforms, with no JVM installed, `flow` is installed and
-  answers `flow version` within one minute of starting the install, through the tap or from the
-  archive.
+- **SC-001**: On each of the four platforms, with no JVM installed, `flow` is installed through the
+  tap or from the archive, and answers `flow version` within one second of being run.
 - **SC-002**: The CLI's test suite passes in full against the native binary — the same count of
   cases as against the JVM build, with zero skipped.
 - **SC-003**: For every sample in the repository, `flow verify` and `flow generate` give
@@ -250,8 +252,10 @@ docs build is clean; `just cli` works.
 ## Assumptions
 
 - **The tap is ankka's.** `thinkmorestupidless/homebrew-tap` already carries `ankka`; this feature
-  adds `ankka-flow` beside it, published the way ankka's release publishes its formula, and needs
-  the same write access to the tap that ankka's release has.
+  adds `ankka-flow` beside it and needs write access to the tap of its own. **Found in planning**:
+  ankka's release publishes its formula by force-pushing its `homebrew/` directory over the tap's
+  whole `main`, which would erase a second formula. ankka's job is changed to commit and push its
+  one formula first, and this feature's first release waits for that change.
 - **The release attaches to a GitHub release of the tag.** ankka-flow's release publishes images,
   the SDK and the plugin but creates no release page today; attaching archives needs one, which the
   workflow creates for the tag if it does not exist.

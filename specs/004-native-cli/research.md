@@ -82,9 +82,9 @@ one of the reflection-heavy paths).
 `version`, `--help`, a wrong flag, `verify` and `generate` on each sample in `samples/` with its
 `k8s/in-cluster.conf` and an `--image`, and `reset` against a kubeconfig that names an unreachable
 address (a refusal that proves the client loaded and tried); each answer is checked for the thing
-a missing resource would blank. When a JVM-built `flow` is given, every `verify` and `generate`
+a missing resource would blank. When a JVM build is given, every `verify` and `generate`
 output is diffed against it and any difference fails. The release's `cli-native` leg runs `sbt
-cli/stage` first and passes the staged script, so FR-007 is checked on every platform.
+cli/stage` first and passes the JVM build, so FR-007 is checked on every platform.
 
 **Rationale**: ankka's smoke script is the model (`ankka/cli/native-smoke.sh`): it asks for each
 thing the image must carry rather than trusting the build. `flow` has fewer things and one more

@@ -39,7 +39,7 @@ once after a fetch on a rejected push. It never writes any other file of the tap
 | Job | Needs | Does |
 |---|---|---|
 | `release-page` | — | creates the tag's release if absent |
-| `cli-native` (×4) | `release-page` | refuses a dirty tree; `sbt cli/stage`; builds the image; runs the suite against it; runs the smoke script with the diff against the staged CLI; uploads the archive and checksum |
+| `cli-native` (×4) | `release-page` | refuses a dirty tree; `sbt cli/stage`; builds the image; runs the suite against it; runs the smoke script with the diff against the JVM build; uploads the archive and checksum |
 | `homebrew` | all four `cli-native` | writes and pushes the formula |
 | `images`, `sdk-python`, `marketplace` | as today | unchanged, and not waiting on the above |
 

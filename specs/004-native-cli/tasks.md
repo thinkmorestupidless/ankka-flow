@@ -94,7 +94,7 @@ machine with no JVM.
 **Independent Test**: quickstart tier 4, steps 2 and 3, on a Mac with no JVM.
 
 - [ ] T020 [US1] Build the macOS arm64 binary locally, `tar -czf` it as the release would, and `brew install --formula` a copy of `homebrew/Formula/ankka-flow.rb` edited to a `file://` URL and the archive's checksum; `flow version` answers; `brew uninstall ankka-flow`. Record the Homebrew version used in `research.md`. (The tap itself is proven at the pre-release tag, Phase 6.)
-- [ ] T021 [US1] Confirm the four platform conditions of the formula match ankka's (`on_macos`/`on_linux`, `on_arm`/`on_intel`) and that a platform outside them is refused by Homebrew naming it (run `brew install` with the formula on a stubbed `OS.linux?` is not practical; read Homebrew's documented behaviour and cite it in `research.md`).
+- [ ] T021 [US1] Run `brew audit --strict --formula homebrew/Formula/ankka-flow.rb` and `brew style` on the formula and fix what they report; confirm its four platform conditions match ankka's (`on_macos`/`on_linux`, `on_arm`/`on_intel`). A platform outside them is refused by Homebrew itself, naming the platform — the scenario in `features/cli/install.feature` is held by Homebrew's behaviour, which `research.md` says.
 
 **Checkpoint**: the formula installs a local archive; the install path is proven short of the tap.
 
@@ -102,7 +102,8 @@ machine with no JVM.
 
 ## Phase 6: User Story 3 continued — the release, run (Priority: P2)
 
-- [ ] T022 [US3] With ankka's pull request (T018) merged and `HOMEBREW_TAP_TOKEN` set, push the branch and tag `v0.4.0-rc.1` on it; watch `release-page`, the four `cli-native` legs and `homebrew`; check the release has eight assets, the tap has `Formula/ankka-flow.rb` at `0.4.0-rc.1` and `Formula/ankka.rb` unchanged; `brew install thinkmorestupidless/tap/ankka-flow` on a Mac with no JVM and `flow version` (SC-001, SC-004). Record each in `research.md`.
+- [ ] T021a [US3] In `.github/workflows/release.yml`, gate `images`, `sdk-python` and `marketplace` on a release tag — `if: ${{ !contains(github.ref_name, '-') }}` — so a pre-release tag runs only `release-page`, `cli-native` and `homebrew` (FR-014); say so in a comment at the top of the file. Confirm by reading each job that nothing else of a pre-release reaches a registry.
+- [ ] T022 [US3] With ankka's pull request (T018) merged and `HOMEBREW_TAP_TOKEN` set, push the branch and tag `v0.4.0-rc.1` on it; watch `release-page`, the four `cli-native` legs and `homebrew`, and that `images`, `sdk-python` and `marketplace` were skipped; check the release has eight assets, the tap has `Formula/ankka-flow.rb` at `0.4.0-rc.1` and `Formula/ankka.rb` unchanged. Re-run one `cli-native` leg and check the asset count is still eight and its checksum matches the replacement (FR-011). On a Mac with no JVM: `brew install thinkmorestupidless/tap/ankka-flow`, then `brew install thinkmorestupidless/tap/ankka` beside it; `flow version` and `ankka version` both answer (SC-001, SC-004, FR-013). Record each in `research.md`.
 - [ ] T023 [US3] On the branch, break one platform's build (a flag only that platform's leg sees) and tag `v0.4.0-rc.2`: three archives attached, `homebrew` skipped, the failure naming the platform; then restore. Delete both rc tags and their releases, and the rc commit of the tap's formula is left (it is history, harmless) or reverted — say which in `research.md`.
 
 **Checkpoint**: SC-004 observed on a real run.

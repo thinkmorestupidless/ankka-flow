@@ -39,7 +39,8 @@ Proves: the docs build; the only mentions of building from source are on the con
 ## Tier 4 — a release, on a branch's tag
 
 Tag a pre-release (`v0.4.0-rc.1`) on the branch with ankka's tap job already changed (research
-R6) and `HOMEBREW_TAP_TOKEN` set:
+R6) and `HOMEBREW_TAP_TOKEN` set. A tag with a `-` in it runs only the release page, the
+binaries and the formula; the images, the SDK and the plugin are never published from one:
 
 1. `release-page` creates the release; four `cli-native` legs attach four archives and checksums;
    `homebrew` commits `Formula/ankka-flow.rb` to the tap and `Formula/ankka.rb` is untouched.
