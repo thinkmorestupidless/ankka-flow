@@ -77,6 +77,10 @@ pod's loopback interface.
    policy, and `flow verify` says so in a note. It then holds the latest delta per element, so an
    empty database is filled by resetting the sink alone. The platform writes no delete markers and
    passes over any it reads; a tombstone stays in the topic.
+12. **`flow` is installed, not built.** `brew install thinkmorestupidless/tap/ankka-flow` (the tap
+   ankka's CLI ships through; the two coexist), or a release's `ankka-flow-cli-<version>-<platform>.tar.gz`
+   verified with its `.sha256`, for macOS arm64 and x64 and Linux arm64 and x64; no JVM. Building from
+   source, with sbt and optionally GraalVM, is for changing ankka-flow or for another platform.
 
 ## Before answering
 
@@ -90,6 +94,8 @@ pod's loopback interface.
 ## Mistakes to check for
 
 - Proposing Avro, Protobuf or a schema registry for a contract; only JSON by schema name exists.
+- A guide or script that builds `flow` from source instead of installing it, or that asks for a JVM
+  to run it.
 - A dead-letter topic or a "skip after N retries" setting; neither exists, by design.
 - A blueprint that produces to an unmanaged topic, or leaves an inlet connected to nothing.
 - Kafka settings or credentials in the streamlet's own container; they belong to the sidecar.

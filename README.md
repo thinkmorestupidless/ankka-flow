@@ -30,8 +30,8 @@ uv run python produce.py && uv run python verify.py
 
 ```bash
 just up                                          # kind, the CRD, the operator, a development Kafka
-sbt cli/stage
-cli/target/universal/stage/bin/flow generate samples/cart-router/blueprint.conf \
+brew install thinkmorestupidless/tap/ankka-flow      # the flow CLI; or the release archive for your platform
+flow generate samples/cart-router/blueprint.conf \
   --descriptors samples/cart-router/flow --conf samples/cart-router/k8s/in-cluster.conf \
   --image router=sample-cart-router:latest -n shop | kubectl apply -f -
 ```

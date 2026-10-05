@@ -120,6 +120,10 @@ pushes without force, retrying once on a non-fast-forward. **And ankka's job has
 way** — clone, write `Formula/ankka.rb`, commit, push — or its next release wipes `ankka-flow.rb`.
 That change is a pull request in ankka, small, and this feature's release must not be cut before
 it is merged. The spec's FR-012 ("MUST NOT touch any other formula") is only true of both.
+The pull request: https://github.com/thinkmorestupidless/ankka/pull/79 (branch
+`homebrew-tap-no-force`): the job clones the tap, writes `Formula/ankka.rb` and the tap's README,
+commits, and pushes without force with one fetch-and-rebase retry; the tag it used to force-push
+to the tap is dropped, since Homebrew installs from the formula's `url`, not a tap tag.
 
 **Rationale**: FR-012 and the scenario "ankka's release and ankka-flow's release each update only
 their own formula" cannot hold with a force-pushed subtree on either side.
@@ -220,6 +224,26 @@ is the tag's (FR-003, FR-010).
   The smoke script holds those.
 - **The JVM build printed a `sun.misc.Unsafe` deprecation warning on every command** on JDK 25;
   `Universal / javaOptions` now sets the flag the native build sets, so the two print the same.
-- **`brew audit` cannot be run on a file** in this Homebrew (7.x): "Calling `brew audit [path]`
-  is disabled". `brew style` passes; the audit runs against the tap once the formula is in it.
+- **`brew audit` and `brew install --formula` cannot be run on a file** in this Homebrew
+  (7.0.8): "Calling `brew audit [path]` is disabled", and `brew install` on a path answers with
+  "To create a tap, run e.g. `brew tap-new`". Both were done through a throwaway local tap
+  (`brew tap-new thinkmorestupidless/flowtest`, the formula copied in with a `file://` URL to a
+  tarball of the local macOS arm64 binary and its checksum): `brew install
+  thinkmorestupidless/flowtest/ankka-flow` put `flow` on the path, `flow version` answered with the
+  build's version, `brew test` passed, `brew audit --strict` reported nothing, `brew style` passes,
+  and `HOMEBREW_NO_AUTOREMOVE=1 brew uninstall ankka-flow` removed it, after which the tap was
+  untapped. The formula's platform blocks are ankka's (`on_macos`/`on_linux` × `on_arm`/`on_intel`);
+  a platform outside them is refused by Homebrew itself, naming the platform.
+- **V4**: ankka's `cli` job creates its release with `gh release create --verify-tag
+  --generate-notes` under the workflow's own token (`contents: write` on the job) on the same
+  organisation; `release-page` here does the same and finds the release on a re-run.
+- **The secret**: `HOMEBREW_TAP_TOKEN`, a fine-grained token with contents write on
+  `thinkmorestupidless/homebrew-tap`, set as a repository secret on ankka-flow by the maintainer.
+  The `homebrew` job fails naming it when it is unset. V5 (two repositories' non-force pushes
+  interleaving, with the retry) can only be shown by the pre-release tags, once ankka's pull
+  request is merged and the secret is set.
 - The image: 57 MB on macOS arm64; `native-image` takes about 80 s on this machine.
+- **The whole build from the branch** (`scalafmtCheckAll scalafmtSbtCheck test mutationCheck`, with
+  the k3s suite; a fresh native image; the 45 CLI cases through it; the smoke script with the byte
+  diff; the Python SDK's checks; `just features`; `just docs`) passed. The pre-release tags are
+  the one thing not yet shown: they wait on ankka#79 and `HOMEBREW_TAP_TOKEN`.

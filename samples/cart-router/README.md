@@ -39,15 +39,15 @@ docker build -f samples/cart-router/Dockerfile -t sample-cart-router .   # from 
 
 ## On a kind cluster
 
-`flow` is not installed by anything: build it with `just cli` from the repository root, which
-prints the line that puts it on your PATH. The commands below call it by its staged path instead.
+The commands below need the `flow` CLI on your PATH: `brew install thinkmorestupidless/tap/ankka-flow`,
+or the archive for your platform from a release, as the documentation's install page describes.
 
 ```bash
 just up                                            # from the repository root: kind, the CRD, the operator, a dev Kafka
 kubectl create namespace shop
 kubectl -n kafka exec kafka-0 -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
   --create --topic shop.cart-events.v1 --partitions 3      # the unmanaged input, owned by "someone else"
-../../cli/target/universal/stage/bin/flow generate blueprint.conf --descriptors flow \
+flow generate blueprint.conf --descriptors flow \
   --conf k8s/in-cluster.conf --image router=sample-cart-router:latest -n shop | kubectl apply -f -
 kubectl -n shop get aflow cart -w                  # Pending, then Ready
 kubectl -n shop get events --field-selector involvedObject.kind=AnkkaFlow

@@ -54,14 +54,15 @@ binaries and the formula; the images, the SDK and the plugin are never published
 
 ## Reviewer's checklist
 
-- [ ] `flow`'s commands, flags, messages and exit codes are unchanged; the suite's case count is
+- [X] `flow`'s commands, flags, messages and exit codes are unchanged; the suite's case count is
       the same in process as before
-- [ ] no case in `cli/test` is skipped or conditional on the driver
-- [ ] `-Dflow.cli.binary` and `-Dflow.cli.agent` are in `forwardedTestSwitches`
-- [ ] the reachability configuration is pruned to what `flow` uses and says where it came from
-- [ ] `images`, `sdk-python` and `marketplace` do not depend on the new jobs
-- [ ] the `homebrew` job never force-pushes, and ankka's no longer does
-- [ ] `homebrew/Formula/ankka-flow.rb` has `version "0.0.0"` and four zeroed checksums with their
+- [X] no case in `cli/test` is skipped or conditional on the driver
+- [X] `-Dflow.cli.binary` and `-Dflow.cli.agent` are in `forwardedTestSwitches`
+- [X] the reachability configuration is pruned to what `flow` uses and says where it came from
+- [X] `images`, `sdk-python` and `marketplace` do not depend on the new jobs
+- [X] the `homebrew` job never force-pushes, and ankka's no longer does (thinkmorestupidless/ankka#79,
+      to be merged before the first release)
+- [X] `homebrew/Formula/ankka-flow.rb` has `version "0.0.0"` and four zeroed checksums with their
       platform comments
-- [ ] the install page says `brew install` first, the archive second, and nothing about sbt
-- [ ] `just cli` and `sbt cli/stage` work
+- [X] the install page says `brew install` first, the archive second, and nothing about sbt
+- [X] `just cli` and `sbt cli/stage` work

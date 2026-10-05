@@ -7,7 +7,7 @@ This tutorial runs the sample cart router on a local kind cluster. The operator 
 managed topics and runs the streamlet as a Deployment whose pods hold two containers: the router's image
 and the sidecar.
 
-You need Docker, sbt, uv, kind and kubectl, and the `flow` CLI on your `PATH`; [Build the
+You need the `flow` CLI on your `PATH`, and Docker, sbt, uv, kind and kubectl; [Install the
 tools](install.md) covers all of them. Commands run from the repository root unless they say otherwise.
 
 ## Create the cluster and install the platform
