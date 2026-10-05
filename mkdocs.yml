@@ -20,6 +20,8 @@ validation:
 
 theme:
   name: material
+  logo: assets/brand/ankka-flow-mark-white-256.png
+  favicon: assets/brand/favicon.png
   features:
     - navigation.sections
     - navigation.indexes

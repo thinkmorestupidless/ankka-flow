@@ -1,4 +1,7 @@
-# ankka-flow
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/ankka-flow-lockup-white.png">
+  <img src="docs/assets/brand/ankka-flow-lockup-black.png" alt="ankka-flow" width="400">
+</picture>
 
 Streaming pipelines beside [ankka](https://github.com/thinkmorestupidless/ankka). A pipeline is a
 graph of **streamlets**, each with typed inlets and outlets, wired by a **blueprint** over Kafka
