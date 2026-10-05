@@ -277,3 +277,20 @@ is the tag's (FR-003, FR-010).
   markers, so `brew install thinkmorestupidless/tap/ankka` failed with a syntax error on this
   machine only (the file on GitHub is fine). `git reset --hard origin/main` in the tap's directory
   fixed it. Never commit by hand in a Homebrew tap clone.
+- **`v0.4.0-rc.2`** (run 37335766702), tagged on a commit that passed `--no-such-flag` to
+  native-image on the linux-arm64 leg only: `release-page` created the release, marked as a
+  pre-release; three legs succeeded and attached six assets; the linux-arm64 leg failed in its
+  build step, the job named `cli-native (linux-arm64, ubuntu-22.04-arm)`; `homebrew` was skipped;
+  the tap was not touched. The breaking commit lived only under the tag, not on the branch.
+- **`v0.4.0-rc.3`** (run 37335862741), on the branch head with the version-in-urls formula, the
+  pre-release flag and the idempotent tap commit: every job succeeded, the release is marked a
+  pre-release with eight assets, and the tap's `Formula/ankka-flow.rb` carries `0.4.0-rc.3` in its
+  four urls with no `version` line. `brew upgrade thinkmorestupidless/tap/ankka-flow` moved this
+  Mac from rc.1 to rc.3, `brew test` and `brew audit --strict` pass on the tapped formula, and
+  `ankka 0.10.0` stays beside it.
+- **Cleanup**: the three rc releases and their tags are deleted (`gh release delete --cleanup-tag`);
+  `v0.1.0`, `v0.2.0` and `v0.3.0` remain and never had release pages. The tap's rc commits are left
+  as history, and `Formula/ankka-flow.rb` was removed from the tap by one ordinary commit, so until
+  the first real release `brew install thinkmorestupidless/tap/ankka-flow` answers "no formula"
+  rather than a 404 on a deleted asset; `Formula/ankka.rb` was never touched. The rc.3 `flow` is
+  still installed on this Mac; `brew upgrade` will move it to 0.4.0.
