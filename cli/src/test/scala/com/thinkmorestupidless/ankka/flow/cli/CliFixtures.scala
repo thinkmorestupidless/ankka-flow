@@ -38,15 +38,67 @@ object CliFixtures:
   final case class Result(code: Int, out: String, err: String):
     def lines: Vector[String] = err.linesIterator.toVector.filter(_.nonEmpty)
 
-  def flow(args: String*): Result =
-    val out = new ByteArrayOutputStream
-    val err = new ByteArrayOutputStream
-    val code = Main.run(
-      args.toList,
-      new PrintStream(out, true, "UTF-8"),
-      new PrintStream(err, true, "UTF-8")
-    )
-    Result(code, out.toString("UTF-8"), err.toString("UTF-8"))
+  /**
+   * How a case runs `flow`: in this JVM, or as the native binary `-Dflow.cli.binary` names. The
+   * same cases, the same arguments, the same assertions; what differs is the process. A kubeconfig
+   * reaches the in-process run as the `kubeconfig` system property and the binary as `KUBECONFIG`,
+   * which are the two places fabric8's configuration looks.
+   */
+  sealed trait Driver:
+    def run(args: List[String], kubeconfig: Option[Path]): Result
+
+  object Driver:
+    case object InProcess extends Driver:
+      def run(args: List[String], kubeconfig: Option[Path]): Result =
+        val out    = new ByteArrayOutputStream
+        val err    = new ByteArrayOutputStream
+        val before = Option(System.getProperty("kubeconfig"))
+        kubeconfig.foreach(k => System.setProperty("kubeconfig", k.toString))
+        try
+          val code = Main.run(
+            args,
+            new PrintStream(out, true, "UTF-8"),
+            new PrintStream(err, true, "UTF-8")
+          )
+          Result(code, out.toString("UTF-8"), err.toString("UTF-8"))
+        finally
+          before match
+            case Some(b) => System.setProperty("kubeconfig", b): Unit
+            case None    => System.clearProperty("kubeconfig"): Unit
+
+    final case class Binary(path: Path) extends Driver:
+      def run(args: List[String], kubeconfig: Option[Path]): Result =
+        val builder = new ProcessBuilder((path.toString +: args).asJava)
+        builder.directory(repoRoot.toFile)
+        // The binary reads only what a user's shell gives it; nothing of this JVM's leaks in.
+        builder.environment().remove("KUBECONFIG")
+        kubeconfig.foreach(k => builder.environment().put("KUBECONFIG", k.toString))
+        val process = builder.start()
+        val out     = process.getInputStream.readAllBytes()
+        val err     = process.getErrorStream.readAllBytes()
+        if !process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS) then
+          process.destroyForcibly()
+          throw IllegalStateException(s"$path ${args.mkString(" ")} did not finish in 60 seconds")
+        Result(process.exitValue(), String(out, "UTF-8"), String(err, "UTF-8"))
+
+    /** The driver the switch selects. A path that is not a file is refused, never ignored. */
+    def from(switch: Option[String]): Driver = switch match
+      case None => InProcess
+      case Some(named) =>
+        val path = Paths.get(named).toAbsolutePath
+        if Files.isRegularFile(path) && Files.isExecutable(path) then Binary(path)
+        else
+          throw IllegalArgumentException(
+            s"-Dflow.cli.binary=$named names no executable file; the suite will not fall back " +
+              "to running in process"
+          )
+
+  lazy val driver: Driver = Driver.from(sys.props.get("flow.cli.binary"))
+
+  def flow(args: String*): Result = driver.run(args.toList, None)
+
+  /** `flow` with a kubeconfig, for the cases that reach a cluster. */
+  def flowWith(kubeconfig: Path, args: String*): Result = driver.run(args.toList, Some(kubeconfig))
 
   /** A copy of the cart pipeline in a temporary directory, with edits applied. */
   def variant(

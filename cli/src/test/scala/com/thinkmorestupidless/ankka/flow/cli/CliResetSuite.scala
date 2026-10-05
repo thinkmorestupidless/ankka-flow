@@ -16,7 +16,7 @@
 
 package com.thinkmorestupidless.ankka.flow.cli
 
-import java.io.{ByteArrayOutputStream, PrintStream}
+import java.nio.file.{Files, Path}
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.thinkmorestupidless.ankka.flow.crd.*
@@ -106,16 +106,37 @@ class CliResetSuite extends munit.FunSuite:
       )
       .createOr(_.update()): Unit
 
-  private def reset(args: String*): (Int, String, String) =
-    val out = new ByteArrayOutputStream
-    val err = new ByteArrayOutputStream
-    val code = Main.run(
-      ("reset" +: args).toList,
-      new PrintStream(out),
-      new PrintStream(err),
-      new KubernetesReset(() => newClient())
+  /**
+   * A kubeconfig naming the mock server, so `flow` finds the cluster the way a user's does — in
+   * this JVM through the `kubeconfig` property, as a binary through `KUBECONFIG` — rather than
+   * through a client handed to it.
+   */
+  private lazy val kubeconfig: Path =
+    val file = Files.createTempFile("flow-reset", ".kubeconfig")
+    Files.writeString(
+      file,
+      s"""apiVersion: v1
+         |kind: Config
+         |clusters:
+         |- name: mock
+         |  cluster:
+         |    server: ${server.createClient().getConfiguration.getMasterUrl.stripSuffix("/")}
+         |contexts:
+         |- name: flow-test
+         |  context:
+         |    cluster: mock
+         |    user: nobody
+         |current-context: flow-test
+         |users:
+         |- name: nobody
+         |  user: {}
+         |""".stripMargin
     )
-    (code, out.toString, err.toString)
+    file
+
+  private def reset(args: String*): (Int, String, String) =
+    val result = CliFixtures.flowWith(kubeconfig, ("reset" +: args)*)
+    (result.code, result.out, result.err)
 
   private def annotation: Option[ResetRequest.Request] =
     ResetRequest.request(

@@ -99,12 +99,7 @@ object Main:
     verify.orElse(generate).orElse(reset).orElse(version)
   )
 
-  def run(
-      args: List[String],
-      out: PrintStream,
-      err: PrintStream,
-      resetter: Reset = Reset.kubernetes
-  ): Int =
+  def run(args: List[String], out: PrintStream, err: PrintStream): Int =
     command.parse(args, sys.env) match
       case Left(help) =>
         (if help.errors.isEmpty then out else err).println(help)
@@ -125,7 +120,7 @@ object Main:
                 0
           case g: Cmd.GenerateCmd => generateResource(g, out, err)
           case Cmd.ResetCmd(pipeline, streamlets, namespace) =>
-            resetter.request(pipeline, streamlets, namespace) match
+            Reset.kubernetes.request(pipeline, streamlets, namespace) match
               case Left(problems) => refuse(err, problems)
               case Right(id) =>
                 out.println(s"reset requested for '$pipeline': $id")

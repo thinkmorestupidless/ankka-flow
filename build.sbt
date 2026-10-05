@@ -52,7 +52,13 @@ lazy val forwardedTestSwitches = Seq(
   "flow.conformance.only",
   "flow.mutation",
   "flow.fixtures.regenerate",
-  "flow.benchmarks"
+  "flow.benchmarks",
+  // The CLI's suite against a native binary instead of in process (cli/native-smoke.sh is the
+  // other check): the path of the binary to spawn.
+  "flow.cli.binary",
+  // `on`: the CLI's suite under GraalVM's tracing agent, to regenerate the image's reachability
+  // configuration. The test JVM must then be a GraalVM.
+  "flow.cli.agent"
 )
 
 lazy val commonSettings = Seq(
