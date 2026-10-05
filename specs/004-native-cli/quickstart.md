@@ -62,7 +62,7 @@ binaries and the formula; the images, the SDK and the plugin are never published
 - [X] `images`, `sdk-python` and `marketplace` do not depend on the new jobs
 - [X] the `homebrew` job never force-pushes, and ankka's no longer does (thinkmorestupidless/ankka#79,
       to be merged before the first release)
-- [X] `homebrew/Formula/ankka-flow.rb` has `version "0.0.0"` and four zeroed checksums with their
+- [X] `homebrew/Formula/ankka-flow.rb` has `0.0.0` in each url, no `version` line, and four zeroed checksums with their
       platform comments
 - [X] the install page says `brew install` first, the archive second, and nothing about sbt
 - [X] `just cli` and `sbt cli/stage` work

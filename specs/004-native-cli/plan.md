@@ -109,7 +109,7 @@ cli/
 ├── src/test/scala/…/cli/CliFixtures.scala  # the Driver: in process, or the binary named by -Dflow.cli.binary
 ├── src/test/scala/…/cli/CliResetSuite.scala# a kubeconfig for the mock server, in KUBECONFIG
 └── native-smoke.sh                         # the checks of contracts/cli-and-tests.md
-homebrew/Formula/ankka-flow.rb              # version "0.0.0", four zeroed checksums
+homebrew/Formula/ankka-flow.rb              # 0.0.0 in each url, four zeroed checksums
 .github/workflows/release.yml               # release-page, cli-native (×4), homebrew
 .github/workflows/ci.yml                    # cli-native on linux-x64, and its path filter
 Justfile                                    # `just cli-native`

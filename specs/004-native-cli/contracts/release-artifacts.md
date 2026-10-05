@@ -29,8 +29,10 @@ flow <version>, protocol <protocol>
 ```
 
 The formula is `Formula/ankka-flow.rb` in `thinkmorestupidless/homebrew-tap`, beside `ankka.rb`.
-Its canonical source is `homebrew/Formula/ankka-flow.rb` here, with `version "0.0.0"` and a
-zeroed `sha256` per platform, each marked by a trailing `# <platform>` comment the job replaces.
+Its canonical source is `homebrew/Formula/ankka-flow.rb` here, with `0.0.0` in each `url` (no
+`version` line: Homebrew reads the version from the url, and `brew audit --strict` refuses a line
+that repeats it) and a zeroed `sha256` per platform, each marked by a trailing `# <platform>`
+comment the job replaces.
 The job commits the written formula to a clone of the tap and pushes without `--force`, retrying
 once after a fetch on a rejected push. It never writes any other file of the tap.
 

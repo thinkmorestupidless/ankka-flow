@@ -25,7 +25,7 @@ by.
 
 | Field | Rule |
 |---|---|
-| file | `Formula/ankka-flow.rb` in `thinkmorestupidless/homebrew-tap`; canonical in this repository at `homebrew/Formula/ankka-flow.rb` with `version "0.0.0"` and zeroed checksums |
+| file | `Formula/ankka-flow.rb` in `thinkmorestupidless/homebrew-tap`; canonical in this repository at `homebrew/Formula/ankka-flow.rb` with `0.0.0` in each url and zeroed checksums |
 | installs | `flow` |
 | version | the release's |
 | per platform | the archive's URL on the release and its sha256 |

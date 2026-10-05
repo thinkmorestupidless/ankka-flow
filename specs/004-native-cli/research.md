@@ -247,3 +247,33 @@ is the tag's (FR-003, FR-010).
   the k3s suite; a fresh native image; the 45 CLI cases through it; the smoke script with the byte
   diff; the Python SDK's checks; `just features`; `just docs`) passed. The pre-release tags are
   the one thing not yet shown: they wait on ankka#79 and `HOMEBREW_TAP_TOKEN`.
+- **`v0.4.0-rc.1`** (run 37333054401): `release-page`, the four `cli-native` legs and `homebrew`
+  succeeded first time; `images`, `sdk-python` and `marketplace` were skipped. Eight assets on the
+  release. The tap gained `Formula/ankka-flow.rb` at `0.4.0-rc.1` in one commit by "ankka-flow
+  release"; `Formula/ankka.rb` is byte-identical to before (the compare since ankka 0.10.0's commit
+  lists only the added file). `brew install thinkmorestupidless/tap/ankka-flow` on this Mac put
+  `flow 0.4.0-rc.1` on the path; `brew install thinkmorestupidless/tap/ankka` beside it upgraded
+  `ankka` to 0.10.0, and both answer. (This Mac has a JDK; the binary does not look for one — it is
+  a native image, and the Linux legs' runners prove the same binary on a machine without sbt's JDK
+  on the path.)
+- **Re-running one leg** (linux-x64) left eight assets and replaced the archive and its checksum:
+  the rebuilt image is not byte-identical to the first (a native image is not reproducible across
+  runs), so the checksum changed, the `homebrew` job re-ran after the leg and committed the new
+  checksum to the tap (a second "ankka-flow 0.4.0-rc.1" commit), and the formula stayed consistent
+  with the asset. So re-run a leg to finish a release whose leg failed, not to rebuild one that
+  succeeded: anyone who downloaded the first archive holds a checksum that no longer matches. Had
+  the image been identical, the job would have had nothing to commit and failed on `git commit`;
+  the job now treats an unchanged formula as success.
+- **`brew audit --strict` on the tapped formula** reported one problem: "`version 0.4.0-rc.1` is
+  redundant with version scanned from URL". The formula now carries the version only in its four
+  urls (`0.0.0` as the placeholder, written by the job's `sed` on the url lines), no `version` line;
+  Homebrew reads `0.4.0-rc.1` from the url, and the audit is clean in a throwaway tap with rc.1's
+  real urls and checksums. ankka's formula has the same `version` line and would get the same
+  finding; a follow-up there, not here.
+- **The release page was not marked a pre-release** on GitHub for `v0.4.0-rc.1`; `release-page`
+  now passes `--prerelease` for a tag with a hyphen.
+- **The local tap clone was mid-rebase**: a `brew update` had tried to replay an old local commit
+  ("ankka 0.3.1", from an earlier hand test) onto the tap and left `Formula/ankka.rb` with conflict
+  markers, so `brew install thinkmorestupidless/tap/ankka` failed with a syntax error on this
+  machine only (the file on GitHub is fine). `git reset --hard origin/main` in the tap's directory
+  fixed it. Never commit by hand in a Homebrew tap clone.

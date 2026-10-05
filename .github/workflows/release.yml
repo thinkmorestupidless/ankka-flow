@@ -18,7 +18,7 @@ jobs:
   release-page:
     # The tag's GitHub release, created here so that every `cli-native` leg has somewhere to upload
     # to whichever finishes first. With the workflow's own token, as ankka's `cli` job does. A re-run
-    # of the workflow finds the release and leaves it.
+    # of the workflow finds the release and leaves it. A pre-release tag is marked as one on GitHub.
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -32,7 +32,9 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "release $GITHUB_REF_NAME exists"
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "ankka-flow $version" --generate-notes
+            prerelease=()
+            [[ "$GITHUB_REF_NAME" == *-* ]] && prerelease=(--prerelease)
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "ankka-flow $version" --generate-notes "${prerelease[@]}"
           fi
 
   cli-native:
@@ -127,9 +129,10 @@ jobs:
           [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::the secret HOMEBREW_TAP_TOKEN is not set: a token with contents:write on thinkmorestupidless/homebrew-tap"; exit 1; }
           version="${GITHUB_REF_NAME#v}"
           # The placeholders, by the same rule as the plugin's version: written here, never by the
-          # build, so no tracked file is dirtied during publish. Each checksum line names its
+          # build, so no tracked file is dirtied during publish. The version is written into the
+          # urls, and nowhere else: Homebrew reads it from there. Each checksum line names its
           # platform in a comment, which is what this matches on.
-          sed -i "s/version \"0\.0\.0\"/version \"$version\"/" homebrew/Formula/ankka-flow.rb
+          sed -i "/^ *url /s/0\.0\.0/$version/g" homebrew/Formula/ankka-flow.rb
           mkdir -p "$RUNNER_TEMP/sums"
           for platform in macos-arm64 macos-x64 linux-arm64 linux-x64; do
             archive="ankka-flow-cli-$version-$platform.tar.gz"
@@ -142,7 +145,7 @@ jobs:
           if grep -n '0\{64\}' homebrew/Formula/ankka-flow.rb; then
             echo "::error::a checksum placeholder survived"; exit 1
           fi
-          grep -n "version \"$version\"" homebrew/Formula/ankka-flow.rb
+          [ "$(grep -c "^ *url .*/v$version/ankka-flow-cli-$version-" homebrew/Formula/ankka-flow.rb)" = 4 ] || { echo "::error::the version was not written into every url"; grep -n url homebrew/Formula/ankka-flow.rb; exit 1; }
           remote="https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/thinkmorestupidless/homebrew-tap.git"
           git clone --depth 1 "$remote" "$RUNNER_TEMP/tap"
           cd "$RUNNER_TEMP/tap"
@@ -153,6 +156,11 @@ jobs:
           # as found.
           cp "$GITHUB_WORKSPACE/homebrew/Formula/ankka-flow.rb" Formula/ankka-flow.rb
           git add Formula/ankka-flow.rb
+          # A re-run of one `cli-native` leg re-runs this job too; when the rebuilt binary's checksum
+          # is the one already in the tap there is nothing to commit, and that is success.
+          if git diff --cached --quiet; then
+            echo "the tap already holds ankka-flow $version with these checksums"; exit 0
+          fi
           git commit -m "ankka-flow $version"
           # Another project's release may have pushed between the clone and here: one rebase and retry.
           git push origin HEAD:main || { git fetch --depth 1 origin main && git rebase origin/main && git push origin HEAD:main; }
