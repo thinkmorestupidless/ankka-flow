@@ -14,6 +14,7 @@ object Dependencies {
 
     val jsoniter       = "2.40.1"
     val logback        = "1.6.3"
+    val slf4j          = "2.0.17"
     val munit          = "1.3.6"
     val testcontainers = "1.21.4"
     val fabric8        = "7.9.0"
@@ -58,18 +59,26 @@ object Dependencies {
   val jsoniterMacros =
     "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % V.jsoniter
 
-  val logback             = "ch.qos.logback"     % "logback-classic"   % V.logback
+  val logback = "ch.qos.logback" % "logback-classic" % V.logback
+  // The CLI's logging: none. It prints its own messages; what fabric8 would log through slf4j is
+  // noise beside them, and a logging framework is one more thing a native image must be told about.
+  val slf4jNop            = "org.slf4j"          % "slf4j-nop"         % V.slf4j
   val munit               = "org.scalameta"     %% "munit"             % V.munit
   val testcontainersKafka = "org.testcontainers" % "kafka"             % V.testcontainers
   val testcontainersK3s   = "org.testcontainers" % "k3s"               % V.testcontainers
   val testcontainersNeo4j = "org.testcontainers" % "neo4j"             % V.testcontainers
   val neo4jDriver         = "org.neo4j.driver"   % "neo4j-java-driver" % V.neo4jDriver
 
-  val fabric8           = "io.fabric8"                       % "kubernetes-client"       % V.fabric8
-  val fabric8ServerMock = "io.fabric8"                       % "kubernetes-server-mock"  % V.fabric8
-  val decline           = "com.monovore"                    %% "decline"                 % V.decline
-  val jacksonScala      = "com.fasterxml.jackson.module"    %% "jackson-module-scala"    % V.jackson
-  val jacksonYaml       = "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % V.jackson
+  val fabric8 = "io.fabric8" % "kubernetes-client" % V.fabric8
+  // The CLI's fabric8 over the JDK's own HTTP client instead of the default Vert.x one: Netty is
+  // the one part of the client a native image cannot take as it comes (its SSL classes initialise
+  // natively at build time), and a CLI that makes a few requests needs none of it.
+  val fabric8ForCli     = fabric8.exclude("io.fabric8", "kubernetes-httpclient-vertx")
+  val fabric8JdkHttp    = "io.fabric8"                    % "kubernetes-httpclient-jdk" % V.fabric8
+  val fabric8ServerMock = "io.fabric8"                    % "kubernetes-server-mock"    % V.fabric8
+  val decline           = "com.monovore"                 %% "decline"                   % V.decline
+  val jacksonScala      = "com.fasterxml.jackson.module" %% "jackson-module-scala"      % V.jackson
+  val jacksonYaml = "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % V.jackson
 
   // grpc-java with ScalaPB, not pekko-grpc (research R1): versions come from the compiler plugin
   // so generated code and runtime can never disagree.

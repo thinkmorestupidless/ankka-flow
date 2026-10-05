@@ -33,7 +33,8 @@ a native image cannot see at build time:
 | jackson (scala module, YAML) | serializers found by annotation and by name; the YAML writer | `ResourceWriter.scala` writes the resource as YAML; `crd`'s `AnkkaFlow` model |
 | logback | appenders and encoders named in `logback.xml`, instantiated by name | `cli/src/main/resources/logback.xml` |
 
-**Decision**: the image's reachability configuration is generated once with GraalVM's tracing
+**Decision** (amended, see *Found during implementation*: fabric8 runs over the JDK's HTTP client,
+not Vert.x): the image's reachability configuration is generated once with GraalVM's tracing
 agent, by running the JVM CLI's suite under it, and committed under `META-INF/native-image/…/`
 (`reflect-config.json`, `resource-config.json`, `serialization-config.json` as needed); then
 pruned to what `flow` uses. fabric8 7.x ships its own reachability metadata for the model and the
@@ -181,3 +182,44 @@ is the tag's (FR-003, FR-010).
    retry; and that ankka's job is changed before this feature's first release.
 6. **R1**: that `-march=compatibility` is accepted on the arm64 runners (ankka's four legs pass with
    it, so it should be).
+
+## Found during implementation
+
+- **V1**: none of fabric8 7.9.0's jars (`kubernetes-client`, `-api`, `-model-*`), nor Jackson's,
+  carries `META-INF/native-image` metadata. Everything is the agent's, pruned.
+- **The tracing agent on GraalVM 25 writes one file**, `reachability-metadata.json`, not the four
+  the older format had. From the suite it recorded 715 reflection entries and 196 resources; after
+  dropping the test framework, sbt's runner, logback and the mock server, and the `.tasty` files
+  jackson-module-scala looks for beside every fabric8 Java class, 647 and 38.
+- **fabric8's default HTTP client is Vert.x, and Netty cannot be built as it comes**: the first
+  image failed at `io.netty.internal.tcnative.SSL`, initialised at build time with a native method
+  the build has no library for. Rather than the known list of `--initialize-at-run-time` classes
+  for Netty, the CLI's fabric8 runs over the JDK's own HTTP client
+  (`kubernetes-httpclient-jdk`), with the Vert.x client excluded for the whole `cli` project —
+  `crd`'s fabric8 brings it too, so a per-dependency exclusion was not enough. A CLI that makes a
+  few requests needs none of Netty, and the binary is smaller for it. (R2 amended.)
+- **V2**: `slf4j-nop` for logback loses nothing: every message the suite asserts on is `flow`'s
+  own. What fabric8 logged through slf4j at `warn` was noise beside them.
+- **V3**: a kubeconfig naming the mock server works for both drivers — through the `kubeconfig`
+  system property in process, `KUBECONFIG` for the binary, the two places fabric8's
+  configuration looks. 45 cases pass both ways.
+- **A charset the agent cannot see**: every reset case failed against the first working binary
+  with `UnsupportedCharsetException: UTF-32BE`, from snakeyaml-engine's unicode reader
+  initialising while fabric8 read the kubeconfig. `-H:+AddAllCharsets` in
+  `native-image.properties`; a charset is not reflection, so no agent run records it.
+- **The byte diff found a real difference, in the JVM build**: `java.util.Map.of` iterates in an
+  order salted per JVM run, so the resource's two labels came out in either order and two
+  generations of one blueprint could differ. The native binary, with its salt fixed at build time,
+  was the deterministic one. `ResourceWriter` now uses a sorted map, and three JVM runs give one
+  hash where they gave two.
+- **T013, shown twice**: dropping the HTTP client factory's service file from the resources broke
+  nothing — fabric8 7 falls back to the JDK client without it, which is also why the exclusion
+  works. Dropping the 21 reflection entries for the CRD model did: 12 cases failed against the
+  binary and the smoke script failed with "generate wrote the resource without its images".
+- **`flow` with no arguments exits 2**, with the usage, as a wrong flag does; `--help` exits 0.
+  The smoke script holds those.
+- **The JVM build printed a `sun.misc.Unsafe` deprecation warning on every command** on JDK 25;
+  `Universal / javaOptions` now sets the flag the native build sets, so the two print the same.
+- **`brew audit` cannot be run on a file** in this Homebrew (7.x): "Calling `brew audit [path]`
+  is disabled". `brew style` passes; the audit runs against the tap once the formula is in it.
+- The image: 57 MB on macOS arm64; `native-image` takes about 80 s on this machine.
