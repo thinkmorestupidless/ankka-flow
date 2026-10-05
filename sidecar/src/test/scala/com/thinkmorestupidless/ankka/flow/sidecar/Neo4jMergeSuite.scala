@@ -168,17 +168,19 @@ class Neo4jMergeSuite extends Neo4jSuite:
   }
 
   test(
-    "a tombstone marks and keeps the node; a lower merge after it is stale; a higher one revives it"
+    "a tombstone marks the node and clears it; a lower merge after it is stale; a higher one revives it"
   ) {
     val o = open()
     o(node("cart:1", 1, props = """{"cartId":"1"}"""))
     o(nodeTomb("cart:1", 2))
     assertEquals(props("cart:1")("_deleted"), java.lang.Boolean.TRUE)
-    assertEquals(props("cart:1")("cartId"), "1")
+    assertEquals(props("cart:1").get("cartId"), None)
     o(node("cart:1", 2, props = """{"cartId":"stale"}"""))
-    assertEquals(props("cart:1")("cartId"), "1")
+    assertEquals(props("cart:1").get("cartId"), None)
+    assertEquals(props("cart:1")("_deleted"), java.lang.Boolean.TRUE)
     o(node("cart:1", 3, props = """{"cartId":"1"}"""))
     assertEquals(props("cart:1").get("_deleted"), None)
+    assertEquals(props("cart:1")("cartId"), "1")
   }
 
   test(
@@ -197,14 +199,48 @@ class Neo4jMergeSuite extends Neo4jSuite:
     )
   }
 
-  test("an edge tombstone marks the edge") {
+  test("an edge tombstone marks the edge and clears its properties") {
     val o = open()
-    o(edge("e:1", 1, "a", "b"))
+    o(edge("e:1", 1, "a", "b", props = """{"since":1843}"""))
     o(edgeTomb("e:1", 2, "a", "b"))
     assertEquals(
-      query("MATCH ()-[r:LINKS {id:'e:1'}]->() RETURN r._deleted AS d"),
-      Vector(Map[String, AnyRef]("d" -> java.lang.Boolean.TRUE))
+      query("MATCH ()-[r:LINKS {id:'e:1'}]->() RETURN properties(r) AS p").head("p"),
+      java.util.Map.of("id", "e:1", "_version", Long.box(2), "_deleted", java.lang.Boolean.TRUE)
     )
+  }
+
+  private val bareMarker = Map[String, AnyRef](
+    "id"       -> "cart:9",
+    "_version" -> Long.box(2),
+    "_deleted" -> java.lang.Boolean.TRUE
+  )
+
+  test("a tombstone leaves the same bare marker whether it follows the node in one batch or two") {
+    val two = open()
+    two(node("cart:9", 1, labels = Seq("Cart"), props = """{"cartId":"9"}"""))
+    two(nodeTomb("cart:9", 2))
+    assertEquals(props("cart:9"), bareMarker)
+    assertEquals(
+      query("MATCH (n:Element {id:'cart:9'}) RETURN labels(n) AS l").head("l"),
+      java.util.List.of("Element")
+    )
+
+    query("MATCH (n) DETACH DELETE n")
+    val one = open()
+    one(
+      node("cart:9", 1, labels = Seq("Cart"), props = """{"cartId":"9"}"""),
+      nodeTomb("cart:9", 2)
+    )
+    assertEquals(props("cart:9"), bareMarker)
+    assertEquals(
+      query("MATCH (n:Element {id:'cart:9'}) RETURN labels(n) AS l").head("l"),
+      java.util.List.of("Element")
+    )
+
+    // A later merge brings it back whole, with nothing of the old state under it.
+    one(node("cart:9", 3, labels = Seq("Cart"), props = """{"cartId":"9","again":true}"""))
+    assertEquals(props("cart:9").get("_deleted"), None)
+    assertEquals(props("cart:9")("again"), java.lang.Boolean.TRUE)
   }
 
   test("a batch is folded: two versions of one element in one batch write once") {

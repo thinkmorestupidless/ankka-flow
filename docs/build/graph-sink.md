@@ -25,9 +25,9 @@ and the graph gains a `Cart`, a `Checkout` and a `CHECKED_OUT` edge between them
 shopping-cart (ankka) ──► cart-checkouts ──► mapper ──► graph-deltas ──► graph (Neo4j merge sink) ──► Neo4j
 ```
 
-A single service that writes its own graph needs none of this. Reach for it when the graph is fed by
-topics the services already publish, when it must be rebuildable from those topics, or when several
-services contribute to it.
+A service that publishes its own graph deltas needs none of this: its pipeline is the sink alone, as
+[Fill a graph from an ankka service](graph-from-ankka.md) shows. Reach for a mapper when the graph is
+fed by topics the services already publish for other reasons, or by several services at once.
 
 ## Decide the ids and the versions
 

@@ -10,6 +10,7 @@ pages:
   - deploy/configuration.md
   - build/ankka-topics.md
   - build/graph-sink.md
+  - build/graph-from-ankka.md
   - reference/neo4j-merge-sink.md
   - deploy/reset.md
   - deploy/rebuild-a-graph.md

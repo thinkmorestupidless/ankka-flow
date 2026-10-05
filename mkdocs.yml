@@ -100,6 +100,7 @@ nav:
       - Write a blueprint: build/blueprints.md
       - Read an ankka service's topic: build/ankka-topics.md
       - Build a graph from a pipeline: build/graph-sink.md
+      - Fill a graph from an ankka service: build/graph-from-ankka.md
       - Build an image: build/images.md
   - Run and operate:
       - Install the platform: deploy/install.md
