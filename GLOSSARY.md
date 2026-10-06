@@ -1,6 +1,6 @@
 # Glossary
 
-The words this project's features use, each in exactly one sense. A term marked *Proposed.* has
+The words this project's features use, each in exactly one sense. A term marked has
 still to be settled by `/speckit-clarify`. Where `docs/reference/glossary.md` defines a word for the
 people who build on ankka-flow, the term here means the same.
 
@@ -20,9 +20,13 @@ The file that names a pipeline's streamlets and wires their inlets and outlets o
 The file a streamlet's SDK writes, saying what the streamlet is: its inlets, outlets and
 parameters.
 
+Avoid: manifest, spec
+
 ### deploy-time configuration
 Settings supplied when a pipeline is deployed rather than written in its blueprint: replicas, a
 streamlet's parameters, a Secret's name.
+
+Avoid: config, settings
 
 ### resource
 The `AnkkaFlow` resource `flow` writes for a pipeline, which a cluster runs.
@@ -46,180 +50,216 @@ An answer from `flow` that it will not do what was asked, saying why.
 ## The CLI and its release
 
 ### ankka
-*Proposed.* The platform ankka-flow runs beside, whose CLI ships through the same tap.
+The platform ankka-flow runs beside, whose CLI ships through the same tap.
 
 ### ankka-flow
-*Proposed.* This project: the pipelines, the sidecar, the operator and `flow`.
+This project: the pipelines, the sidecar, the operator and `flow`.
 
 ### CLI
-*Proposed.* A command a person runs on their own machine: `flow`, or ankka's.
+A command a person runs on their own machine: `flow`, or ankka's.
 
 ### flow
-*Proposed.* The command a person runs to verify a blueprint, generate a resource, reset a pipeline
+The command a person runs to verify a blueprint, generate a resource, reset a pipeline
 and print its version.
 
 ### JVM build
-*Proposed.* `flow` as it is built from source and run on a Java virtual machine.
+`flow` as it is built from source and run on a Java virtual machine.
 
 ### native binary
-*Proposed.* `flow` as one executable for one platform, run with no Java virtual machine.
+`flow` as one executable for one platform, run with no Java virtual machine.
+
+Avoid: executable alone
 
 ### platform
-*Proposed.* An operating system and processor a native binary is built for: macOS on Apple
+An operating system and processor a native binary is built for: macOS on Apple
 silicon, macOS on Intel, Linux on x64, Linux on arm64.
 
 Avoid: target, architecture
 
 ### release
-*Proposed.* What a tagged version of ankka-flow publishes: images, the Python SDK, the plugin, and
+What a tagged version of ankka-flow publishes: images, the Python SDK, the plugin, and
 the archives.
 
+Avoid: drop, cut
+
 ### archive
-*Proposed.* A compressed file on a release holding one native binary, named for the version and the
+A compressed file on a release holding one native binary, named for the version and the
 platform.
 
 ### checksum
-*Proposed.* The digest published beside an archive, by which the archive is verified.
+The digest published beside an archive, by which the archive is verified.
 
 ### tap
-*Proposed.* The Homebrew repository `thinkmorestupidless/homebrew-tap`, through which ankka's CLI
+The Homebrew repository `thinkmorestupidless/homebrew-tap`, through which ankka's CLI
 and `flow` are installed.
 
+Avoid: repository alone
+
 ### formula
-*Proposed.* A tap's definition of one installable: its version, its archives and their checksums.
+A tap's definition of one installable: its version, its archives and their checksums.
+
+Avoid: recipe, package
 
 ### smoke script
-*Proposed.* A script that runs a native binary and asks it for each thing a native build can
+A script that runs a native binary and asks it for each thing a native build can
 silently lose, failing with the name of the first thing missing.
 
 ### suite
-*Proposed.* The CLI's own tests, which run against the JVM build or the native binary.
+The CLI's own tests, which run against the JVM build or the native binary.
 
 ### checkout
-*Proposed.* A copy of the repository on a machine, at one commit.
+A copy of the repository on a machine, at one commit.
 
 ### dirty tree
-*Proposed.* A checkout with changes not committed; a release refuses to build from one.
+A checkout with changes not committed; a release refuses to build from one.
 
 ### build task
-*Proposed.* The command that builds the JVM build from source.
+The command that builds the JVM build from source.
 
 ### install page
-*Proposed.* The documentation page that says how to get `flow`.
+The documentation page that says how to get `flow`.
 
 ### guide
-*Proposed.* A documentation page that walks a reader through doing something with ankka-flow.
+A documentation page that walks a reader through doing something with ankka-flow.
 
 ### contributing page
-*Proposed.* The documentation page for people changing ankka-flow itself.
+The documentation page for people changing ankka-flow itself.
 
 ### skill
-*Proposed.* A rendering of the documentation for a coding agent, published with the plugin.
+A rendering of the documentation for a coding agent, published with the plugin.
 
 ## The SDKs
 
 ### SDK
-*Proposed.* A library a streamlet is written against, which writes the streamlet's descriptor,
+A library a streamlet is written against, which writes the streamlet's descriptor,
 serves it to the sidecar and ships a harness. One per language.
 
+Avoid: library, client
+
 ### Python SDK
-*Proposed.* The SDK for streamlets written in Python, published to PyPI.
+The SDK for streamlets written in Python, published to PyPI.
 
 ### Scala SDK
-*Proposed.* The SDK for streamlets written in Scala, published to Maven Central.
+The SDK for streamlets written in Scala, published to Maven Central.
 
 ### streamlet author
-*Proposed.* A person writing a streamlet against an SDK.
+A person writing a streamlet against an SDK.
+
+Avoid: developer, user
 
 ### process
-*Proposed.* The method of a streamlet that takes one batch and returns the emits to make.
+The method of a streamlet that takes one batch and returns the emits to make.
+
+Avoid: handler, callback
 
 ### batch
-*Proposed.* The records of one inlet partition that a streamlet processes in one call, in offset
+The records of one inlet partition that a streamlet processes in one call, in offset
 order.
 
+Avoid: chunk, micro-batch
+
 ### record
-*Proposed.* What a topic holds and a streamlet sees: bytes, an optional key, and ordered headers.
+What a topic holds and a streamlet sees: bytes, an optional key, and ordered headers.
+
+Avoid: message
 
 ### emit
-*Proposed.* A record a streamlet sends to one of its outlets while processing a batch.
+A record a streamlet sends to one of its outlets while processing a batch.
+
+Avoid: produce, publish
 
 ### inlet
-*Proposed.* A port a streamlet reads from.
+A port a streamlet reads from.
+
+Avoid: port alone, upstream
 
 ### outlet
-*Proposed.* A port a streamlet writes to.
+A port a streamlet writes to.
+
+Avoid: port alone, destination
 
 ### parameter
-*Proposed.* A typed setting a streamlet declares, given a value by the deploy-time configuration or
+A typed setting a streamlet declares, given a value by the deploy-time configuration or
 its default.
 
+Avoid: option, knob
+
 ### partition
-*Proposed.* One of the ordered parts of a topic; records with one key are in one partition.
+One of the ordered parts of a topic; records with one key are in one partition.
+
+Avoid: shard
 
 ### harness
-*Proposed.* An SDK's stand-in for Kafka and the sidecar in a test: it batches and partitions
+An SDK's stand-in for Kafka and the sidecar in a test: it batches and partitions
 records as the sidecar does and records what a streamlet emits, fails or skips.
 
+Avoid: test harness, testkit
+
 ### sidecar
-*Proposed.* The container the platform runs beside every streamlet process, owning everything
+The container the platform runs beside every streamlet process, owning everything
 Kafka and driving the streamlet through the protocol.
 
+Avoid: proxy, ambassador
+
 ### protocol
-*Proposed.* The conversation between the sidecar and a streamlet process: discovery, start,
+The conversation between the sidecar and a streamlet process: discovery, start,
 batches, emits, acknowledgements, failures and stop.
 
+Avoid: gRPC, API
+
 ### discovery
-*Proposed.* The sidecar's first question to a process: what streamlet it is, answered with the
+The sidecar's first question to a process: what streamlet it is, answered with the
 descriptor.
 
 ### process port
-*Proposed.* The loopback port a streamlet process serves on, given to it by the platform.
+The loopback port a streamlet process serves on, given to it by the platform.
 
 ### descriptor fixtures
-*Proposed.* The six declared streamlets whose descriptor bytes every SDK must reproduce.
+The six declared streamlets whose descriptor bytes every SDK must reproduce.
 
 ### fixture streamlet
-*Proposed.* One of the six streamlets the descriptor fixtures describe.
+One of the six streamlets the descriptor fixtures describe.
 
 ### conformance suite
-*Proposed.* The repository's suite that drives a served streamlet through every conversation the
+The repository's suite that drives a served streamlet through every conversation the
 sidecar can have with it.
 
+Avoid: compliance tests
+
 ### reference streamlet
-*Proposed.* The streamlet the conformance suite drives, behaving by each record's key.
+The streamlet the conformance suite drives, behaving by each record's key.
 
 ### cart router
-*Proposed.* The sample streamlet: one inlet of cart events, two outlets, one parameter.
+The sample streamlet: one inlet of cart events, two outlets, one parameter.
 
 ### cart event
-*Proposed.* A record the cart router reads, keyed by cart id, carrying a total.
+A record the cart router reads, keyed by cart id, carrying a total.
 
 ### laptop walkthrough
-*Proposed.* The first-streamlet tutorial's run: Kafka and the sidecar in containers, the streamlet
+The first-streamlet tutorial's run: Kafka and the sidecar in containers, the streamlet
 on the host, events produced and verified.
 
 ### Maven Central
-*Proposed.* The registry Scala and Java artifacts are published to and resolved from by version.
+The registry Scala and Java artifacts are published to and resolved from by version.
 
 ### registry
-*Proposed.* Where a release publishes images.
+Where a release publishes images.
 
 ### pre-release tag
-*Proposed.* A tag with a hyphen in it, whose release publishes only the release page, the native
+A tag with a hyphen in it, whose release publishes only the release page, the native
 binaries and the formula.
 
 ### release tag
-*Proposed.* A tag without a hyphen, whose release publishes everything.
+A tag without a hyphen, whose release publishes everything.
 
 ### CI
-*Proposed.* The checks that run on every change to the repository.
+The checks that run on every change to the repository.
 
 ### docs build
-*Proposed.* The command that checks every documentation page and builds the site.
+The command that checks every documentation page and builds the site.
 
 ### coding agent
-*Proposed.* A model writing code with the skills as its documentation.
+A model writing code with the skills as its documentation.
 
 ## Everyday words
 

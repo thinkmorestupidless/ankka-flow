@@ -49,6 +49,15 @@ with no Kafka and no sidecar. It is published to Maven Central with every releas
 artifacts are, so a project depends on it by version. The cart router sample is written in Scala
 beside the Python one, so every page that shows Python can show Scala, and the README shows both.
 
+## Clarifications
+
+### Session 2026-10-06
+
+- Q: The glossary's 53 proposed terms (21 from the native-binary feature, 32 from this one): accept, reword or defer? → A: Accept all as written, each with an `Avoid:` line for its obvious synonyms; none remain proposed.
+- Q: Which Scala 3 and Java baseline does the published SDK require? → A: Scala 3.3 LTS and Java 21: the SDK is published for the LTS line and usable from any Scala 3.3 or later project, on Java 21 or later.
+- Q: What is the artifact's name on Maven Central? → A: `ankka-flow-sdk` in group `com.thinkmorestupidless`, resolved as `ankka-flow-sdk_3`: a project depends on `"com.thinkmorestupidless" %% "ankka-flow-sdk" % "<version>"`.
+- Q: How is the Scala sample built? → A: As a module of the repository's build, depending on the SDK module directly, so every commit proves the two together; the sample's README shows the published dependency line a reader's own project uses.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Write and test a streamlet in Scala (Priority: P1)
@@ -199,8 +208,10 @@ describe both SDKs.
   same.
 - **A pre-release tag.** Nothing of this feature is published: a rehearsal of the binaries'
   release stays a rehearsal.
-- **A JVM too old.** The SDK states the Java version it needs; a project on an older one fails to
-  resolve or compile with a clear version message, not at run time.
+- **A JVM too old.** The SDK needs Java 21; a project on an older one fails to compile or resolve
+  with a clear version message, not at run time.
+- **A Scala 3 older than the LTS line.** The SDK is published for Scala 3.3 LTS; a project on an
+  older 3.x fails to resolve it, and the install page names the floor.
 
 ## Requirements *(mandatory)*
 
@@ -256,7 +267,8 @@ describe both SDKs.
   Python sample's, with the same blueprint, the same two tests, a committed descriptor and an image
   holding only the streamlet and the SDK.
 - **FR-013**: CI MUST run the Scala sample's tests and descriptor check, the SDK's fixtures and the
-  conformance run, and the protocol copy check, on every change that can affect them.
+  conformance run, and the protocol copy check, on every change that can affect them; the sample
+  builds against the SDK's source as a module of the repository's build, so the two cannot drift.
 - **FR-014**: The README MUST show the cart router in Scala beside the Python one, both included
   from the samples' tested code and checked for drift.
 - **FR-015**: The Scala sample MUST run the laptop walkthrough as the Python one does — the
@@ -265,9 +277,12 @@ describe both SDKs.
 
 **The release**
 
-- **FR-016**: Every release tag MUST publish the SDK to Maven Central as a Scala 3 artifact under
-  the organisation ankka publishes to, versioned as the release, with no manual step, and MUST NOT
-  publish twice for one version; a pre-release tag MUST NOT publish it.
+- **FR-016**: Every release tag MUST publish the SDK to Maven Central as the Scala 3 artifact
+  `ankka-flow-sdk` in the group `com.thinkmorestupidless`, the organisation ankka publishes to,
+  versioned as the release, with no manual step, and MUST NOT publish twice for one version; a
+  pre-release tag MUST NOT publish it.
+- **FR-016a**: The published SDK MUST be usable from a project on Scala 3.3 LTS or any later Scala
+  3, on Java 21 or later; the install page and the SDK reference MUST state both floors.
 - **FR-017**: Every release tag MUST publish the Scala sample's image as it publishes the Python
   samples'; a pre-release tag MUST NOT.
 - **FR-018**: The SDK MUST report its name and version in discovery and in the descriptor's SDK
@@ -297,7 +312,8 @@ describe both SDKs.
   conversation the sidecar can have with it.
 - **descriptor fixtures**: the six declared streamlets whose descriptor bytes every SDK must
   reproduce.
-- **artifact**: the SDK as published to Maven Central, at a release's version.
+- **artifact**: the SDK as published to Maven Central, `com.thinkmorestupidless:ankka-flow-sdk_3`,
+  at a release's version.
 
 ## Success Criteria *(mandatory)*
 
@@ -330,14 +346,16 @@ describe both SDKs.
   Scala allows — a `Streamlet` base, port and parameter declarations as members, `process` over a
   batch, `serve`, a harness — so a reader moves between the two without relearning; the contributing
   page says nothing else about an SDK's shape is prescribed.
-- **Scala 3, on the Java version the repository builds with.** The SDK is published for Scala 3
-  only; its dependencies are the protocol's gRPC and protobuf libraries, as the sidecar's are.
+- **Scala 3.3 LTS and Java 21.** The SDK is published for the Scala 3 LTS line so that any Scala
+  3.3 or later project can depend on it, while the rest of the repository stays on its own Scala
+  version; its dependencies are the protocol's gRPC and protobuf libraries, as the sidecar's are.
 - **Maven Central is ankka's.** ankka publishes its artifacts to Maven Central under its
   organisation with signing and portal credentials held as repository secrets; this feature
   publishes the same way and needs the same four secrets set on ankka-flow by the maintainer.
-- **The sample is one sbt project, built two ways.** In the repository the Scala sample builds
-  against the SDK's source, so CI proves them together at every commit; a reader's project depends
-  on the published artifact by version, and the sample's README shows that dependency line.
+- **The sample is a module of the repository's build.** It depends on the SDK module directly, so
+  CI proves the two together at every commit with the one build the repository already runs; a
+  reader's own project depends on the published artifact by version, and the sample's README shows
+  that dependency line.
 - **The same blueprint, two images.** The Scala sample runs the Python sample's blueprint
   unchanged, because its descriptor is the same; only the image named at deploy time differs.
 - **The release's gates are the ones in place.** A pre-release tag publishes only the release page,
