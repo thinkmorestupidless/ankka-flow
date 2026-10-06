@@ -1,10 +1,11 @@
 name: release
 
-# A tag is a release. A tag with a hyphen (v0.4.0-rc.1) is a pre-release: it gets the release page,
-# the native `flow` binaries and the Homebrew formula, and nothing else — no image reaches the
-# registry, no wheel reaches PyPI, no plugin reaches the marketplace. `images`, `sdk-python` and
-# `marketplace` are gated on the tag's name below; `release-page`, `cli-native` and `homebrew` run on
-# every tag, and the three publishing jobs do not wait on them.
+# A tag is a release. A tag with a hyphen (v0.5.0-rc.1) is a pre-release: it gets the release page and
+# the native `flow` binaries, and nothing else — no image reaches the registry, no wheel reaches PyPI,
+# no artifact reaches Maven Central, no plugin reaches the marketplace, and the Homebrew formula is not
+# touched, so what `brew install` gives a reader is always a release. `images`, `sdk-python`,
+# `sdk-scala`, `marketplace` and `homebrew` are gated on the tag's name below; `release-page` and
+# `cli-native` run on every tag, and the publishing jobs do not wait on them.
 
 on:
   push:
@@ -103,7 +104,7 @@ jobs:
 
   homebrew:
     # `flow` as a Homebrew formula: `brew install thinkmorestupidless/tap/ankka-flow`. The formula —
-    # canonical in homebrew/ here, with version 0.0.0 and a checksum of zeros per platform — installs
+    # canonical in homebrew/ here, with 0.0.0 in each url and a checksum of zeros per platform — installs
     # the native build for the machine it runs on, so it waits for every leg of `cli-native` and
     # takes each checksum from the .sha256 that leg published beside its tarball. It is then committed
     # to thinkmorestupidless/homebrew-tap, the tap ankka's CLI ships through: the tap is cloned, the
@@ -112,7 +113,11 @@ jobs:
     #
     # Needs `HOMEBREW_TAP_TOKEN`: a token with contents:write on homebrew-tap, because the workflow's
     # own token has no access to another repository.
+    #
+    # A release tag only: a pre-release must not replace the formula every reader installs with one
+    # pointing at assets a rehearsal deletes.
     needs: cli-native
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -188,7 +193,7 @@ jobs:
         env:
           DOCKER_REPOSITORY: ghcr.io/thinkmorestupidless
         run: |
-          sbt -Dflow.cluster.tests=off sidecar/docker:publish operator/docker:publish
+          sbt -Dflow.cluster.tests=off sidecar/docker:publish operator/docker:publish cartRouterScala/docker:publish
           version="${GITHUB_REF_NAME#v}"
           docker build -f samples/cart-router/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-cart-router:${version}" .
           docker push "ghcr.io/thinkmorestupidless/sample-cart-router:${version}"
@@ -196,6 +201,93 @@ jobs:
           docker push "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}"
           docker build -f samples/checkout-graph/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-checkout-graph:${version}" .
           docker push "ghcr.io/thinkmorestupidless/sample-checkout-graph:${version}"
+
+  sdk-scala:
+    # The Scala SDK to Maven Central: com.thinkmorestupidless:ankka-flow-sdk_3, with the protocol module
+    # it depends on, ankka-flow-protocol_3, at the release's version — published by `sbt ci-release`,
+    # as ankka's artifacts are, for Scala 3.3 LTS on Java 21. Every other module skips publishing.
+    #
+    # Needs four secrets, the maintainer's to set, the same four ankka's release uses:
+    #   PGP_SECRET          gpg --armor --export-secret-keys <id> | base64
+    #   PGP_PASSPHRASE      the key's passphrase
+    #   SONATYPE_USERNAME   the Central Portal user token's username
+    #   SONATYPE_PASSWORD   the token's password
+    # The namespace com.thinkmorestupidless is already claimed on the portal by ankka.
+    #
+    # It waits for the images, as sdk-python does: an SDK whose sidecar image never reached the
+    # registry should not exist on Central either. Nothing on Central can be replaced, so a re-run
+    # asks repo1 first and uploads only a version it does not already hold.
+    needs: images
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # dynver needs the tags: the artifact's version is the tag's
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      - name: The version comes from a clean tree, or not at all
+        run: |
+          git update-index -q --refresh
+          git diff-index --quiet HEAD -- || { echo "::error::working tree is dirty; dynver would build a -SNAPSHOT, not a release"; git status --porcelain; exit 1; }
+      - name: Every secret the upload needs is set
+        env:
+          PGP_SECRET: ${{ secrets.PGP_SECRET }}
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: |
+          for name in PGP_SECRET PGP_PASSPHRASE SONATYPE_USERNAME SONATYPE_PASSWORD; do
+            [ -n "${!name}" ] || { echo "::error::the secret $name is not set"; exit 1; }
+          done
+      - name: Is this version already on Maven Central?
+        id: central
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          url="https://repo1.maven.org/maven2/com/thinkmorestupidless/ankka-flow-sdk_3/$version/ankka-flow-sdk_3-$version.pom"
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)
+          echo "$url -> $code"
+          if [ "$code" = "200" ]; then
+            echo "::notice::$version is already on Maven Central; not uploading it again"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - run: sbt ci-release
+        if: steps.central.outputs.published != 'true'
+        env:
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          PGP_SECRET: ${{ secrets.PGP_SECRET }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          # ci-release imports the key, runs publishSigned into the local staging directory, then the
+          # command named here: `sonaBundle` zips it and stops. The upload is the next step.
+          CI_SONATYPE_RELEASE: sonaBundle
+      - name: Upload the bundle to the Central Portal, to be published automatically
+        if: steps.central.outputs.published != 'true'
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          bundle=$(find . -path '*/sona-bundle/bundle.zip' -type f | head -1)
+          if [ -z "$bundle" ]; then echo "::error::sonaBundle wrote no bundle.zip"; exit 1; fi
+          ls -l "$bundle"
+          unzip -l "$bundle" | grep -E 'ankka-flow-(sdk|protocol)_3' | head -20
+          version="${GITHUB_REF_NAME#v}"
+          token=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 | tr -d '\n')
+          code=$(curl -sS -o upload.out -w '%{http_code}' \
+            -H "Authorization: Bearer $token" \
+            -F "bundle=@$bundle" \
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC&name=ankka-flow-$version" || true)
+          echo "portal answered $code: $(cat upload.out)"
+          [ "$code" = "201" ] || exit 1
+          echo "::notice::$version uploaded as deployment $(cat upload.out); the portal publishes it and repo1 follows"
 
   sdk-python:
     # The Python SDK to PyPI, as the package `ankka-flow`: https://pypi.org/project/ankka-flow/. The

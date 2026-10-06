@@ -17,6 +17,18 @@ ThisBuild / developers := List(
   )
 )
 
+// What is published to Maven Central: `protocol` (ankka-flow-protocol_3) and `sdk`
+// (ankka-flow-sdk_3), by `sbt ci-release` from the release workflow (feature 005, research R9).
+// Every other module sets `publish / skip`. `-Dflow.release.local=<dir>` points `publishSigned` at a
+// Maven-layout directory instead, so signing, sources, javadoc and the POMs are rehearsed end to end
+// without the portal, as ankka's `-Dankka.release.local` does.
+ThisBuild / publishTo := sys.props
+  .get("flow.release.local")
+  .map(dir =>
+    Resolver.file("local-release", file(dir))(Patterns(true, Resolver.mavenStyleBasePattern))
+  )
+  .orElse((ThisBuild / publishTo).value)
+
 /**
  * One test suite at a time. The Kafka and k3s suites each start their own containers and contend
  * when they overlap; ankka measured 147s in parallel against 6s alone. Do not "optimise" this.
@@ -195,7 +207,8 @@ lazy val blueprint = project
   .dependsOn(protocol)
   .settings(commonSettings)
   .settings(
-    name := "ankka-flow-blueprint",
+    name           := "ankka-flow-blueprint",
+    publish / skip := true,
     libraryDependencies ++= Seq(typesafeConfig)
   )
 
@@ -204,7 +217,8 @@ lazy val crd = project
   .in(file("crd"))
   .settings(commonSettings)
   .settings(
-    name := "ankka-flow-crd",
+    name           := "ankka-flow-crd",
+    publish / skip := true,
     libraryDependencies ++= Seq(fabric8, jacksonScala, jacksonYaml)
   )
 

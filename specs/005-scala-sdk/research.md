@@ -307,3 +307,11 @@ the SDK itself fail `sidecar/test` directly. No break switch in the Scala SDK.
   `--image router=sample-cart-router-scala:latest` went `Ready` once its input topic existed;
   three events produced to `shop.cart-events.v1` reached `cart.valid-carts` (totals 10 and 99) and
   `cart.review-carts` (250). The image is 528 MB: the JRE base, the router, the SDK and its gRPC.
+- **V3**: `sbt -Dflow.release.local=<dir> protocol/publishSigned sdk/publishSigned` with a
+  throwaway ed25519 key wrote both artifacts with jar, sources, javadoc, POM and signatures; the
+  SDK's POM has licence, SCM, developers and URL, and depends on `ankka-flow-protocol_3` at the same
+  version, `scala3-library_3` 3.3.8 and `slf4j-api`, with munit and logback in test scope only. A
+  fresh sbt project outside the repository on Scala 3.3.8, resolving from that directory by the
+  dependency line, compiled the cart router and passed its `routes by total` test. (gpg's agent
+  cannot start under the scratchpad's long path — the socket path limit — so the key lived in a
+  short temporary directory, deleted afterwards.)
