@@ -30,7 +30,7 @@ Feature: The Scala SDK speaks the protocol
       | two ports with one name                   |
       | an inlet with an empty schema name        |
       | a parameter with a default of another type |
-      | no inlet and no outlet                    |
+      | a port name with a capital letter         |
 
   Scenario: the conformance suite passes against the Scala reference streamlet
     Given the reference streamlet declared in Scala and served on a port

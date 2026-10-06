@@ -87,6 +87,18 @@ lazy val commonSettings = Seq(
 )
 
 /**
+ * What is published, and the sample a reader copies, compile with the Scala 3 LTS line so any Scala
+ * 3.3 or later project can depend on them; everything else stays on `V.scala`, whose compiler reads
+ * LTS-compiled classes (feature 005, research R2). The 3.3 compiler does not know `-source:3.7`,
+ * and `-java-output-version:21` makes the Java floor the published one rather than the building
+ * JDK's.
+ */
+lazy val ltsSettings = Seq(
+  scalaVersion  := V.scalaLts,
+  scalacOptions := scalacOptions.value.filterNot(_ == "-source:3.7") :+ "-java-output-version:21"
+)
+
+/**
  * The artefact every SDK copies: .proto files, DESCRIPTOR.md, fixtures, README. The Scala side is
  * the generated messages plus the descriptor's canonical JSON, validation, fingerprints and the
  * version rule. Depends on nothing of ankka-flow's.
@@ -94,6 +106,7 @@ lazy val commonSettings = Seq(
 lazy val protocol = project
   .in(file("protocol"))
   .settings(commonSettings)
+  .settings(ltsSettings)
   .settings(
     name := "ankka-flow-protocol",
     Compile / PB.targets := Seq(
@@ -111,6 +124,25 @@ lazy val protocol = project
       grpcNettyShaded,
       typesafeConfig
     )
+  )
+
+/**
+ * The Scala SDK (feature 005): write a streamlet in Scala the way the Python SDK lets you in
+ * Python. Depends on `protocol` rather than copying it (research R1); published with it, on the LTS
+ * Scala.
+ */
+lazy val sdk = project
+  .in(file("sdks/scala"))
+  .dependsOn(protocol)
+  .enablePlugins(BuildInfoPlugin)
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(
+    name             := "ankka-flow-sdk",
+    buildInfoKeys    := Seq[BuildInfoKey](version),
+    buildInfoPackage := "com.thinkmorestupidless.ankka.flow.sdk",
+    buildInfoObject  := "SdkBuildInfo",
+    libraryDependencies ++= Seq(slf4jApi)
   )
 
 /** Blueprint verification, carried from cloudflow-blueprint. Pure: no Kafka, no cluster. */
@@ -299,7 +331,7 @@ lazy val clusterImages =
 
 lazy val root = project
   .in(file("."))
-  .aggregate(protocol, blueprint, crd, sidecar, operator, cli)
+  .aggregate(protocol, sdk, blueprint, crd, sidecar, operator, cli)
   .settings(
     name           := "ankka-flow",
     publish / skip := true,

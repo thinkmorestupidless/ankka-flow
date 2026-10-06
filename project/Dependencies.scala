@@ -6,6 +6,12 @@ object Dependencies {
   object V {
     val scala = "3.9.0"
 
+    /**
+     * What the published modules (`protocol`, `sdk`) and the Scala sample compile with: the Scala 3
+     * LTS line, so any Scala 3.3 or later project can depend on them (feature 005, research R2).
+     */
+    val scalaLts = "3.3.8"
+
     val pekko      = "1.7.0"
     val pekkoKafka = "1.2.0"
 
@@ -63,6 +69,8 @@ object Dependencies {
   // The CLI's logging: none. It prints its own messages; what fabric8 would log through slf4j is
   // noise beside them, and a logging framework is one more thing a native image must be told about.
   val slf4jNop            = "org.slf4j"          % "slf4j-nop"         % V.slf4j
+  val slf4jApi            = "org.slf4j"          % "slf4j-api"         % V.slf4j
+  val slf4jSimple         = "org.slf4j"          % "slf4j-simple"      % V.slf4j
   val munit               = "org.scalameta"     %% "munit"             % V.munit
   val testcontainersKafka = "org.testcontainers" % "kafka"             % V.testcontainers
   val testcontainersK3s   = "org.testcontainers" % "k3s"               % V.testcontainers
