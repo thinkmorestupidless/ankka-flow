@@ -334,3 +334,9 @@ the SDK itself fail `sidecar/test` directly. No break switch in the Scala SDK.
   conformance (18 passed, 5 skipped) and its three samples, `just features`, `just docs` (41 pages)
   and the README include check. Nothing under `protocol/`, `sdks/python/`, or the sidecar's,
   operator's or CLI's sources changed.
+- **`v0.4.0`, the first release with the SDK** (run 37481567778): every job succeeded but
+  `sdk-scala`. `sbt ci-release` built and signed a complete bundle (both artifacts, jars, sources,
+  javadoc, POMs, signatures); the upload step then failed before uploading, on its own log line:
+  `unzip -l | grep | head -20` under `set -o pipefail`, where `head` closing the pipe makes `grep`
+  exit 2. Nothing reached Central. The listing now has no `head` and cannot fail the step. The
+  rehearsal into a directory could not have caught it: it stops before the portal step.

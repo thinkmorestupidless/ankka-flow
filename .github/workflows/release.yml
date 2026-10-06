@@ -278,7 +278,8 @@ jobs:
           bundle=$(find . -path '*/sona-bundle/bundle.zip' -type f | head -1)
           if [ -z "$bundle" ]; then echo "::error::sonaBundle wrote no bundle.zip"; exit 1; fi
           ls -l "$bundle"
-          unzip -l "$bundle" | grep -E 'ankka-flow-(sdk|protocol)_3' | head -20
+          # What the bundle holds, for the log. No `| head`: under pipefail a closed pipe fails the step.
+          unzip -l "$bundle" | grep -E 'ankka-flow-(sdk|protocol)_3/[^/]+/[^/]+\.(jar|pom)$' || true
           version="${GITHUB_REF_NAME#v}"
           token=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 | tr -d '\n')
           code=$(curl -sS -o upload.out -w '%{http_code}' \
