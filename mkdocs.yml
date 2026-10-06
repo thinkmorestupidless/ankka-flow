@@ -68,7 +68,7 @@ extra:
   # docs/contributing/documentation.md.
   docs:
     facets:
-      languages: [python]
+      languages: [scala, python]
     skills:
       source: tools/docs/skill
       targets:
@@ -95,6 +95,7 @@ nav:
       - Contracts: concepts/contracts.md
       - Topics and Kafka clusters: concepts/topics.md
   - Build:
+      - Write a streamlet in Scala: build/scala-streamlet.md
       - Write a streamlet in Python: build/python-streamlet.md
       - Test a streamlet: build/testing.md
       - Write a blueprint: build/blueprints.md
@@ -120,6 +121,7 @@ nav:
       - Graph deltas: reference/graph-deltas.md
       - Neo4j merge sink: reference/neo4j-merge-sink.md
       - Streamlet protocol: reference/protocol.md
+      - Scala SDK: reference/scala-sdk.md
       - Python SDK: reference/python-sdk.md
       - Limitations: reference/limitations.md
       - Glossary: reference/glossary.md

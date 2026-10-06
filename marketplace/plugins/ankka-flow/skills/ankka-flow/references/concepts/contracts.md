@@ -14,6 +14,15 @@ The only format is `json`. A JSON contract names a schema, such as `cart-events.
 is the Base64 of the SHA-256 of that name, so two ports connect exactly when they name the same
 schema.
 
+**Scala**
+
+```scala
+val in    = inlet("in", schemaName = "cart-events.v1")
+val valid = outlet("valid", schemaName = "cart-events.v1")
+```
+
+**Python**
+
 ```python
 inlet = JsonInlet("in", schema_name="cart-events.v1")
 valid = JsonOutlet("valid", schema_name="cart-events.v1")

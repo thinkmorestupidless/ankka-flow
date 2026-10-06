@@ -18,7 +18,9 @@ ankka service (graph consumer) ──► cart-graph (compacted) ──► graph 
 ```
 
 The [mapper route](graph-sink.md) is for a graph fed by topics services already publish, or by several
-services at once. When one service owns the graph, this is the shorter road.
+services at once; its mapper is a streamlet of yours, written with either SDK's graph delta outlet
+(`GraphDeltaOutlet` in Python, `graphDeltaOutlet` in [Scala](scala-streamlet.md), with `node`, `edge`,
+`tombstoneNode` and `tombstoneEdge`). When one service owns the graph, this is the shorter road.
 
 ## The blueprint
 

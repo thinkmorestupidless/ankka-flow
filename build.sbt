@@ -17,6 +17,18 @@ ThisBuild / developers := List(
   )
 )
 
+// What is published to Maven Central: `protocol` (ankka-flow-protocol_3) and `sdk`
+// (ankka-flow-sdk_3), by `sbt ci-release` from the release workflow (feature 005, research R9).
+// Every other module sets `publish / skip`. `-Dflow.release.local=<dir>` points `publishSigned` at a
+// Maven-layout directory instead, so signing, sources, javadoc and the POMs are rehearsed end to end
+// without the portal, as ankka's `-Dankka.release.local` does.
+ThisBuild / publishTo := sys.props
+  .get("flow.release.local")
+  .map(dir =>
+    Resolver.file("local-release", file(dir))(Patterns(true, Resolver.mavenStyleBasePattern))
+  )
+  .orElse((ThisBuild / publishTo).value)
+
 /**
  * One test suite at a time. The Kafka and k3s suites each start their own containers and contend
  * when they overlap; ankka measured 147s in parallel against 6s alone. Do not "optimise" this.
@@ -87,6 +99,18 @@ lazy val commonSettings = Seq(
 )
 
 /**
+ * What is published, and the sample a reader copies, compile with the Scala 3 LTS line so any Scala
+ * 3.3 or later project can depend on them; everything else stays on `V.scala`, whose compiler reads
+ * LTS-compiled classes (feature 005, research R2). The 3.3 compiler does not know `-source:3.7`,
+ * and `-java-output-version:21` makes the Java floor the published one rather than the building
+ * JDK's.
+ */
+lazy val ltsSettings = Seq(
+  scalaVersion  := V.scalaLts,
+  scalacOptions := scalacOptions.value.filterNot(_ == "-source:3.7") :+ "-java-output-version:21"
+)
+
+/**
  * The artefact every SDK copies: .proto files, DESCRIPTOR.md, fixtures, README. The Scala side is
  * the generated messages plus the descriptor's canonical JSON, validation, fingerprints and the
  * version rule. Depends on nothing of ankka-flow's.
@@ -94,6 +118,7 @@ lazy val commonSettings = Seq(
 lazy val protocol = project
   .in(file("protocol"))
   .settings(commonSettings)
+  .settings(ltsSettings)
   .settings(
     name := "ankka-flow-protocol",
     Compile / PB.targets := Seq(
@@ -113,13 +138,77 @@ lazy val protocol = project
     )
   )
 
+/**
+ * The Scala SDK (feature 005): write a streamlet in Scala the way the Python SDK lets you in
+ * Python. Depends on `protocol` rather than copying it (research R1); published with it, on the LTS
+ * Scala.
+ */
+lazy val sdk = project
+  .in(file("sdks/scala"))
+  .dependsOn(protocol)
+  .enablePlugins(BuildInfoPlugin)
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(
+    name := "ankka-flow-sdk",
+    // The version the SDK reports in discovery and writes into a descriptor: the release's at a tag,
+    // and 0.0.0 for any other build, as the Python SDK's tree says 0.0.0 until a release writes its
+    // version. So a committed sample descriptor does not change with every commit.
+    buildInfoKeys := Seq[BuildInfoKey](
+      BuildInfoKey.map(version) { case (k, v) =>
+        k -> (if (v.contains("+") || v.endsWith("SNAPSHOT")) "0.0.0" else v)
+      }
+    ),
+    buildInfoPackage := "com.thinkmorestupidless.ankka.flow.sdk",
+    buildInfoObject  := "SdkBuildInfo",
+    libraryDependencies ++= Seq(slf4jApi)
+  )
+
+lazy val descriptor = taskKey[Unit]("Writes the sample's flow/descriptor.json from its declaration")
+lazy val descriptorCheck =
+  taskKey[Unit]("Fails when the sample's committed flow/descriptor.json differs")
+
+/**
+ * The cart router in Scala (feature 005): the Python sample's streamlet, tests and blueprint,
+ * served by the Scala SDK. A module of this build, so every commit proves it against the SDK's
+ * source; a reader's own project depends on the published SDK instead (its README shows the line).
+ */
+lazy val cartRouterScala = project
+  .in(file("samples/cart-router-scala"))
+  .dependsOn(sdk)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(dockerSettings)
+  .settings(noDocs)
+  .settings(
+    name                 := "cart-router-scala",
+    publish / skip       := true,
+    Docker / packageName := "sample-cart-router-scala",
+    Compile / mainClass  := Some("cart.Main"),
+    // Forked, so the descriptor command's exit code is the task's and System.exit leaves sbt alone.
+    run / fork := true,
+    libraryDependencies += slf4jSimple,
+    descriptor := Def.taskDyn {
+      val path = (baseDirectory.value / "flow" / "descriptor.json").getAbsolutePath
+      (Compile / runMain)
+        .toTask(s" com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter $path")
+    }.value,
+    descriptorCheck := Def.taskDyn {
+      val path = (baseDirectory.value / "flow" / "descriptor.json").getAbsolutePath
+      (Compile / runMain)
+        .toTask(s" com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter $path --check")
+    }.value
+  )
+
 /** Blueprint verification, carried from cloudflow-blueprint. Pure: no Kafka, no cluster. */
 lazy val blueprint = project
   .in(file("blueprint"))
   .dependsOn(protocol)
   .settings(commonSettings)
   .settings(
-    name := "ankka-flow-blueprint",
+    name           := "ankka-flow-blueprint",
+    publish / skip := true,
     libraryDependencies ++= Seq(typesafeConfig)
   )
 
@@ -128,7 +217,8 @@ lazy val crd = project
   .in(file("crd"))
   .settings(commonSettings)
   .settings(
-    name := "ankka-flow-crd",
+    name           := "ankka-flow-crd",
+    publish / skip := true,
     libraryDependencies ++= Seq(fabric8, jacksonScala, jacksonYaml)
   )
 
@@ -143,7 +233,9 @@ lazy val sidecarBuildInfo = Seq(
 /** The sidecar: owns Kafka for one streamlet and speaks the protocol to its process. */
 lazy val sidecar = project
   .in(file("sidecar"))
-  .dependsOn(protocol)
+  // The Scala SDK in tests only: the conformance suite serves its reference streamlet in process
+  // (feature 005, research R6). Nothing the sidecar ships depends on the SDK.
+  .dependsOn(protocol, sdk % "test->compile")
   .enablePlugins(JavaAppPackaging, DockerPlugin, BuildInfoPlugin)
   .settings(commonSettings)
   .settings(dockerSettings)
@@ -299,7 +391,7 @@ lazy val clusterImages =
 
 lazy val root = project
   .in(file("."))
-  .aggregate(protocol, blueprint, crd, sidecar, operator, cli)
+  .aggregate(protocol, sdk, blueprint, crd, sidecar, operator, cli, cartRouterScala)
   .settings(
     name           := "ankka-flow",
     publish / skip := true,
@@ -329,6 +421,9 @@ lazy val root = project
       tag
     }
   )
+
+// FR-009's one command: the conformance suite against the Scala SDK's reference streamlet.
+addCommandAlias("sdkConformance", "sidecar/testOnly *ConformanceSuite")
 
 addCommandAlias(
   "buildAll",

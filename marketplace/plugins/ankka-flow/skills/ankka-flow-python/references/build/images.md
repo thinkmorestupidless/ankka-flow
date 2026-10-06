@@ -9,7 +9,31 @@ credentials, no exposed ports and no health checks. The process listens on
 `127.0.0.1:$FLOW_PROCESS_PORT`, which the platform sets to `9010`, and the sidecar in the same pod
 dials it over loopback.
 
-## A Python streamlet's Dockerfile
+## The sample's image
+
+**Scala**
+
+A Scala streamlet's image comes from the build, with sbt-native-packager's `JavaAppPackaging` and
+`DockerPlugin`: the streamlet's classes and its dependencies on a Java runtime, started by the main
+class that calls `Serve.run`. The Scala cart router's settings in the ankka-flow build are:
+
+```scala
+lazy val cartRouterScala = project
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(
+    dockerBaseImage      := "eclipse-temurin:21-jre",
+    Docker / packageName := "sample-cart-router-scala",
+    Compile / mainClass  := Some("cart.Main")
+  )
+```
+
+`dockerExposedPorts` is left empty. Build it from the repository root:
+
+```bash
+sbt cartRouterScala/docker:publishLocal     # sample-cart-router-scala:<version> and :latest
+```
+
+**Python**
 
 The sample cart router's Dockerfile installs the SDK from its source in the repository and the
 streamlet from its lock file, and runs the entry point that calls `serve`:
@@ -48,12 +72,14 @@ docker build -f samples/cart-router/Dockerfile -t sample-cart-router .
 
 What to keep from it in your own streamlet's image:
 
-- **No `EXPOSE` and no `HEALTHCHECK`.** Nothing outside the pod talks to the process. The sidecar
+- **No exposed port and no health check.** Nothing outside the pod talks to the process. The sidecar
   reports readiness and liveness for the pod.
-- **`PYTHONUNBUFFERED=1`.** The process's log is where the sidecar's refusals appear: when the
+- **A log that reaches the pod's output at once.** In Python, `PYTHONUNBUFFERED=1`; in Scala, an slf4j
+  binding, as the Scala sample has with `slf4j-simple`. The process's log is where the sidecar's refusals appear: when the
   descriptor does not match, the sidecar sends every problem to the process to log before it refuses to start.
 - **Only the streamlet's code.** Tests, the descriptor file and development dependencies stay out of
-  the image; `uv sync --no-dev` leaves out the dependency group that holds pytest.
+  the image: test-scoped dependencies never reach sbt's staged image, and `uv sync --no-dev` leaves
+  out the dependency group that holds pytest.
 - **The same declaration as the committed descriptor.** The sidecar compares what the running process
   declares with the descriptor the pipeline was deployed with, and refuses to start on any difference.
   Build the image from the same commit as the `flow/descriptor.json` you deploy.

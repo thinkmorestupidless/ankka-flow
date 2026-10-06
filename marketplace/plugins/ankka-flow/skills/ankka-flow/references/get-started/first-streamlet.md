@@ -1,19 +1,57 @@
 # Your first streamlet
 
-> Run the sample cart router on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
+> Run the sample cart router, in Scala or Python, on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
 
 Source: https://flow.ankka.cloud/get-started/first-streamlet/
-The sample in `samples/cart-router` is a Python streamlet with one inlet of cart events, keyed by cart
-id, and two outlets. It sends each event to the `review` outlet when the cart's total is above a
-threshold, and to the `valid` outlet otherwise. This tutorial runs it on a laptop: Kafka and the sidecar
-in Docker, the streamlet itself as an ordinary Python process on the host.
+The cart router is a streamlet with one inlet of cart events, keyed by cart id, and two outlets. It
+sends each event to the `review` outlet when the cart's total is above a threshold, and to the `valid`
+outlet otherwise. It is written twice, in Scala in `samples/cart-router-scala` and in Python in
+`samples/cart-router`; the two declare the same streamlet, so one blueprint and one sidecar
+configuration serve both. This tutorial runs it on a laptop: Kafka and the sidecar in Docker, the
+streamlet itself as an ordinary process on the host. Each step shows both languages; follow one.
 
-You need Docker, sbt and uv; [Install the tools](install.md) lists them.
+You need Docker, sbt and uv, and for Scala a JDK 21; [Install the tools](install.md) lists them. The
+Kafka and sidecar files, and the scripts that send and check events, are in `samples/cart-router`
+and serve both languages.
 
 ## The streamlet
 
-The streamlet declares its ports and parameter as class attributes and implements `process`, which
-receives one batch of records and yields emits:
+The streamlet declares its ports and parameter and implements `process`, which receives one batch of
+records and returns the emits to make:
+
+**Scala**
+
+```scala
+import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.sdk.*
+
+final class CartRouter
+    extends Streamlet("cart-router", "Routes cart events to the valid or review outlet."):
+  val in     = inlet("in", schemaName = "cart-events.v1")
+  val valid  = outlet("valid", schemaName = "cart-events.v1")
+  val review = outlet("review", schemaName = "cart-events.v1")
+  val threshold = parameter.integer(
+    "review-threshold",
+    default = 100,
+    description = "Carts with a total above this go to the review outlet."
+  )
+
+  def process(batch: Batch): Iterable[Emit] =
+    val limit = config(threshold)
+    batch.records.map { record =>
+      // The SDK decodes nothing; this is the router's choice. A value that is not a cart event
+      // fails the batch, as the Python router's does.
+      val event =
+        Json.parse(record.valueString).fold(e => throw new IllegalArgumentException(e), identity)
+      val total = event.field("total") match
+        case Some(Json.Num(n)) => n
+        case _ => throw new IllegalArgumentException(s"no total in ${record.valueString}")
+      val outlet = if total > limit then review else valid
+      outlet.emit(record) // same key, same headers, same bytes
+    }
+```
+
+**Python**
 
 ```python
 from collections.abc import Iterable
@@ -43,6 +81,17 @@ class CartRouter(Streamlet):
 
 The process's entry point serves it on `127.0.0.1:$FLOW_PROCESS_PORT`, where the sidecar finds it:
 
+**Scala**
+
+```scala
+import com.thinkmorestupidless.ankka.flow.sdk.Serve
+
+object Main:
+  def main(args: Array[String]): Unit = Serve.run(new CartRouter)
+```
+
+**Python**
+
 ```python
 from ankka_flow import serve
 
@@ -54,10 +103,23 @@ if __name__ == "__main__":
 
 ## Test it without Kafka
 
-Build the sidecar image once, from the repository root, then work in the sample's directory:
+Build the sidecar image once, from the repository root:
 
 ```bash
 sbt sidecar/docker:publishLocal
+```
+
+**Scala**
+
+From the repository root:
+
+```bash
+sbt cartRouterScala/test
+```
+
+**Python**
+
+```bash
 cd samples/cart-router
 uv sync
 uv run pytest -q
@@ -69,18 +131,32 @@ describes the harness.
 
 ## Check the descriptor
 
+**Scala**
+
+```bash
+sbt cartRouterScala/descriptorCheck
+```
+
+`sbt cartRouterScala/descriptor` rewrites it.
+
+**Python**
+
 ```bash
 uv run descriptor --check
 ```
 
+`uv run descriptor` rewrites it.
+
 The SDK writes `flow/descriptor.json` from the streamlet's declaration. The descriptor is what a
 blueprint is checked against, and what the sidecar compares with the running process before it sends a
-single record. `--check` exits 1 when the committed file differs from the declaration; `uv run
-descriptor` rewrites it.
+single record. The check fails when the committed file differs from the declaration. The two
+samples' descriptors declare the same streamlet and differ only in the SDK that wrote them, which the
+sidecar does not compare.
 
 ## Start Kafka and the sidecar
 
 ```bash
+cd samples/cart-router      # for either language
 docker compose up -d
 ```
 
@@ -93,6 +169,17 @@ The sidecar looks for the streamlet on `host.docker.internal:9010` and keeps ask
 so the two can start in either order.
 
 ## Run the streamlet and send it events
+
+**Scala**
+
+```bash
+(cd ../.. && sbt cartRouterScala/stage)
+../cart-router-scala/target/universal/stage/bin/cart-router-scala &
+uv sync
+uv run python produce.py
+```
+
+**Python**
 
 ```bash
 uv run python -m cart_router.main &
@@ -108,6 +195,15 @@ The sidecar subscribes to the input topic, sends batches to the router, writes t
 confirmed every write.
 
 ## Kill it mid-stream
+
+**Scala**
+
+```bash
+kill %1; sleep 1; ../cart-router-scala/target/universal/stage/bin/cart-router-scala &
+uv run python verify.py
+```
+
+**Python**
 
 ```bash
 kill %1; sleep 1; uv run python -m cart_router.main &
@@ -133,7 +229,8 @@ docker compose down
 
 ## Where to go from here
 
-- [Write a streamlet in Python](../build/python-streamlet.md) covers declaring ports and parameters,
+- [Write a streamlet in Scala](../build/scala-streamlet.md) and
+  [Write a streamlet in Python](../build/python-streamlet.md) cover declaring ports and parameters,
   skipping and failing, and the descriptor.
 - [Deploy to a local cluster](deploy-locally.md) runs this streamlet on kind, with the operator creating
   its topics.

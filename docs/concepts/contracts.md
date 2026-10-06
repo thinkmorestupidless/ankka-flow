@@ -2,7 +2,7 @@
 title: Contracts
 description: What a port's contract is — a format and a fingerprint — how two ports are matched by it before anything runs, and why the sidecar never decodes a record.
 kind: concept
-languages: [python]
+languages: [scala, python]
 related: [concepts/pipelines.md, reference/descriptor.md, reference/blueprint.md]
 ---
 
@@ -19,10 +19,23 @@ The only format is `json`. A JSON contract names a schema, such as `cart-events.
 is the Base64 of the SHA-256 of that name, so two ports connect exactly when they name the same
 schema.
 
+/// tab | Scala
+
+```scala
+val in    = inlet("in", schemaName = "cart-events.v1")
+val valid = outlet("valid", schemaName = "cart-events.v1")
+```
+
+///
+
+/// tab | Python
+
 ```python
 inlet = JsonInlet("in", schema_name="cart-events.v1")
 valid = JsonOutlet("valid", schema_name="cart-events.v1")
 ```
+
+///
 
 The schema name is a promise between the streamlet that writes a topic and the streamlets that read
 it, not a file the platform reads: nothing checks a record against a schema. A new version of a

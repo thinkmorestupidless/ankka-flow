@@ -36,6 +36,10 @@ jobs:
               - 'operator/**'
               - 'cli/**'
               - 'kustomization/**'
+              - 'sdks/scala/**'
+              - 'samples/cart-router-scala/**'
+              # The Scala sample runs the Python sample's blueprint and checks the fixture.
+              - 'samples/cart-router/blueprint.conf'
             # The living features, the glossary their steps are written in, the specs that name
             # their scenarios, and the extension that checks them against each other.
             features:
@@ -96,6 +100,8 @@ jobs:
       - uses: sbt/setup-sbt@v1
       - run: sbt -Dflow.cluster.tests=off scalafmtCheckAll scalafmtSbtCheck compile test
       - run: sbt mutationCheck
+      # The Scala sample: its committed descriptor is what it declares, and its image builds.
+      - run: sbt cartRouterScala/descriptorCheck cartRouterScala/docker:publishLocal
 
   # The CLI as a native binary, on one platform: the image built, the CLI's own suite run against
   # the binary instead of in process, and the smoke script with its byte-for-byte diff against the

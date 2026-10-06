@@ -72,11 +72,13 @@ the release's version as the tag:
 |---|---|
 | `ankka-flow-sidecar` | the container the platform adds beside every streamlet; it owns everything Kafka |
 | `ankka-flow-operator` | the Kubernetes operator that runs `AnkkaFlow` resources |
+| `sample-cart-router-scala` | the sample Scala streamlet, holding its code, the SDK and a Java runtime |
 | `sample-cart-router` | the sample Python streamlet, holding only its own code and the SDK |
 
 ```bash
 docker pull ghcr.io/thinkmorestupidless/ankka-flow-sidecar:0.1.0
 docker pull ghcr.io/thinkmorestupidless/ankka-flow-operator:0.1.0
+docker pull ghcr.io/thinkmorestupidless/sample-cart-router-scala:0.1.0
 docker pull ghcr.io/thinkmorestupidless/sample-cart-router:0.1.0
 ```
 
@@ -90,8 +92,8 @@ source](../contributing/building.md) lists what that takes.
 | Tool | Used for |
 |---|---|
 | Docker | the Kafka and sidecar containers of the laptop loop, and building the sample's image |
-| uv, with Python 3.12 or later | the Python SDK and the sample streamlet |
-| JDK 21 and sbt | building the sidecar image for the laptop loop, and the images `just up` loads into kind |
+| uv, with Python 3.12 or later | the Python SDK and sample, and the scripts that send and check the tutorial's events |
+| JDK 21 and sbt | the Scala SDK and sample, building the sidecar image for the laptop loop, and the images `just up` loads into kind |
 | kind and kubectl | a local Kubernetes cluster, for deploying a pipeline |
 | just (optional) | short names for the commands on the pages; every recipe is one command you can run yourself |
 
@@ -100,6 +102,23 @@ Clone the repository and work from its root:
 ```bash
 git clone https://github.com/thinkmorestupidless/ankka-flow.git
 cd ankka-flow
+```
+
+## The Scala SDK
+
+A Scala streamlet project depends on the SDK from Maven Central. It needs Scala 3.3 or later, a JDK 21
+or later, and sbt:
+
+```scala
+libraryDependencies += "com.thinkmorestupidless" %% "ankka-flow-sdk" % "<version>"
+```
+
+The version is the ankka-flow release whose sidecar runs the streamlet. In the repository the SDK is
+`sdks/scala`, and the Scala sample builds against it directly. To run the SDK's own checks and the
+conformance suite against it:
+
+```bash
+sbt sdk/test sdkConformance
 ```
 
 ## The Python SDK

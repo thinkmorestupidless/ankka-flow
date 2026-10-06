@@ -294,3 +294,7 @@ is the tag's (FR-003, FR-010).
   the first real release `brew install thinkmorestupidless/tap/ankka-flow` answers "no formula"
   rather than a 404 on a deleted asset; `Formula/ankka.rb` was never touched. The rc.3 `flow` is
   still installed on this Mac; `brew upgrade` will move it to 0.4.0.
+- **Afterwards (feature 005)**: the three rc tags here each wrote `Formula/ankka-flow.rb` to the
+  public tap, and it was removed by hand. With a release in the tap, an rc would replace the formula
+  every reader installs with one pointing at assets the rehearsal deletes, so feature 005 gates the
+  `homebrew` job on a release tag; a pre-release proves the binaries and leaves the tap alone.

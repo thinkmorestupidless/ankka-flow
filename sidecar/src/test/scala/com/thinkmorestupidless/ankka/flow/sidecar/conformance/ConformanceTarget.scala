@@ -1,10 +1,13 @@
 package com.thinkmorestupidless.ankka.flow.sidecar.conformance
 
+import com.thinkmorestupidless.ankka.flow.sdk.Serve
+import com.thinkmorestupidless.ankka.flow.sdk.conformance.Conformance
 import com.thinkmorestupidless.ankka.flow.sidecar.{ProcessDouble, TestSpecs}
 
 /**
- * What the conformance suite drives: the Scala reference in-process (the default), or any process
- * already listening at `-Dflow.conformance.target=host:port`.
+ * What the conformance suite drives: the Scala SDK's reference streamlet in process (the default),
+ * or any process already listening at `-Dflow.conformance.target=host:port`. The misbehaviour a
+ * correct SDK cannot produce is scripted with the double, inside the suite.
  */
 sealed trait ConformanceTarget:
   def name: String
@@ -16,12 +19,12 @@ sealed trait ConformanceTarget:
 object ConformanceTarget:
 
   final class InProcess extends ConformanceTarget:
-    private val reference = ConformanceReference.start()
-    val name              = "in-process Scala reference"
-    val host              = "127.0.0.1"
-    val port              = reference.port
-    val external          = false
-    def close(): Unit     = reference.close()
+    private val server = Serve.start(new Conformance, port = 0)
+    val name           = "in-process Scala SDK"
+    val host           = Serve.Loopback
+    val port           = server.port
+    val external       = false
+    def close(): Unit  = server.close()
 
   final class Remote(address: String) extends ConformanceTarget:
     val name          = s"a process at $address"
@@ -36,9 +39,8 @@ object ConformanceTarget:
       case None          => new InProcess
 
 /**
- * The Scala reference streamlet: the `conformance` declaration of protocol/fixtures, behaving by
- * each record's key as contracts/conformance.md says. It is the scriptable double, which already
- * implements every keyed behaviour.
+ * The scriptable double declared as the `conformance` streamlet, for the `violation.*` and
+ * `version.*` cases: it produces the misbehaviour a correct SDK cannot.
  */
 object ConformanceReference:
   def start(): ProcessDouble =

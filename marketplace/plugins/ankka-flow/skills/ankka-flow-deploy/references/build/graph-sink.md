@@ -42,7 +42,10 @@ Every element of the graph needs a global id and a version that only rises.
 The mapper reads the notice, decides what it means for the graph, and emits one delta per element
 through a `GraphDeltaOutlet`. The outlet builds each record and gives it its
 [element key](../reference/graph-deltas.md#the-record-key), `node:<id>` or `edge:<id>`, so every delta
-for one element is applied in order and the topic can be compacted. The mapper never chooses a key:
+for one element is applied in order and the topic can be compacted. The mapper never chooses a key.
+The sample is Python; a Scala mapper declares the same port with `graphDeltaOutlet("deltas")` and
+builds deltas with its `node`, `edge`, `tombstoneNode` and `tombstoneEdge` methods, as
+[Write a streamlet in Scala](scala-streamlet.md) and the [Scala SDK reference](../reference/scala-sdk.md#graph-deltas) show:
 
 ```python
 import logging

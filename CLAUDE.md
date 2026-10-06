@@ -29,8 +29,10 @@ sbt protocol/test blueprint/test crd/test   # the pure modules, seconds
 sbt sidecar/test                            # the conversation, the Kafka graph, the carried Kafka suites, conformance
 sbt operator/test                           # rendering, topic resolution, reset, and FlowClusterSuite (k3s)
 sbt cli/test
-sbt 'sidecar/testOnly *ConformanceSuite'                                             # the Scala reference
+sbt sdk/test                                # the Scala SDK: the descriptor fixtures, the server, the harness
+sbt sdkConformance                          # the conformance suite against the Scala SDK, in process
 sbt 'sidecar/testOnly *ConformanceSuite' -Dflow.conformance.target=127.0.0.1:9010    # a process on a port
+sbt 'sdk/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceMain 9010'   # the Scala SDK's reference, on a port
 sbt mutationCheck                           # SC-006: the commit-after-write suite must FAIL with the commit moved first
 sbt docker:publishLocal sampleImage         # ankka-flow-sidecar, ankka-flow-operator, sample-cart-router
 sbt cli/stage                               # cli/target/universal/stage/bin/flow (the JVM build)
@@ -61,7 +63,7 @@ counting, and the failure looks like the platform's.
 
 | Rule | What it means here |
 |---|---|
-| Module direction | `protocol` depends on nothing of ours. `blueprint` → `protocol`. `crd` → fabric8 only. `sidecar` → `protocol`. `operator` → `crd`, `blueprint`, `protocol`. `cli` → `blueprint`, `crd`, `protocol`. Nothing depends on `sidecar` or `operator` except the operator's tests reading `StreamletConfig`. |
+| Module direction | `protocol` depends on nothing of ours. `sdk` → `protocol`. `blueprint` → `protocol`. `crd` → fabric8 only. `sidecar` → `protocol`, and `sdk` in tests only (the conformance suite serves the SDK's reference streamlet). `cartRouterScala` → `sdk`. `operator` → `crd`, `blueprint`, `protocol`. `cli` → `blueprint`, `crd`, `protocol`. Nothing depends on `sidecar` or `operator` except the operator's tests reading `StreamletConfig`. |
 | The sidecar never decodes for a process | A record's value is bytes from Kafka to the process and back. A contract is a format and a fingerprint, never a type the sidecar understands. A built-in stage decodes its own contract and nothing else. |
 | Commit after the write | Offsets are committed only once every emit for the batch is confirmed by the broker. `CommitAfterWrite` and its Kafka suite are the guard; `mutationCheck` proves the suite would catch a regression. |
 | Never skip | A failed batch is redelivered from the last commit, indefinitely. Skipping a record is the process's decision: acknowledge without emitting. |
@@ -70,11 +72,12 @@ counting, and the failure looks like the platform's.
 | The resource says what runs | Deploy-time overrides are merged by the CLI into the resource. The operator adds only what only it can know: the sidecar image (its own setting) and Kafka cluster secrets. |
 | Kafka credentials reach only the sidecar | Mounted from a Secret into the sidecar container. The process container has no ports, probes, mounts or secrets. |
 | No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image` and Neo4j's from `-Dflow.neo4j.image`; built images use `BuildInfo.version` with `+` → `-`. |
+| Two Scala versions | `protocol`, `sdk` and the Scala sample compile with `V.scalaLts` (the Scala 3 LTS line, `ltsSettings`), so any Scala 3.3+ project can depend on what is published; every other module stays on `V.scala`. A published module never depends on a 3.9-only one. |
 | Warning-free compile | `-Wunused:all` is on. Generated ScalaPB sources are silenced by `-Wconf` on `src_managed` only. |
 | Built-in stages are declared values | A stage the sidecar runs with no process has its descriptor in `protocol/.../Builtins.scala`, its canonical JSON in `protocol/fixtures/builtin/`, and a blueprint names it `builtin/<name>`. The sidecar refuses a deployed descriptor that is not its own built-in. |
 | One `flow`, two drivers | `cli/test` is one suite; `-Dflow.cli.binary=<path>` runs every case through that executable instead of in process. No case is skipped or conditional on the driver. The release runs it against each platform's binary and byte-compares the smoke outputs with the JVM build. |
 | The native image's metadata is generated, then pruned | `cli/src/main/resources/META-INF/native-image/…/reachability-metadata.json` comes from the tracing agent (`-Dflow.cli.agent=on`, GraalVM as the JVM) and is cut down to what `flow` uses; its README says how. Regenerate on a fabric8 or Jackson upgrade, a new command, or a binary failing on a class or resource it cannot find. |
-| The tap is shared | `thinkmorestupidless/homebrew-tap` holds ankka's formula and ours. The `homebrew` job clones it, writes `Formula/ankka-flow.rb` and pushes an ordinary commit; never a subtree split or a force push, which would erase the other. A pre-release tag (with a hyphen) publishes the binaries and the formula only. |
+| The tap is shared | `thinkmorestupidless/homebrew-tap` holds ankka's formula and ours. The `homebrew` job clones it, writes `Formula/ankka-flow.rb` and pushes an ordinary commit; never a subtree split or a force push, which would erase the other. A pre-release tag (with a hyphen) publishes the release page and the binaries only, and touches no formula, so the tap always installs a release. |
 | No logback in the CLI | `flow` logs nothing: `slf4j-nop`, so no classpath logging configuration has to survive the native image. fabric8 runs over `kubernetes-httpclient-jdk` there, with the Vert.x client excluded (Netty cannot be built as it comes). |
 | Not in this build | pekko-http, pekko-grpc, Avro, spray-json, ScalaTest. If a change needs one, it is a design change: update `research.md` first. |
 

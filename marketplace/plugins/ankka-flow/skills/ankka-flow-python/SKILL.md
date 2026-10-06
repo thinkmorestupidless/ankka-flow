@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-python
-description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet, its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink with GraphDeltaOutlet, which keys each delta by its element.
+description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet (for Scala, ankka-flow-scala), its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink with GraphDeltaOutlet, which keys each delta by its element.
 ---
 
 # Writing a streamlet in Python
@@ -68,7 +68,7 @@ Open the one a task needs; each is one topic and stands alone.
 
 ### Get started
 
-- `references/get-started/first-streamlet.md` — Run the sample cart router on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
+- `references/get-started/first-streamlet.md` — Run the sample cart router, in Scala or Python, on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
 
 ### Concepts
 
@@ -78,7 +78,7 @@ Open the one a task needs; each is one topic and stands alone.
 ### Build
 
 - `references/build/python-streamlet.md` — Declare a streamlet's ports and parameters with the Python SDK, process batches into emits, skip or fail records, serve it to the sidecar, and write its descriptor.
-- `references/build/testing.md` — Test a Python streamlet's logic with the SDK's Harness, which runs process over in-memory inlets and outlets with the protocol's rules and no Kafka, sidecar or gRPC.
+- `references/build/testing.md` — Test a streamlet's logic with the SDK's Harness, in Scala or Python, which runs process over in-memory inlets and outlets with the protocol's rules and no Kafka, sidecar or gRPC.
 - `references/build/images.md` — Package a streamlet as a container image that holds only its process — no Kafka client, no exposed ports — and make it available to a cluster.
 
 ### Reference

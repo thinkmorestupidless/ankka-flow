@@ -1,6 +1,6 @@
 ---
 name: ankka-flow
-description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies. Also building a graph from events with graph deltas keyed by element, compacted delta topics, and the built-in Neo4j merge sink.
+description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Scala or Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies. Also building a graph from events with graph deltas keyed by element, compacted delta topics, and the built-in Neo4j merge sink.
 pages:
   - index.md
   - concepts/pipelines.md
@@ -70,8 +70,9 @@ pod's loopback interface.
    the pipeline; tombstones mark rather than delete.
 10. **A delta's record key is its element key, and the sink enforces it.** `node:<id>` for a node
    merge or node tombstone, `edge:<id>` for an edge merge or edge tombstone, the id verbatim. The
-   sink fails the batch for a delta with no key or another key, naming the key expected. In Python,
-   `GraphDeltaOutlet` builds the key; in any other language the writer sets it.
+   sink fails the batch for a delta with no key or another key, naming the key expected. The SDKs'
+   graph delta outlets build the key (`graphDeltaOutlet` in Scala, `GraphDeltaOutlet` in Python); in
+   any other language the writer sets it.
 11. **A managed delta topic is compacted by default.** A topic with any port of the delta contract
    gets `cleanup.policy = compact` from `flow generate` unless the blueprint or `--conf` sets a
    policy, and `flow verify` says so in a note. It then holds the latest delta per element, so an
