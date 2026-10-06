@@ -45,7 +45,8 @@ check fails.
 ## Frontmatter
 
 Every page starts with `title`, `description` and `kind`. One optional key is this repository's:
-`languages`, currently only `python`, for a page that shows streamlet code. `related` lists the pages
+`languages`, `scala` and `python`, for a page that shows streamlet code; a page with both shows them
+in `/// tab | Scala` and `/// tab | Python` blocks, Scala first, each sample included from tested code. `related` lists the pages
 a reader most often needs next.
 
 ## Rules that bite

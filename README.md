@@ -41,11 +41,14 @@ final class CartRouter
   def process(batch: Batch): Iterable[Emit] =
     val limit = config(threshold)
     batch.records.map { record =>
-      // The SDK decodes nothing; reading the total is the router's choice.
-      val total = Json.parse(record.valueString).toOption.flatMap(_.field("total"))
-      val outlet = total match
-        case Some(Json.Num(n)) if n > limit => review
-        case _                              => valid
+      // The SDK decodes nothing; this is the router's choice. A value that is not a cart event
+      // fails the batch, as the Python router's does.
+      val event =
+        Json.parse(record.valueString).fold(e => throw new IllegalArgumentException(e), identity)
+      val total = event.field("total") match
+        case Some(Json.Num(n)) => n
+        case _ => throw new IllegalArgumentException(s"no total in ${record.valueString}")
+      val outlet = if total > limit then review else valid
       outlet.emit(record) // same key, same headers, same bytes
     }
 ```

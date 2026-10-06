@@ -315,3 +315,12 @@ the SDK itself fail `sidecar/test` directly. No break switch in the Scala SDK.
   dependency line, compiled the cart router and passed its `routes by total` test. (gpg's agent
   cannot start under the scratchpad's long path — the socket path limit — so the key lived in a
   short temporary directory, deleted afterwards.)
+- **V5**: an include inside a `/// tab | Scala` block, directly followed by its fence, is filled by
+  `docs sync` and accepted by `docs check`; the built site shows the tab sets.
+- **The two routers fail alike on a value that is not a cart event.** The first Scala router sent
+  a value with no readable total to `valid`, where the Python one raises and fails the batch; the
+  docs pass found it. The Scala router now throws on a value that is not JSON or has no total, and a
+  test holds it, so the two are the same streamlet in behaviour as well as declaration.
+- **The testing page's skip example stays Python-only.** No tested Scala streamlet skips an
+  undecodable record, so the page states the Scala assertions in prose rather than showing
+  untested code.

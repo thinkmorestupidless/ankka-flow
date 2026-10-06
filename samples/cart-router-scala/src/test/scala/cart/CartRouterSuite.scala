@@ -50,6 +50,14 @@ class CartRouterSuite extends munit.FunSuite:
   }
   // docs:end ordering
 
+  test("a value that is not a cart event fails the batch, as the Python router's does") {
+    val h = Harness(new CartRouter)
+    h.inlet("in").put(bytes("not json"), key = Some(bytes("cart-3")))
+    h.run()
+    assertEquals(h.failures.size, 1)
+    assertEquals(h.outlet("valid").records, Vector.empty)
+  }
+
   test("the committed descriptor declares the fixture's streamlet") {
     val root = Paths.get(sys.props.getOrElse("flow.repo.root", ".")).toAbsolutePath.normalize
     def read(rel: String) =

@@ -12,7 +12,10 @@ to the sidecar in its pod, and the sidecar does everything else. An SDK is compa
 things, the **descriptor fixtures** and the **conformance suite**. Nothing else about it is prescribed.
 The Python SDK in
 [`sdks/python`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/sdks/python) is the worked
-example; its [reference](../reference/python-sdk.md) shows one shape an SDK can take.
+example for an SDK outside this build; its [reference](../reference/python-sdk.md) shows one shape an
+SDK can take. The Scala SDK in
+[`sdks/scala`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/sdks/scala), and its
+[reference](../reference/scala-sdk.md), show the same shape in a language of the build itself.
 
 ## What an SDK implements
 
@@ -41,6 +44,11 @@ Copy the whole `protocol/` directory into the SDK verbatim: the `.proto` files, 
 a change to the protocol is a change to every SDK in the same commit. The Python SDK's
 `scripts/proto.py` does the copy and the generation.
 
+The copy is for an SDK outside the ankka-flow build. The Scala SDK is a module of the build and
+depends on its `protocol` module instead, which holds the generated messages, the canonical
+descriptor writer and its validation; the module is published beside the SDK at the same version, so
+there is nothing to copy and nothing to drift.
+
 ## The descriptor fixtures
 
 `protocol/fixtures/declarations/*.md` describe six streamlets in prose. Declare each in the SDK's
@@ -66,6 +74,10 @@ Every case is named for the conversation it checks, such as `run.emits-precede-a
 `run.two-partitions-interleave`, so a failure says what the SDK got wrong. The scripted inputs each case
 sends are in `protocol/fixtures/conversations/`, readable without Scala. The Python SDK wraps this in
 `uv run conformance`; a new SDK can offer the same.
+
+Without `-Dflow.conformance.target`, the suite serves the Scala SDK's reference streamlet in its own
+JVM, so every build of the repository holds the Scala SDK to the suite: `sbt sdkConformance`. The
+Scala SDK's `ConformanceMain` serves the same streamlet on a port, for the suite's remote mode.
 
 The `violation.*` and `version.*` cases are skipped against a process. They prove that the sidecar
 refuses misbehaviour a correct SDK cannot produce — a double acknowledgement, an emit after its ack, an

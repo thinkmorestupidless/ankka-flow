@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-python
-description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet, its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink with GraphDeltaOutlet, which keys each delta by its element.
+description: Write, test and package an ankka-flow streamlet in Python with the ankka-flow SDK — declaring a Streamlet with JsonInlet, JsonOutlet and typed parameters, the process(batch) function and its emits, acknowledging, skipping and failing a batch, serve(), writing and checking flow/descriptor.json with uv run descriptor, the testkit Harness, the local laptop loop with the sidecar in docker compose, and the image. Use when the task is Python code for a streamlet (for Scala, ankka-flow-scala), its tests, its descriptor, its Dockerfile, or running it on a laptop. Also mapping events to graph deltas (ankka.graph-delta.v1) for the Neo4j merge sink with GraphDeltaOutlet, which keys each delta by its element.
 pages:
   - build/python-streamlet.md
   - build/testing.md

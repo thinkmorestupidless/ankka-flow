@@ -44,7 +44,7 @@ chain, lag per stage, and a rebuild from the start of the inputs.
 | run a streamlet on a laptop in ten minutes | [Your first streamlet](get-started/first-streamlet.md) |
 | run a pipeline on a local Kubernetes cluster | [Deploy to a local cluster](get-started/deploy-locally.md) |
 | understand how a pod behaves | [The sidecar](concepts/sidecar.md) and [Delivery and failure](concepts/delivery.md) |
-| write a streamlet | [Write a streamlet in Python](build/python-streamlet.md) |
+| write a streamlet | [Write a streamlet in Scala](build/scala-streamlet.md) or [in Python](build/python-streamlet.md) |
 | wire streamlets together | [Write a blueprint](build/blueprints.md) |
 | deploy and operate pipelines | [Deploy a pipeline](deploy/deploy-a-pipeline.md) and [Observe a pipeline](deploy/observe.md) |
 | look a fact up | [CLI](reference/cli.md), [AnkkaFlow resource](reference/resource.md), [Streamlet protocol](reference/protocol.md) |

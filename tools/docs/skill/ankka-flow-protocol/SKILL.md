@@ -6,6 +6,7 @@ pages:
   - reference/protocol.md
   - reference/descriptor.md
   - reference/python-sdk.md
+  - reference/scala-sdk.md
   - concepts/sidecar.md
   - concepts/delivery.md
   - concepts/contracts.md

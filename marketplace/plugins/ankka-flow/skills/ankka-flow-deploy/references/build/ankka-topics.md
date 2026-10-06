@@ -62,7 +62,9 @@ value    {"cartId":"cart-1","at":1790627790360}
 The streamlet decodes the body itself: the sidecar never decodes a record. It keeps the key, so each
 cart's checkouts stay in order downstream, and the headers, so the entry carries ankka's `ce-id`. A
 record that is not a checkout notice is skipped by acknowledging it without emitting, rather than
-failing the batch, which would stall the partition on a record that can never succeed.
+failing the batch, which would stall the partition on a record that can never succeed. The sample
+is Python; in Scala the same streamlet declares the same ports with the SDK's `inlet` and `outlet`,
+as [Write a streamlet in Scala](scala-streamlet.md) shows.
 
 ```python
 import logging
