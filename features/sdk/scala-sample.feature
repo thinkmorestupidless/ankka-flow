@@ -2,10 +2,11 @@ Feature: The Scala cart router beside the Python one
   The cart router sample exists in Scala and in Python: the same streamlet, the same blueprint, the
   same tests, its own descriptor and image.
 
-  Scenario: the Scala cart router and the Python one have the same descriptor
+  Scenario: the Scala cart router and the Python one declare the same streamlet
     Given the Scala cart router and the Python cart router
     When each one's descriptor is written
-    Then the two descriptors are identical byte for byte
+    Then the streamlet part of the two descriptors is identical byte for byte
+    And the SDK part of each names its own SDK, and nothing else differs
     And "flow verify" of the shared blueprint gives the same output against either
 
   Scenario: the Scala cart router runs the laptop walkthrough

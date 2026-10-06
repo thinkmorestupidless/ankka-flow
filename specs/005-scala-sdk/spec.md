@@ -110,7 +110,7 @@ conformance suite passes against it, every case that applies to a process.
 - added `features/sdk/scala-protocol.feature`: a declaration the protocol refuses is refused before a descriptor is written
 - added `features/sdk/scala-protocol.feature`: the conformance suite passes against the Scala reference streamlet
 - added `features/sdk/scala-protocol.feature`: the sidecar runs a Scala streamlet as it runs a Python one
-- added `features/sdk/scala-protocol.feature`: the Scala SDK's copy of the protocol is the repository's
+- added `features/sdk/scala-protocol.feature`: the Scala SDK ships no copy of the protocol
 
 ---
 
@@ -132,7 +132,7 @@ with the Scala router in place of the Python one.
 
 **Acceptance Scenarios** *(each names a scenario in a living feature; none is written here)*:
 
-- added `features/sdk/scala-sample.feature`: the Scala cart router and the Python one have the same descriptor
+- added `features/sdk/scala-sample.feature`: the Scala cart router and the Python one declare the same streamlet
 - added `features/sdk/scala-sample.feature`: the Scala cart router runs the laptop walkthrough
 - added `features/sdk/scala-sample.feature`: the Scala cart router's tests and descriptor are checked on every change
 - added `features/sdk/scala-sample.feature`: the README shows the router in Scala and in Python from tested code
@@ -246,9 +246,9 @@ describe both SDKs.
 - **FR-009**: The SDK MUST pass the conformance suite, every case that applies to a process, when
   serving the reference streamlet; the SDK MUST offer one command that serves the reference
   streamlet and runs the suite.
-- **FR-010**: The SDK MUST hold a byte-for-byte copy of the repository's protocol directory and
-  generate its protocol code from that copy; the repository's build MUST fail when the copy
-  differs.
+- **FR-010**: The SDK MUST ship no copy of the protocol: its protocol code is the repository's own
+  protocol module, built from the protocol directory itself and published beside the SDK at the
+  same version, so a change to the protocol is a change to the SDK in the same commit.
 
 **The harness**
 
@@ -263,9 +263,10 @@ describe both SDKs.
 **The sample, the README and the build**
 
 - **FR-012**: A Scala cart router sample MUST exist beside the Python one, declaring the same
-  streamlet — the same name, ports, contracts and parameter — so that its descriptor equals the
-  Python sample's, with the same blueprint, the same two tests, a committed descriptor and an image
-  holding only the streamlet and the SDK.
+  streamlet — the same name, ports, contracts and parameter — so that the streamlet part of its
+  descriptor equals the Python sample's (the descriptor's SDK block names each SDK, and is the
+  only difference), with the same blueprint, the same two tests, a committed descriptor and an
+  image holding only the streamlet and the SDK.
 - **FR-013**: CI MUST run the Scala sample's tests and descriptor check, the SDK's fixtures and the
   conformance run, and the protocol copy check, on every change that can affect them; the sample
   builds against the SDK's source as a module of the repository's build, so the two cannot drift.
@@ -322,8 +323,9 @@ describe both SDKs.
 - **SC-001**: The six descriptor fixtures are reproduced byte for byte by the Scala SDK, and the
   conformance suite passes against the Scala reference streamlet with every case that applies to a
   process, zero skipped beyond those the suite skips for every process.
-- **SC-002**: The Scala cart router's committed descriptor is byte-identical to the Python cart
-  router's, and `flow verify` of the shared blueprint gives the same output against either.
+- **SC-002**: The streamlet part of the Scala cart router's committed descriptor is byte-identical
+  to the Python cart router's, the SDK block alone differs, and `flow verify` of the shared
+  blueprint gives the same output against either.
 - **SC-003**: The Scala sample's two tests and descriptor check pass in CI from a clean checkout,
   and its laptop walkthrough's produce-and-verify round trip succeeds with the Scala router.
 - **SC-004**: A tagged release puts the SDK on Maven Central at the release's version with no
@@ -339,7 +341,9 @@ describe both SDKs.
 
 - **The protocol is sufficient.** The Python SDK proves the protocol hosts an SDK with nothing
   else; the Scala SDK is written to the same protocol, in the same shape, with no change to
-  `protocol/` or the sidecar.
+  `protocol/` or the sidecar. **Found in planning**: the protocol is already a Scala module with
+  the canonical descriptor writer and validation in it, so the Scala SDK depends on that module
+  and copies nothing; the module is published beside the SDK.
 - **Graph deltas at parity.** The protocol carries a graph-delta outlet and the Python SDK offers
   it; the Scala SDK offers the same outlet with the same validation, and nothing beyond it.
 - **The SDK's shape follows the Python one.** Names and structure mirror the Python SDK where

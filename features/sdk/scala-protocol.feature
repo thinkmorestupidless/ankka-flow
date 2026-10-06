@@ -43,8 +43,8 @@ Feature: The Scala SDK speaks the protocol
     Then discovery equals the deployed descriptor and the sidecar runs the streamlet
     And cart events reach the outlets as they do with the Python cart router
 
-  Scenario: the Scala SDK's copy of the protocol is the repository's
-    Given the Scala SDK's copy of the protocol
-    When the build compares it with the repository's protocol
-    Then the two are identical byte for byte
-    And a difference fails the build
+  Scenario: the Scala SDK ships no copy of the protocol
+    Given the Scala SDK
+    When its protocol code is traced to its source
+    Then it is the repository's protocol, built from the protocol directory itself
+    And the published Scala SDK depends on the published protocol at the same version
