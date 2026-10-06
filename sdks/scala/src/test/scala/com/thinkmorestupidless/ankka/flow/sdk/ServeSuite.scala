@@ -126,7 +126,10 @@ class ServeSuite extends munit.FunSuite:
     withServer(new Conformance) { (_, channel) =>
       val first = new Run(channel)
       first.start()
-      first.batch(1, "late")
+      first.batch(1, "echo")
+      assert(first.next().message.isEmit)
+      assert(first.next().message.isAck) // the server holds the first conversation
+      first.batch(2, "late")
       val second = new Run(channel)
       second.start()
       assert(first.isCompleted())
