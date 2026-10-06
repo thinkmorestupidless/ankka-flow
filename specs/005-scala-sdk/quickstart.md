@@ -63,13 +63,13 @@ and a fresh project with `resolvers += "local-release" at "file:///tmp/m2"` comp
 
 ## Reviewer's checklist
 
-- [ ] no file under `protocol/` changed; no Python SDK behaviour changed; the sidecar's suites pass as before
-- [ ] `protocol`, `sdk` and the sample are on the LTS Scala; everything else on 3.9; warning-free
-- [ ] the six fixtures reproduce byte for byte with `sdk = fixture/0.0.0`
-- [ ] the conformance suite's in-process target is the Scala SDK; `violation.*` still use the double
-- [ ] the harness's names and rules are the Python testkit's
-- [ ] the Scala router's `streamlet` descriptor equals the Python one's; its tests are the Python tests
-- [ ] `blueprint`, `crd` and the sample skip publishing; `protocol` and `sdk` publish; the POM dependency between them is right
-- [ ] `sdk-scala` is gated on a release tag and asks Central before uploading
-- [ ] every page with Python code has a Scala tab from tested code; the Scala guide and reference exist; the skills name both SDKs; the install page says what a Scala author needs
-- [ ] the README shows both routers from tested code; `just readme-sync` is current
+- [X] no file under `protocol/` changed; no Python SDK behaviour changed; the sidecar's suites pass as before
+- [X] `protocol`, `sdk` and the sample are on the LTS Scala; everything else on 3.9; warning-free
+- [X] the six fixtures reproduce byte for byte with `sdk = fixture/0.0.0`
+- [X] the conformance suite's in-process target is the Scala SDK; `violation.*` still use the double
+- [X] the harness's names and rules are the Python testkit's
+- [X] the Scala router's `streamlet` descriptor equals the Python one's; its tests are the Python tests
+- [X] `blueprint`, `crd` and the sample skip publishing; `protocol` and `sdk` publish; the POM dependency between them is right
+- [X] `sdk-scala` is gated on a release tag and asks Central before uploading
+- [X] every page with Python code has a Scala tab from tested code; the Scala guide and reference exist; the skills name both SDKs; the install page says what a Scala author needs
+- [X] the README shows both routers from tested code; `just readme-sync` is current

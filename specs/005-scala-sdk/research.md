@@ -324,3 +324,13 @@ the SDK itself fail `sidecar/test` directly. No break switch in the Scala SDK.
 - **The testing page's skip example stays Python-only.** No tested Scala streamlet skips an
   undecodable record, so the page states the Scala assertions in prose rather than showing
   untested code.
+- **`v0.5.0-rc.1`** (run 37474200538): `release-page` and the four `cli-native` legs succeeded,
+  eight assets on a release marked pre-release; `images`, `sdk-scala`, `sdk-python`, `marketplace`
+  and `homebrew` were skipped; the tap's head was unchanged and Central had no `0.5.0-rc.1`. The
+  tag and its release were deleted afterwards.
+- **The whole build from the branch** passed: `scalafmtCheckAll scalafmtSbtCheck test
+  mutationCheck` with the k3s suite (the SDK's 43, the Scala sample's 4, the sidecar's with the
+  conformance suite against the Scala SDK), the Scala descriptor check, the Python SDK's checks and
+  conformance (18 passed, 5 skipped) and its three samples, `just features`, `just docs` (41 pages)
+  and the README include check. Nothing under `protocol/`, `sdks/python/`, or the sidecar's,
+  operator's or CLI's sources changed.
