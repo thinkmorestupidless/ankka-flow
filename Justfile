@@ -36,9 +36,13 @@ cli:
 cli-native:
     sbt cli/stage cli/GraalVMNativeImage/packageBin 'cli/test' -Dflow.cli.binary={{justfile_directory()}}/cli/target/graalvm-native-image/flow && cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
 
-# The sidecar and operator images, and the sample's.
+# The sidecar and operator images, and the samples' (the Python cart router's and the Scala one's).
 images:
     sbt docker:publishLocal sampleImage
+
+# The Scala SDK, end to end: its suites, the conformance suite against it, and its sample.
+sdk-scala:
+    sbt sdk/test sdkConformance cartRouterScala/test cartRouterScala/descriptorCheck
 
 # The Python SDK, end to end.
 sdk:

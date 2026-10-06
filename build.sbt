@@ -138,11 +138,55 @@ lazy val sdk = project
   .settings(commonSettings)
   .settings(ltsSettings)
   .settings(
-    name             := "ankka-flow-sdk",
-    buildInfoKeys    := Seq[BuildInfoKey](version),
+    name := "ankka-flow-sdk",
+    // The version the SDK reports in discovery and writes into a descriptor: the release's at a tag,
+    // and 0.0.0 for any other build, as the Python SDK's tree says 0.0.0 until a release writes its
+    // version. So a committed sample descriptor does not change with every commit.
+    buildInfoKeys := Seq[BuildInfoKey](
+      BuildInfoKey.map(version) { case (k, v) =>
+        k -> (if (v.contains("+") || v.endsWith("SNAPSHOT")) "0.0.0" else v)
+      }
+    ),
     buildInfoPackage := "com.thinkmorestupidless.ankka.flow.sdk",
     buildInfoObject  := "SdkBuildInfo",
     libraryDependencies ++= Seq(slf4jApi)
+  )
+
+lazy val descriptor = taskKey[Unit]("Writes the sample's flow/descriptor.json from its declaration")
+lazy val descriptorCheck =
+  taskKey[Unit]("Fails when the sample's committed flow/descriptor.json differs")
+
+/**
+ * The cart router in Scala (feature 005): the Python sample's streamlet, tests and blueprint,
+ * served by the Scala SDK. A module of this build, so every commit proves it against the SDK's
+ * source; a reader's own project depends on the published SDK instead (its README shows the line).
+ */
+lazy val cartRouterScala = project
+  .in(file("samples/cart-router-scala"))
+  .dependsOn(sdk)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(dockerSettings)
+  .settings(noDocs)
+  .settings(
+    name                 := "cart-router-scala",
+    publish / skip       := true,
+    Docker / packageName := "sample-cart-router-scala",
+    Compile / mainClass  := Some("cart.Main"),
+    // Forked, so the descriptor command's exit code is the task's and System.exit leaves sbt alone.
+    run / fork := true,
+    libraryDependencies += slf4jSimple,
+    descriptor := Def.taskDyn {
+      val path = (baseDirectory.value / "flow" / "descriptor.json").getAbsolutePath
+      (Compile / runMain)
+        .toTask(s" com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter $path")
+    }.value,
+    descriptorCheck := Def.taskDyn {
+      val path = (baseDirectory.value / "flow" / "descriptor.json").getAbsolutePath
+      (Compile / runMain)
+        .toTask(s" com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter $path --check")
+    }.value
   )
 
 /** Blueprint verification, carried from cloudflow-blueprint. Pure: no Kafka, no cluster. */
@@ -333,7 +377,7 @@ lazy val clusterImages =
 
 lazy val root = project
   .in(file("."))
-  .aggregate(protocol, sdk, blueprint, crd, sidecar, operator, cli)
+  .aggregate(protocol, sdk, blueprint, crd, sidecar, operator, cli, cartRouterScala)
   .settings(
     name           := "ankka-flow",
     publish / skip := true,

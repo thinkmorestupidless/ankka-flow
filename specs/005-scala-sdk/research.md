@@ -292,3 +292,18 @@ the SDK itself fail `sidecar/test` directly. No break switch in the Scala SDK.
 - **A graph delta's source record is a named last argument**, `source = Some(record)`, where the
   Python SDK takes it first and positionally: Scala's default arguments come last, and an
   `Option` makes "built from nothing" explicit.
+- **The SDK reports 0.0.0 from any build but a release's.** A descriptor records the SDK's
+  version, and dynver gives every commit a new snapshot version, so a committed descriptor would
+  fail its own check on the next commit. As the Python SDK's tree says `0.0.0` until a release
+  writes its version, the SDK's build info is `0.0.0` unless the build's version is a release
+  (no `+`, no `SNAPSHOT`); a build at a release tag reports the tag's version.
+- **SC-002**: the Scala router's committed descriptor differs from the Python one's in one line,
+  the SDK's name; `flow verify samples/cart-router/blueprint.conf` prints the same
+  (`verified: 1 streamlets, 3 topics`) against either directory.
+- **V4**: the Python sample's compose file runs the Scala router unchanged: the sidecar discovered
+  `ankka-flow-scala 0.0.0` against the Python sample's deployed descriptor and accepted it; 50 events
+  over 10 carts, 25 valid and 25 review, each cart in order on one partition, headers intact.
+- **The cluster half of FR-015**: on the local kind cluster, the shared blueprint with
+  `--image router=sample-cart-router-scala:latest` went `Ready` once its input topic existed;
+  three events produced to `shop.cart-events.v1` reached `cart.valid-carts` (totals 10 and 99) and
+  `cart.review-carts` (250). The image is 528 MB: the JRE base, the router, the SDK and its gRPC.

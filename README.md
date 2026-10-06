@@ -18,8 +18,40 @@ Apache Pekko. Neither is a dependency: six pieces were carried over with their t
 ## A streamlet
 
 A streamlet declares its ports and parameters and implements `process`, which gets one batch of
-records from one inlet partition and yields what to emit. The sample router reads cart events keyed
-by cart id and sends each to one of two outlets, by a threshold set when the pipeline is deployed:
+records from one inlet partition and returns what to emit. The sample router reads cart events keyed
+by cart id and sends each to one of two outlets, by a threshold set when the pipeline is deployed.
+In Scala:
+
+<!-- include: samples/cart-router-scala/src/main/scala/cart/CartRouter.scala#router -->
+```scala
+import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.sdk.*
+
+final class CartRouter
+    extends Streamlet("cart-router", "Routes cart events to the valid or review outlet."):
+  val in     = inlet("in", schemaName = "cart-events.v1")
+  val valid  = outlet("valid", schemaName = "cart-events.v1")
+  val review = outlet("review", schemaName = "cart-events.v1")
+  val threshold = parameter.integer(
+    "review-threshold",
+    default = 100,
+    description = "Carts with a total above this go to the review outlet."
+  )
+
+  def process(batch: Batch): Iterable[Emit] =
+    val limit = config(threshold)
+    batch.records.map { record =>
+      // The SDK decodes nothing; reading the total is the router's choice.
+      val total = Json.parse(record.valueString).toOption.flatMap(_.field("total"))
+      val outlet = total match
+        case Some(Json.Num(n)) if n > limit => review
+        case _                              => valid
+      outlet.emit(record) // same key, same headers, same bytes
+    }
+```
+
+The same streamlet in Python. The two declare the same ports, contracts and parameter, so one
+blueprint deploys either image:
 
 <!-- include: samples/cart-router/src/cart_router/router.py#router -->
 ```python
