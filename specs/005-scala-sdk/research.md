@@ -265,3 +265,30 @@ the SDK itself fail `sidecar/test` directly. No break switch in the Scala SDK.
    the discovery because the `streamlet` part is equal).
 5. **R11**: `docs check` accepts `/// tab` blocks around included samples (an include comment
    inside a tab block must still be followed directly by its fence).
+
+## Found during implementation
+
+- **V1**: `protocol` compiles warning-free on Scala 3.3.8 with `-java-output-version:21`, ScalaPB
+  0.11.11's generated sources included, and `blueprint`, `sidecar`, `operator` and `cli` (3.9.0)
+  compile and pass against it unchanged.
+- **The descriptor rules have no "a streamlet declares a port" rule.** The scenario outline's
+  example "no inlet and no outlet" was not something the protocol refuses; it is replaced by "a
+  port name with a capital letter", which it does. The SDK refuses exactly what
+  `DescriptorValidation` refuses, nothing more.
+- **Per-item refusals happen where the item is declared.** A port's name and schema, a
+  parameter's key and default, and the streamlet's name are each checked by
+  `DescriptorValidation` as the factory registers them, so a refused declaration throws at
+  construction, before a descriptor is written or a port bound.
+- **The server does not serialise a partition's batches.** As in the Python server, every batch
+  goes to the worker pool: the sidecar keeps at most one in flight per partition, so the SDK
+  needs no queue of its own.
+- **V2**: the conformance suite passes against the Scala SDK in process (23 of 23, with the
+  double serving the `violation.*` and `version.*` cases) and against `ConformanceMain` on a port
+  (18 passed, 5 skipped) — the Python SDK's numbers.
+- **The emit API is two overloads and `copy`.** `outlet.emit(record)` forwards the record;
+  `outlet.emit(value, key, headers)` builds a new one; replacing part of a record is
+  `outlet.emit(record.copy(value = ...))`. Python's keyword arguments become the case class's
+  `copy`, so the offset is kept and the harness counts the record as not skipped.
+- **A graph delta's source record is a named last argument**, `source = Some(record)`, where the
+  Python SDK takes it first and positionally: Scala's default arguments come last, and an
+  `Option` makes "built from nothing" explicit.

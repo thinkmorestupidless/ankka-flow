@@ -175,7 +175,9 @@ lazy val sidecarBuildInfo = Seq(
 /** The sidecar: owns Kafka for one streamlet and speaks the protocol to its process. */
 lazy val sidecar = project
   .in(file("sidecar"))
-  .dependsOn(protocol)
+  // The Scala SDK in tests only: the conformance suite serves its reference streamlet in process
+  // (feature 005, research R6). Nothing the sidecar ships depends on the SDK.
+  .dependsOn(protocol, sdk % "test->compile")
   .enablePlugins(JavaAppPackaging, DockerPlugin, BuildInfoPlugin)
   .settings(commonSettings)
   .settings(dockerSettings)
@@ -361,6 +363,9 @@ lazy val root = project
       tag
     }
   )
+
+// FR-009's one command: the conformance suite against the Scala SDK's reference streamlet.
+addCommandAlias("sdkConformance", "sidecar/testOnly *ConformanceSuite")
 
 addCommandAlias(
   "buildAll",
