@@ -208,8 +208,9 @@ describe both SDKs.
   same.
 - **A pre-release tag.** Nothing of this feature is published: a rehearsal of the binaries'
   release stays a rehearsal.
-- **A JVM too old.** The SDK needs Java 21; a project on an older one fails to compile or resolve
-  with a clear version message, not at run time.
+- **A JVM too old.** The SDK is compiled for Java 21 and says so; a project on an older one fails
+  when the first SDK class is loaded, naming the class version, and the install page and the
+  reference state the floor.
 - **A Scala 3 older than the LTS line.** The SDK is published for Scala 3.3 LTS; a project on an
   older 3.x fails to resolve it, and the install page names the floor.
 
@@ -268,8 +269,8 @@ describe both SDKs.
   only difference), with the same blueprint, the same two tests, a committed descriptor and an
   image holding only the streamlet and the SDK.
 - **FR-013**: CI MUST run the Scala sample's tests and descriptor check, the SDK's fixtures and the
-  conformance run, and the protocol copy check, on every change that can affect them; the sample
-  builds against the SDK's source as a module of the repository's build, so the two cannot drift.
+  conformance run, on every change that can affect them; the sample builds against the SDK's
+  source as a module of the repository's build, so the two cannot drift.
 - **FR-014**: The README MUST show the cart router in Scala beside the Python one, both included
   from the samples' tested code and checked for drift.
 - **FR-015**: The Scala sample MUST run the laptop walkthrough as the Python one does — the

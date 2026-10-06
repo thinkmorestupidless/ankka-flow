@@ -91,6 +91,7 @@ package testkit:
 - `Harness.run` places each pending record by `partitions(key)`, numbers offsets per `(inlet,
   partition)` across runs, and processes one batch per partition in partition order, or several of
   at most `maxRecords`; a failed batch's emits are discarded and recorded in `failures`.
-- The reference streamlet `com.thinkmorestupidless.ankka.flow.sdk.conformance.Conformance`
-  (test scope of `sdk`; served by `ConformanceMain <port>`) behaves by key exactly as
-  `protocol/fixtures/declarations/conformance.md` says.
+- The reference streamlet `com.thinkmorestupidless.ankka.flow.sdk.conformance.Conformance` is
+  part of the SDK, as the Python SDK's is (`ankka_flow._conformance`), so the sidecar's suite can
+  serve it in process; `ConformanceMain <port>` serves it for the suite's remote mode. It behaves
+  by key exactly as `protocol/fixtures/declarations/conformance.md` says.

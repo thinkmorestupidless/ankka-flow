@@ -19,7 +19,7 @@ does everything that depends on it.
 
 ```bash
 sbt 'sidecar/testOnly *ConformanceSuite'          # the in-process target is now the Scala SDK
-sbt 'sdk/Test/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceMain 9010' &
+sbt 'sdk/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceMain 9010' &
 sbt 'sidecar/testOnly *ConformanceSuite' -Dflow.conformance.target=127.0.0.1:9010
 ```
 
@@ -47,8 +47,9 @@ Scala block is current.
 ## Tier 4 — the release
 
 With the four secrets set, tag `v0.5.0-rc.1` on the branch and observe that `sdk-scala`, `images`,
-`sdk-python` and `marketplace` are skipped (a pre-release publishes none of it) and the binaries'
-jobs run as before. The real proof is the first release tag: `ankka-flow-sdk_3` and
+`sdk-python`, `marketplace` and now `homebrew` are skipped (a pre-release publishes nothing and
+touches no formula) and the release page and the four binaries' legs run as before. The real proof
+is the first release tag: `ankka-flow-sdk_3` and
 `ankka-flow-protocol_3` on Maven Central at the release's version, resolvable by a fresh sbt
 project that compiles the cart router and runs its tests; `sample-cart-router-scala` in the
 registry. Before that, the local rehearsal:

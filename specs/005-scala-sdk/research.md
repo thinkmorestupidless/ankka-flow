@@ -231,6 +231,22 @@ The README's "A streamlet" section shows the router in Scala and Python, both in
 the ankka-flow tutorial's steps are identical but for one code block and one run command, so tabs
 keep one page.
 
+## R13. A pre-release tag no longer writes the tap's formula
+
+**What is there**: feature 004's `homebrew` job runs on every tag, so its rc tags wrote
+`Formula/ankka-flow.rb` to the public tap and the formula was removed by hand after each. With
+`ankka-flow` 0.4.0 released, an rc would replace the formula every Homebrew user installs with one
+pointing at assets the rehearsal then deletes.
+
+**Decision**: `homebrew` is gated on a release tag like `images`, `sdk-python` and `marketplace`;
+`release-page` and `cli-native` still run on a pre-release, so a rehearsal still proves the
+binaries. The tap path itself was proven by 004's three rc tags and needs no rehearsal. The
+workflow's comment, `CLAUDE.md`'s rule and feature 004's research note say so; T032 relies on it.
+
+**Alternatives considered**: writing an rc formula under another name — a second formula to keep
+out of readers' way; cleaning the tap after each rc by hand — what 004 did, and the mistake this
+feature would make first.
+
 ## R12. Not carried: the Python SDK's test-only break switch
 
 The Python server reads `ANKKA_FLOW_BREAK` to misbehave on purpose, which proved that the

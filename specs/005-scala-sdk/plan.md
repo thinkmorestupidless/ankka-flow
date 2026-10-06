@@ -117,12 +117,12 @@ sdks/scala/
 │   ├── Serve.scala                         # the gRPC server, Conversation, the worker pool
 │   └── graph.scala                         # Delta and its validation, as the Python graph module
 ├── src/main/scala/.../sdk/testkit/Harness.scala
+├── src/main/scala/.../sdk/conformance/{Conformance,ConformanceMain}.scala   # the reference streamlet every SDK ships, and its server
 ├── src/test/scala/.../sdk/
 │   ├── DescriptorFixturesSuite.scala       # the six fixtures, byte for byte
 │   ├── HarnessSuite.scala                  # the scala-streamlet.feature scenarios
 │   ├── ServeSuite.scala                    # discovery, start, concurrency, supersession, stop
-│   ├── DescriptorMainSuite.scala           # write, --check, refusals
-│   └── conformance/{Conformance,ConformanceMain}.scala   # the reference streamlet and its server
+│   └── DescriptorMainSuite.scala           # write, --check, refusals
 └── README.md
 sidecar/src/test/scala/.../conformance/ConformanceTarget.scala   # InProcess serves the SDK's Conformance
 samples/cart-router-scala/
@@ -190,6 +190,9 @@ Found while planning, and written back to the spec and the features:
 - The Python sample's compose file and `streamlet.conf` run the Scala router unchanged (R8), so
   the laptop walkthrough is one set of files for two languages.
 - Publishing needs four secrets on this repository (contracts/build-and-release.md).
+- Feature 004's `homebrew` job wrote the tap's formula on a pre-release tag too, which would
+  replace the public formula with one pointing at assets a rehearsal deletes. It is gated on a
+  release tag from this feature on (R13), so T032's rc tag touches nothing public.
 
 ## Not in this feature
 

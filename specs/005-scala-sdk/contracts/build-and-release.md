@@ -23,7 +23,7 @@ and `protocolVersion`. The sample has `JavaAppPackaging`, `DockerPlugin`, the re
 sbt sdk/test                                   # fixtures, harness, server, Descriptor main
 sbt 'sidecar/testOnly *ConformanceSuite'       # in-process: the Scala SDK's reference streamlet
 sbt sdkConformance                             # alias of the line above (FR-009's one command)
-sbt 'sdk/Test/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceMain 9010'   # serve the reference for -Dflow.conformance.target
+sbt 'sdk/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceMain 9010'   # serve the reference for -Dflow.conformance.target
 sbt cartRouterScala/test cartRouterScala/descriptorCheck
 sbt cartRouterScala/descriptor                 # rewrite samples/cart-router-scala/flow/descriptor.json
 sbt cartRouterScala/run                        # the router on 127.0.0.1:9010, for the laptop loop
