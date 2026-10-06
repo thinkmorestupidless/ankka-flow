@@ -116,6 +116,111 @@ silently lose, failing with the name of the first thing missing.
 ### skill
 *Proposed.* A rendering of the documentation for a coding agent, published with the plugin.
 
+## The SDKs
+
+### SDK
+*Proposed.* A library a streamlet is written against, which writes the streamlet's descriptor,
+serves it to the sidecar and ships a harness. One per language.
+
+### Python SDK
+*Proposed.* The SDK for streamlets written in Python, published to PyPI.
+
+### Scala SDK
+*Proposed.* The SDK for streamlets written in Scala, published to Maven Central.
+
+### streamlet author
+*Proposed.* A person writing a streamlet against an SDK.
+
+### process
+*Proposed.* The method of a streamlet that takes one batch and returns the emits to make.
+
+### batch
+*Proposed.* The records of one inlet partition that a streamlet processes in one call, in offset
+order.
+
+### record
+*Proposed.* What a topic holds and a streamlet sees: bytes, an optional key, and ordered headers.
+
+### emit
+*Proposed.* A record a streamlet sends to one of its outlets while processing a batch.
+
+### inlet
+*Proposed.* A port a streamlet reads from.
+
+### outlet
+*Proposed.* A port a streamlet writes to.
+
+### parameter
+*Proposed.* A typed setting a streamlet declares, given a value by the deploy-time configuration or
+its default.
+
+### partition
+*Proposed.* One of the ordered parts of a topic; records with one key are in one partition.
+
+### harness
+*Proposed.* An SDK's stand-in for Kafka and the sidecar in a test: it batches and partitions
+records as the sidecar does and records what a streamlet emits, fails or skips.
+
+### sidecar
+*Proposed.* The container the platform runs beside every streamlet process, owning everything
+Kafka and driving the streamlet through the protocol.
+
+### protocol
+*Proposed.* The conversation between the sidecar and a streamlet process: discovery, start,
+batches, emits, acknowledgements, failures and stop.
+
+### discovery
+*Proposed.* The sidecar's first question to a process: what streamlet it is, answered with the
+descriptor.
+
+### process port
+*Proposed.* The loopback port a streamlet process serves on, given to it by the platform.
+
+### descriptor fixtures
+*Proposed.* The six declared streamlets whose descriptor bytes every SDK must reproduce.
+
+### fixture streamlet
+*Proposed.* One of the six streamlets the descriptor fixtures describe.
+
+### conformance suite
+*Proposed.* The repository's suite that drives a served streamlet through every conversation the
+sidecar can have with it.
+
+### reference streamlet
+*Proposed.* The streamlet the conformance suite drives, behaving by each record's key.
+
+### cart router
+*Proposed.* The sample streamlet: one inlet of cart events, two outlets, one parameter.
+
+### cart event
+*Proposed.* A record the cart router reads, keyed by cart id, carrying a total.
+
+### laptop walkthrough
+*Proposed.* The first-streamlet tutorial's run: Kafka and the sidecar in containers, the streamlet
+on the host, events produced and verified.
+
+### Maven Central
+*Proposed.* The registry Scala and Java artifacts are published to and resolved from by version.
+
+### registry
+*Proposed.* Where a release publishes images.
+
+### pre-release tag
+*Proposed.* A tag with a hyphen in it, whose release publishes only the release page, the native
+binaries and the formula.
+
+### release tag
+*Proposed.* A tag without a hyphen, whose release publishes everything.
+
+### CI
+*Proposed.* The checks that run on every change to the repository.
+
+### docs build
+*Proposed.* The command that checks every documentation page and builds the site.
+
+### coding agent
+*Proposed.* A model writing code with the skills as its documentation.
+
 ## Everyday words
 
 a, an, the, and, or, of, on, for, to, from, with, without, in, into, by, at, as, is, are, was,
@@ -138,4 +243,12 @@ began, assume, assumes, assumed, tells, told, tell, look, looks, looking, find, 
 reaches, reached, gets, get, got, within, minute, minutes, second, seconds, started, starting,
 start, count, cases, case, applied, apply, using, use, uses, used, read, reads, reading, written,
 write, writes, writing, work, done, does, did, do, task, rendered, against, executable, through, whose, included, requested, requests, draws,
-needs, time, asks, failure, replacement, anything, waits, ankka's
+needs, time, asks, failure, replacement, anything, waits, ankka's, declared, declares, declaring, declaration, implements, tests, test, Scala, Kafka, author,
+key, keys, headers, value, values, bytes, unchanged, held, put, chosen, order, count, size, more,
+than, default, configured, typed, came, emits, emitted, emitting, fails, failing, failed, recorded,
+records, problem, equals, equal, served, serve, serving, port, suite, deployed, starts, beside,
+reach, compares, compared, copy, two, shared, gives, give, containers, host, produced, topic, input,
+wires, wired, routed, affect, round, trip, manual, fresh, project, naming, compiles, compile,
+uploaded, upload, rest, equivalent, coordinates, named, looks, pass, change, build, drift,
+lines, line, written, writes, write, reads, read, shows, shown, show, learn, kept, sends, sent,
+once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting,
