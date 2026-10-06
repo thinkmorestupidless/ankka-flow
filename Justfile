@@ -91,6 +91,10 @@ docs:
 docs-sync:
     uv run --project tools/docs docs sync
 
+# Refresh the README's included samples (the docs tool reads only the pages; this reads the README).
+readme-sync:
+    uv run --project tools/docs python tools/docs/readme_includes.py
+
 # The site with live reload, while writing.
 docs-serve:
     uv run --project tools/docs docs serve

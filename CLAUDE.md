@@ -96,7 +96,8 @@ The ones that bite:
   markers, named by `<!-- include: path#name -->` before the block (no `#name` includes the whole
   file); `just docs-sync` copies them and `docs check` fails on drift. Markers live in the three
   samples (`cart-router`, `checkout-feed`, `checkout-graph`), never in `protocol/` (the SDKs copy it
-  byte for byte).
+  byte for byte). `README.md` includes the same way, refreshed by `just readme-sync` and checked by
+  the docs workflow, since the docs tool reads only the pages.
 - **The RPC table on `reference/protocol.md` is generated** from `protocol/src/main/protobuf`.
 - **A new page goes in `mkdocs.yml`'s `nav` and in a skill's `pages:` list**, or `docs check` fails.
 - **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and protocol

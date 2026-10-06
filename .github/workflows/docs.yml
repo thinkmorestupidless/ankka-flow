@@ -27,6 +27,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv run --project tools/docs docs build
+      # The README shows the same tested code the pages do, between the same markers; the docs tool
+      # does not read it, so this does.
+      - run: uv run --project tools/docs python tools/docs/readme_includes.py --check
       - uses: actions/upload-pages-artifact@v5
         with:
           path: target/docs-site
