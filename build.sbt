@@ -52,7 +52,13 @@ lazy val forwardedTestSwitches = Seq(
   "flow.conformance.only",
   "flow.mutation",
   "flow.fixtures.regenerate",
-  "flow.benchmarks"
+  "flow.benchmarks",
+  // The CLI's suite against a native binary instead of in process (cli/native-smoke.sh is the
+  // other check): the path of the binary to spawn.
+  "flow.cli.binary",
+  // `on`: the CLI's suite under GraalVM's tracing agent, to regenerate the image's reachability
+  // configuration. The test JVM must then be a GraalVM.
+  "flow.cli.agent"
 )
 
 lazy val commonSettings = Seq(
@@ -228,21 +234,56 @@ lazy val cliBuildInfo = Seq(
 lazy val cli = project
   .in(file("cli"))
   .dependsOn(blueprint, crd, protocol)
-  .enablePlugins(JavaAppPackaging, BuildInfoPlugin)
+  .enablePlugins(JavaAppPackaging, BuildInfoPlugin, GraalVMNativeImagePlugin)
   .settings(commonSettings)
   .settings(cliBuildInfo)
   .settings(noDocs)
   .settings(
-    name                 := "ankka-flow-cli",
-    publish / skip       := true,
-    Compile / mainClass  := Some("com.thinkmorestupidless.ankka.flow.cli.Main"),
+    name                := "ankka-flow-cli",
+    publish / skip      := true,
+    Compile / mainClass := Some("com.thinkmorestupidless.ankka.flow.cli.Main"),
+    // `sbt cli/stage` is the JVM build: cli/target/universal/stage/bin/flow. On a JDK 24 or later
+    // Scala 3's lazy vals draw a deprecation warning about sun.misc.Unsafe on every command; the
+    // native build has the same flag in its native-image.properties, so the two print the same.
     executableScriptName := "flow",
+    Universal / javaOptions += "-J-Dsun.misc.unsafe.memory.access=allow",
+    // `sbt cli/GraalVMNativeImage/packageBin` is the CLI as one executable with no JVM to install:
+    // cli/target/graalvm-native-image/flow. It needs a GraalVM's `native-image` on PATH or named by
+    // GRAALVM_HOME. What the image must carry — the flags, and what fabric8, Jackson and the YAML
+    // writer reach by name — is declared in the jar under META-INF/native-image, so any native
+    // build of this jar gets it right. cli/native-smoke.sh and the suite with -Dflow.cli.binary
+    // are what prove it did.
+    GraalVMNativeImage / name := "flow",
+    graalVMNativeImageCommand := sys.env
+      .get("GRAALVM_HOME")
+      .map(home => s"$home/bin/native-image")
+      .getOrElse("native-image"),
+    // JavaAppPackaging brings DockerPlugin, and root's docker:publishLocal aggregates to every
+    // project that has the task. The CLI is a binary on a machine, never an image.
+    Docker / publishLocal := {},
+    Docker / publish      := {},
+    // -Dflow.cli.agent=on: the suite under GraalVM's tracing agent, which writes what the CLI
+    // reached by reflection, as resources and by serialization into cli/target/native-image-agent;
+    // the pruned result is committed under META-INF/native-image. The test JVM must be a GraalVM
+    // (`sbt -java-home $GRAALVM_HOME …`).
+    Test / javaOptions ++= (
+      if (sys.props.get("flow.cli.agent").contains("on"))
+        Seq(
+          "-agentlib:native-image-agent=config-merge-dir=" +
+            (ThisBuild / baseDirectory).value / "cli" / "target" / "native-image-agent"
+        )
+      else Seq.empty
+    ),
+    // The Vert.x client comes in through `crd`'s fabric8 as well, so the exclusion is the
+    // project's, not one dependency's.
+    excludeDependencies += ExclusionRule("io.fabric8", "kubernetes-httpclient-vertx"),
     libraryDependencies ++= Seq(
       decline,
-      fabric8,
+      fabric8ForCli,
+      fabric8JdkHttp,
       jacksonScala,
       jacksonYaml,
-      logback,
+      slf4jNop,
       fabric8ServerMock % Test
     )
   )

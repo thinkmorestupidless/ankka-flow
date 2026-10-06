@@ -13,6 +13,8 @@ jobs:
     outputs:
       scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name != 'pull_request' }}
       sdk-python: ${{ steps.filter.outputs.sdk-python == 'true' || github.event_name != 'pull_request' }}
+      features: ${{ steps.filter.outputs.features == 'true' || github.event_name != 'pull_request' }}
+      cli-native: ${{ steps.filter.outputs.cli-native == 'true' || github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -34,6 +36,27 @@ jobs:
               - 'operator/**'
               - 'cli/**'
               - 'kustomization/**'
+            # The living features, the glossary their steps are written in, the specs that name
+            # their scenarios, and the extension that checks them against each other.
+            features:
+              - *workflow
+              - '.github/features-check.sh'
+              - 'features/**'
+              - 'GLOSSARY.md'
+              - 'specs/**'
+              - '.specify/extensions/bdd/**'
+            # The CLI and what it is built from; a change to any of them can change what the
+            # native image must carry.
+            cli-native:
+              - *workflow
+              - 'build.sbt'
+              - 'project/**'
+              - 'protocol/**'
+              - 'blueprint/**'
+              - 'crd/**'
+              - 'cli/**'
+              - 'samples/*/blueprint.conf'
+              - 'samples/*/flow/**'
             sdk-python:
               - *workflow
               - 'build.sbt'
@@ -42,6 +65,20 @@ jobs:
               - 'sidecar/**'
               - 'sdks/python/**'
               - 'samples/**'
+
+  # The living features, in the glossary's words, and the specs that name their scenarios, checked
+  # against each other by speckit-bdd: an undefined word, a refused synonym, two scenarios that give
+  # one situation different outcomes, a spec naming a scenario no feature has. The script reads the
+  # extension's own config, so it checks what `/speckit-bdd-check` checks, with the same checker, and
+  # it fails when nothing was read.
+  features:
+    needs: changes
+    if: needs.changes.outputs.features == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: .github/features-check.sh
 
   build:
     needs: changes
@@ -59,6 +96,29 @@ jobs:
       - uses: sbt/setup-sbt@v1
       - run: sbt -Dflow.cluster.tests=off scalafmtCheckAll scalafmtSbtCheck compile test
       - run: sbt mutationCheck
+
+  # The CLI as a native binary, on one platform: the image built, the CLI's own suite run against
+  # the binary instead of in process, and the smoke script with its byte-for-byte diff against the
+  # JVM build. The other three platforms are built at a release; a reachability entry missing from
+  # cli/src/main/resources/META-INF/native-image is found here, not at the tag.
+  cli-native:
+    needs: changes
+    if: needs.changes.outputs.cli-native == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: "25"
+          distribution: graalvm-community
+          cache: sbt
+          github-token: ${{ github.token }}
+      - uses: sbt/setup-sbt@v1
+      - run: sbt cli/stage cli/GraalVMNativeImage/packageBin
+      - run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow"
+      - run: cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
 
   sdk-python:
     needs: changes

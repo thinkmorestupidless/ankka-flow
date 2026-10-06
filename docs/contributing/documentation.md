@@ -67,7 +67,8 @@ drifted. Without `#region` the whole file is included. The regions this document
 three samples — the cart router, the checkout feed and the checkout graph (each one's streamlet source
 and its tests) — and the samples' blueprints, Dockerfiles and configuration files are included whole,
 so every sample shown is one the build runs. Markers never go in `protocol/`, which the SDKs copy byte
-for byte.
+for byte. The repository's README includes the cart router and its blueprint the same way; the docs
+tool reads only the pages, so `just readme-sync` refreshes the README and the docs workflow checks it.
 
 ## The generated table
 

@@ -84,7 +84,7 @@ extra:
 nav:
   - Home: index.md
   - Get started:
-      - Build the tools: get-started/install.md
+      - Install the tools: get-started/install.md
       - Your first streamlet: get-started/first-streamlet.md
       - Deploy to a local cluster: get-started/deploy-locally.md
       - Work with a coding agent: get-started/coding-agents.md
@@ -126,3 +126,4 @@ nav:
   - Contributing:
       - Writing documentation: contributing/documentation.md
       - Adding a language SDK: contributing/language-sdks.md
+      - Build ankka-flow from source: contributing/building.md

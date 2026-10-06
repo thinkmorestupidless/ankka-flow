@@ -3,15 +3,19 @@
 > Every command, option, message and exit code of the flow CLI, which verifies blueprints, generates the AnkkaFlow resource and requests resets.
 
 Source: https://flow.ankka.cloud/reference/cli/
-`flow` verifies a blueprint against streamlet descriptors, writes the `AnkkaFlow` resource the operator
-runs, and asks the operator to reset a pipeline's consumer groups. It needs a JVM. Nothing installs it:
-from a clone of the repository, `just cli` (or `sbt cli/stage`) builds it at
-`cli/target/universal/stage/bin/flow`, and that directory goes on your `PATH`:
+`flow` verifies a blueprint, writes the `AnkkaFlow` resource a cluster runs, and requests resets. It is
+one native executable with no JVM to install, for macOS (Apple silicon and Intel) and Linux (x64 and
+arm64). Homebrew installs it from the tap ankka's CLI ships through; every release also attaches an
+archive and a checksum per platform, and [Install the tools](../get-started/install.md) covers both:
 
 ```bash
-just cli
-export PATH="$PWD/cli/target/universal/stage/bin:$PATH"
+brew install thinkmorestupidless/tap/ankka-flow
+flow version
 ```
+
+`flow version` prints the CLI's version and the protocol version it writes, for example
+`flow 0.1.0, protocol 1.0`. A platform outside the four builds the CLI from source;
+[Build ankka-flow from source](../contributing/building.md) covers that build, which behaves the same.
 
 | exit code | meaning |
 |---|---|

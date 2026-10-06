@@ -17,6 +17,14 @@ class VerifySuite extends munit.FunSuite:
     assertEquals(r.code, 1, s"expected a refusal; out: ${r.out} err: ${r.err}")
     fragments.foreach(f => assert(r.err.contains(f), s"stderr lacks '$f':\n${r.err}"))
 
+  test("a binary switch naming no executable is refused, not quietly run in process") {
+    val failure = intercept[IllegalArgumentException] {
+      CliFixtures.Driver.from(Some("/nowhere/flow"))
+    }
+    assert(failure.getMessage.contains("flow.cli.binary"), failure.getMessage)
+    assertEquals(CliFixtures.Driver.from(None), CliFixtures.Driver.InProcess)
+  }
+
   test("the cart pipeline verifies, and the version command answers") {
     val r = verify(cart)
     assertEquals(r.code, 0, r.err)

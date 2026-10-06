@@ -57,14 +57,13 @@ object ResourceWriter:
     )
     resource.setApiVersion(AnkkaFlowDefinition.apiVersion)
     resource.setKind(AnkkaFlowDefinition.kind)
-    resource.getMetadata.setLabels(
-      java.util.Map.of(
-        "app.kubernetes.io/managed-by",
-        "ankka-flow",
-        s"${AnkkaFlowDefinition.domain}/pipeline",
-        pipeline
-      )
-    )
+    // A sorted map, not `Map.of`: the JDK's immutable maps iterate in an order salted per JVM
+    // run, so the labels came out in either order and two generations of one blueprint could
+    // differ byte for byte. A resource is written the same way every time.
+    val labels = new java.util.TreeMap[String, String]
+    labels.put("app.kubernetes.io/managed-by", "ankka-flow")
+    labels.put(s"${AnkkaFlowDefinition.domain}/pipeline", pipeline)
+    resource.getMetadata.setLabels(labels)
     resource
 
   private def topic(t: VerifiedTopic, verified: Verify.Verified, pipeline: String): TopicSpec =

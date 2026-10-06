@@ -13,7 +13,7 @@ id, and two outlets. It sends each event to the `review` outlet when the cart's 
 threshold, and to the `valid` outlet otherwise. This tutorial runs it on a laptop: Kafka and the sidecar
 in Docker, the streamlet itself as an ordinary Python process on the host.
 
-You need Docker, sbt and uv; [Build the tools](install.md) lists them.
+You need Docker, sbt and uv; [Install the tools](install.md) lists them.
 
 ## The streamlet
 

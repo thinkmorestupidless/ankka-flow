@@ -31,6 +31,11 @@ cli:
     sbt cli/stage
     @echo 'export PATH="{{justfile_directory()}}/cli/target/universal/stage/bin:$PATH"'
 
+# Build the `flow` CLI as one native executable (needs a GraalVM: GRAALVM_HOME, or native-image on PATH),
+# run the CLI's suite against it, and smoke-test it against the JVM build: cli/target/graalvm-native-image/flow.
+cli-native:
+    sbt cli/stage cli/GraalVMNativeImage/packageBin 'cli/test' -Dflow.cli.binary={{justfile_directory()}}/cli/target/graalvm-native-image/flow && cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
+
 # The sidecar and operator images, and the sample's.
 images:
     sbt docker:publishLocal sampleImage
@@ -86,6 +91,14 @@ docs:
 docs-sync:
     uv run --project tools/docs docs sync
 
+# Refresh the README's included samples (the docs tool reads only the pages; this reads the README).
+readme-sync:
+    uv run --project tools/docs python tools/docs/readme_includes.py
+
 # The site with live reload, while writing.
 docs-serve:
     uv run --project tools/docs docs serve
+
+# The living features, the glossary and the specs that name their scenarios, checked against each other.
+features:
+    .github/features-check.sh

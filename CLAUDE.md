@@ -33,7 +33,11 @@ sbt 'sidecar/testOnly *ConformanceSuite'                                        
 sbt 'sidecar/testOnly *ConformanceSuite' -Dflow.conformance.target=127.0.0.1:9010    # a process on a port
 sbt mutationCheck                           # SC-006: the commit-after-write suite must FAIL with the commit moved first
 sbt docker:publishLocal sampleImage         # ankka-flow-sidecar, ankka-flow-operator, sample-cart-router
-sbt cli/stage                               # cli/target/universal/stage/bin/flow
+sbt cli/stage                               # cli/target/universal/stage/bin/flow (the JVM build)
+just cli-native                             # the native flow: GraalVM 25 (GRAALVM_HOME), cli/target/graalvm-native-image/flow
+sbt cli/test -Dflow.cli.binary=$PWD/cli/target/graalvm-native-image/flow   # the same suite, driven through the binary
+cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow   # what an image silently loses, byte-compared
+sbt -java-home $GRAALVM_HOME cli/test -Dflow.cli.agent=on   # regenerate the image's reachability metadata (then prune; see its README)
 sbt -Dflow.fixtures.regenerate=on 'protocol/testOnly *DescriptorFixturesSuite'   # rewrite protocol/fixtures/descriptors
 cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
 sbt scalafmtAll scalafmtSbt                 # format; `just hooks` installs the pre-commit check
@@ -68,6 +72,10 @@ counting, and the failure looks like the platform's.
 | No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image` and Neo4j's from `-Dflow.neo4j.image`; built images use `BuildInfo.version` with `+` → `-`. |
 | Warning-free compile | `-Wunused:all` is on. Generated ScalaPB sources are silenced by `-Wconf` on `src_managed` only. |
 | Built-in stages are declared values | A stage the sidecar runs with no process has its descriptor in `protocol/.../Builtins.scala`, its canonical JSON in `protocol/fixtures/builtin/`, and a blueprint names it `builtin/<name>`. The sidecar refuses a deployed descriptor that is not its own built-in. |
+| One `flow`, two drivers | `cli/test` is one suite; `-Dflow.cli.binary=<path>` runs every case through that executable instead of in process. No case is skipped or conditional on the driver. The release runs it against each platform's binary and byte-compares the smoke outputs with the JVM build. |
+| The native image's metadata is generated, then pruned | `cli/src/main/resources/META-INF/native-image/…/reachability-metadata.json` comes from the tracing agent (`-Dflow.cli.agent=on`, GraalVM as the JVM) and is cut down to what `flow` uses; its README says how. Regenerate on a fabric8 or Jackson upgrade, a new command, or a binary failing on a class or resource it cannot find. |
+| The tap is shared | `thinkmorestupidless/homebrew-tap` holds ankka's formula and ours. The `homebrew` job clones it, writes `Formula/ankka-flow.rb` and pushes an ordinary commit; never a subtree split or a force push, which would erase the other. A pre-release tag (with a hyphen) publishes the binaries and the formula only. |
+| No logback in the CLI | `flow` logs nothing: `slf4j-nop`, so no classpath logging configuration has to survive the native image. fabric8 runs over `kubernetes-httpclient-jdk` there, with the Vert.x client excluded (Netty cannot be built as it comes). |
 | Not in this build | pekko-http, pekko-grpc, Avro, spray-json, ScalaTest. If a change needs one, it is a design change: update `research.md` first. |
 
 ## Documentation
@@ -88,11 +96,26 @@ The ones that bite:
   markers, named by `<!-- include: path#name -->` before the block (no `#name` includes the whole
   file); `just docs-sync` copies them and `docs check` fails on drift. Markers live in the three
   samples (`cart-router`, `checkout-feed`, `checkout-graph`), never in `protocol/` (the SDKs copy it
-  byte for byte).
+  byte for byte). `README.md` includes the same way, refreshed by `just readme-sync` and checked by
+  the docs workflow, since the docs tool reads only the pages.
 - **The RPC table on `reference/protocol.md` is generated** from `protocol/src/main/protobuf`.
 - **A new page goes in `mkdocs.yml`'s `nav` and in a skill's `pages:` list**, or `docs check` fails.
 - **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and protocol
   rules; change them in the same commit.
+
+## Living features
+
+**Specs from feature 004 on keep their acceptance scenarios in living features**, not in the spec.
+The [speckit-bdd](https://github.com/thinkmorestupidless/speckit-bdd) extension and preset are
+installed under `.specify/`: `/speckit-specify` writes a spec whose acceptance scenarios *name*
+scenarios, the `after_specify` hook runs `/speckit-bdd-features` to write them as Gherkin under
+`features/<area>/` with every word they use in the root `GLOSSARY.md`, and the `before_clarify` hook
+runs `/speckit-bdd-check`, which turns undefined words, refused synonyms, contradictions and untraced
+requirements into clarification questions. `specs-from: "004"` in
+`.specify/extensions/bdd/bdd-config.yml` leaves specs 001–003 as they were written. `just features`
+(and CI's `features` job) runs the same checker from the same config, and fails when it read nothing.
+The checker runs through `uvx`, so `uv` must be on `PATH`. Glossary terms follow
+`docs/reference/glossary.md` where the docs already define a word.
 
 ## Carried code
 

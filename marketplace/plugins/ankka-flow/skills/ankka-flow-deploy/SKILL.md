@@ -1,6 +1,6 @@
 ---
 name: ankka-flow-deploy
-description: Install ankka-flow on Kubernetes and deploy, configure, rebuild, observe and troubleshoot pipelines — the flow CLI (verify, generate, reset, version), the AnkkaFlow resource and its status, the operator and its settings, Kafka cluster Secrets, deploy-time overrides with --conf and images, managed topic creation, rollouts per streamlet, the sidecar's environment, probes and metrics, consumer lag, PartitionStalled and the operator's events, and resetting consumer groups to the earliest offset. Use when the task names flow verify/generate/reset, an AnkkaFlow resource, the operator, kind, kubectl, a Kafka cluster Secret, lag, a stalled partition, or a pipeline that is not Ready. Also the built-in Neo4j merge sink, with its connection Secret, refusals, metrics and readiness, compacted delta topics, TopicNotCompacted, and rebuilding a graph from its delta topic.
+description: Install the flow CLI with Homebrew or from a release archive, install ankka-flow on Kubernetes, and deploy, configure, rebuild, observe and troubleshoot pipelines — the flow CLI (verify, generate, reset, version), the AnkkaFlow resource and its status, the operator and its settings, Kafka cluster Secrets, deploy-time overrides with --conf and images, managed topic creation, rollouts per streamlet, the sidecar's environment, probes and metrics, consumer lag, PartitionStalled and the operator's events, and resetting consumer groups to the earliest offset. Use when the task names flow verify/generate/reset, an AnkkaFlow resource, the operator, kind, kubectl, a Kafka cluster Secret, lag, a stalled partition, or a pipeline that is not Ready. Also the built-in Neo4j merge sink, with its connection Secret, refusals, metrics and readiness, compacted delta topics, TopicNotCompacted, and rebuilding a graph from its delta topic.
 ---
 
 # Deploying and operating ankka-flow pipelines
@@ -57,6 +57,12 @@ the streamlet's container and the sidecar.
    `edge:<id>`; otherwise the batch fails and the partition stalls with
    `key '<found>' is not this delta's element key '<expected>'` or `no key; …`. Records with no value
    are delete markers: passed over and counted in `ankka_flow_stage_delete_markers_total`.
+13. **`flow` is installed, not built.** `brew install thinkmorestupidless/tap/ankka-flow`, the tap
+   ankka's CLI ships through (the two coexist), or a release's
+   `ankka-flow-cli-<version>-<platform>.tar.gz` for `macos-arm64`, `macos-x64`, `linux-arm64` or
+   `linux-x64`, verified with `shasum -a 256 -c <archive>.sha256`; one native binary, no JVM.
+   `flow version` prints `flow <version>, protocol <major>.<minor>`. Another platform, or a change to
+   ankka-flow, builds from source with sbt.
 
 ## Troubleshooting order
 
@@ -71,6 +77,8 @@ and both the writer and the topic's old records have to be replaced.
 
 ## Mistakes to check for
 
+- A guide or script that builds `flow` from source instead of installing it, or a `cli/target/…`
+  path where `flow` on the `PATH` belongs.
 - A sidecar image, Kafka address or credential written into the resource or the streamlet's image.
 - `flow reset` against running streamlets, or scaling the Deployment directly instead of `replicas`.
 - Expecting the operator to change an existing managed topic's partitions.
@@ -91,7 +99,7 @@ Open the one a task needs; each is one topic and stands alone.
 
 ### Get started
 
-- `references/get-started/install.md` — Install what ankka-flow's build needs, then build the flow CLI, the sidecar and operator images, and the sample streamlet's image from source.
+- `references/get-started/install.md` — Install the flow CLI with Homebrew or from a release archive, pull or build the sidecar, operator and sample images, and set up the Python SDK.
 - `references/get-started/deploy-locally.md` — Install the operator and a development Kafka on a kind cluster, deploy the sample cart router as a pipeline with flow generate and kubectl, and watch it become Ready.
 
 ### Concepts
