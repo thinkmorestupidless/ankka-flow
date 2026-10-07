@@ -31,6 +31,12 @@ cluster through a kubeconfig, not on a control plane with a login and roles, so 
 allowed to touch — and on which cluster — has to be said explicitly, or an agent working in a
 project would act on whatever cluster the developer's shell happened to point at.
 
+## Clarifications
+
+### Session 2026-10-07
+
+- Q: How does a project name the cluster its tools may touch? → A: A project file, `flow.toml`, that `flow init` writes with the kind defaults (`context = "kind-ankka"`, `namespace = "<project name>"`) and `flow mcp` reads from the directory it is started in, so every client gets the same cluster; without the file, or with it empty, every cluster tool refuses.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - The documentation and the pure commands, as tools (Priority: P1)
@@ -123,8 +129,10 @@ changes nothing; the docs build is clean.
 
 ### Edge Cases
 
-- **No cluster named.** Every cluster tool refuses with a message saying how to name one; the
-  pure tools and the docs still work.
+- **No cluster named.** No `flow.toml`, or one naming no context: every cluster tool refuses with
+  a message saying what to write in `flow.toml`; the pure tools and the docs still work.
+- **`flow mcp` started outside a project.** There is no `flow.toml` where it started, so it is a
+  documentation and verification server only, and says so on standard error.
 - **A cluster named that the kubeconfig does not hold.** The server starts; each cluster tool
   refuses naming the context it could not find.
 - **The cluster is unreachable.** A cluster tool answers with the client's own error as a tool
@@ -167,9 +175,10 @@ changes nothing; the docs build is clean.
 
 **Tools on a cluster**
 
-- **FR-007**: A cluster tool MUST act only on the Kubernetes context and namespace the server was
-  told to use when started; with none named, every cluster tool MUST refuse, saying how to name
-  one, and the server MUST still serve everything else.
+- **FR-007**: A cluster tool MUST act only on the Kubernetes context and namespace the project
+  file `flow.toml` names, read from the directory `flow mcp` is started in; with no file, or with
+  neither named in it, every cluster tool MUST refuse, saying what to write there, and the server
+  MUST still serve everything else.
 - **FR-008**: Tools MUST list the pipelines in the namespace with their phase; read one pipeline's
   status, conditions and recent events; read the process or sidecar container's recent logs of one
   streamlet; and read the consumer lag per inlet of one pipeline.
@@ -180,7 +189,9 @@ changes nothing; the docs build is clean.
 **Connecting**
 
 - **FR-010**: A project written by `flow init` MUST hold `.mcp.json` naming `flow mcp`, so Claude
-  Code opened in it connects with no configuration.
+  Code opened in it connects with no configuration, and `flow.toml` naming the kind cluster the
+  documentation sets up (`kind-ankka`) and the project's own namespace, so a fresh project's tools
+  work there and a person pointing at another cluster edits one file.
 - **FR-011**: `flow mcp install` MUST connect Claude Code for the person or for a project, or
   Claude Desktop, by merging one `ankka-flow` entry into the client's settings, leaving every other
   entry as found, leaving an existing `ankka-flow` entry unless told to replace it, and changing
@@ -201,8 +212,9 @@ changes nothing; the docs build is clean.
 - **server**: `flow mcp`, serving the protocol over standard input and output for one client.
 - **tool**: one operation the server offers, with a description, an input schema and hints.
 - **resource**: one documentation page, addressed by its path.
-- **named cluster**: the Kubernetes context and namespace the server was started with, the only
-  ones its cluster tools touch.
+- **named cluster**: the Kubernetes context and namespace the project file `flow.toml` names, the
+  only ones the server's cluster tools touch.
+- **project file**: `flow.toml` in the project's root, holding the named cluster.
 - **connection file**: `.mcp.json`, or the client's settings, naming the server's command.
 
 ## Success Criteria *(mandatory)*
@@ -225,10 +237,9 @@ changes nothing; the docs build is clean.
 - **ankka's server, re-pointed.** The protocol handling — a hand-written server over standard
   input and output with no library, tool hints, docs built in as resources, `install` delegating
   to the client's own command — follows `ankka mcp`; the tools are `flow`'s and the cluster's.
-- **The cluster is named at start.** The connection file passes the context and namespace to
-  `flow mcp` as arguments; `flow init` writes the file with placeholders the README says how to
-  fill, so a fresh project's server has no cluster until the person names one. Alternatives — a
-  project file, the kubeconfig's current context — are settled in clarification.
+- **The cluster is named in the project.** `flow.toml` holds it (clarified), so every client
+  connected to the project's server touches the same cluster; the kubeconfig's current context is
+  never used, because an agent would then act on whatever the shell pointed at.
 - **Reads through the Kubernetes API.** Status, events, logs and lag come from the cluster as
   `kubectl` reads them; lag is the sidecar's own metric, read through the pod.
 - **Apply is `kubectl apply`'s shape.** The tool creates or updates the resource server-side; the

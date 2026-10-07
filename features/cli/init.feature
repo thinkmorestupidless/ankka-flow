@@ -87,4 +87,4 @@ Feature: flow init starts a streamlet project
     Given a project written by "flow init"
     When Claude Code is opened in it
     Then it connects to "flow mcp" with no configuration
-    And the README says how to name the cluster the tools may touch
+    And the project file names the kind cluster the documentation sets up, and the project's own namespace

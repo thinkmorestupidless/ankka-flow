@@ -314,7 +314,11 @@ The coding agent's side of the Model Context Protocol: what connects to the serv
 Code or Claude Desktop.
 
 ### named cluster
-The Kubernetes context and namespace "flow mcp" was started with: the only cluster its tools touch.
+The Kubernetes context and namespace the project file names: the only cluster "flow mcp"'s tools
+touch.
+
+### project file
+"flow.toml" in a project's root, naming the cluster the project's tools may touch.
 
 ### connection file
 The file naming the server's command for a client: ".mcp.json" in a project, or the client's settings.
@@ -351,4 +355,4 @@ reach, compares, compared, copy, two, shared, gives, give, containers, host, pro
 wires, wired, routed, affect, round, trip, manual, fresh, project, naming, compiles, compile,
 uploaded, upload, rest, equivalent, coordinates, named, looks, pass, change, build, drift,
 lines, line, written, writes, write, reads, read, shows, shown, show, learn, kept, sends, sent,
-once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON, starting, digit, may, id, client, initializes, initialized, session, newest, offered, schema, answers, answer, among, Markdown, continues, reached, phase, conditions, recent, container, asked, consumer, lag, created, updated, sent, draws, marked, read-only, settings, entry, dry, run, Claude, Code, touch, Protocol, Model, Context, abilities, kubectl, apply, applied, verified, verifies, calls, namespace, searches, title, exist, result, logs, lines, Desktop, connects, connected, speaks, description, generate, verify, reset, images, list, get,
+once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON, starting, digit, may, id, client, initializes, initialized, session, newest, offered, schema, answers, answer, among, Markdown, continues, reached, phase, conditions, recent, container, asked, consumer, lag, created, updated, sent, draws, marked, read-only, settings, entry, dry, run, Claude, Code, touch, Protocol, Model, Context, abilities, kubectl, apply, applied, verified, verifies, calls, namespace, searches, title, exist, result, logs, lines, Desktop, connects, connected, speaks, description, generate, verify, reset, images, list, get, sets, up, kind,

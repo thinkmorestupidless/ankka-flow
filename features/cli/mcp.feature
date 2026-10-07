@@ -33,9 +33,9 @@ Feature: flow mcp serves the platform to a coding agent
     And the session continues
 
   Scenario Outline: a cluster tool acts only on the cluster the project names
-    Given "flow mcp" started with no cluster named
+    Given "flow mcp" started in a project whose project file names no cluster
     When the client calls the <tool> tool
-    Then the tool refuses, saying how to name a cluster
+    Then the tool refuses, saying what to write in the project file
     And no cluster is reached
 
     Examples:
