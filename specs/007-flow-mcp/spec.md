@@ -36,6 +36,7 @@ project would act on whatever cluster the developer's shell happened to point at
 ### Session 2026-10-07
 
 - Q: How does a project name the cluster its tools may touch? → A: A project file, `flow.toml`, that `flow init` writes with the kind defaults (`context = "kind-ankka"`, `namespace = "<project name>"`) and `flow mcp` reads from the directory it is started in, so every client gets the same cluster; without the file, or with it empty, every cluster tool refuses.
+- Q: Which cluster reads does the server offer? → A: All four — list, get (status, conditions, events), logs of the process or sidecar container, and lag — with lag read from the sidecar's metrics endpoint through the pod, as the observe page has a person do by hand.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -240,8 +241,9 @@ changes nothing; the docs build is clean.
 - **The cluster is named in the project.** `flow.toml` holds it (clarified), so every client
   connected to the project's server touches the same cluster; the kubeconfig's current context is
   never used, because an agent would then act on whatever the shell pointed at.
-- **Reads through the Kubernetes API.** Status, events, logs and lag come from the cluster as
-  `kubectl` reads them; lag is the sidecar's own metric, read through the pod.
+- **Reads through the Kubernetes API.** Status, events and logs come from the cluster as
+  `kubectl` reads them; lag is the sidecar's own metric (clarified), scraped from each streamlet
+  pod's sidecar through the API server's port-forward, as the observe page has a person do.
 - **Apply is `kubectl apply`'s shape.** The tool creates or updates the resource server-side; the
   operator does the rest.
 - **The docs are the plugin's pages.** The same Markdown the site and the skills are built from,
