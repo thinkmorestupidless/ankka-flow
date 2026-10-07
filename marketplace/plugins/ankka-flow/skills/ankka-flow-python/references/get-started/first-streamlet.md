@@ -1,20 +1,127 @@
 # Your first streamlet
 
-> Run the sample cart router, in Scala or Python, on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
+> Start a streamlet project with flow init, in Scala or Python — test it, check its descriptor, verify its blueprint and run it beside the sidecar on a laptop — then watch the cart router survive a restart.
 
 Source: https://flow.ankka.cloud/get-started/first-streamlet/
+`flow init` writes a streamlet project that builds, tests, checks its descriptor and runs beside the
+sidecar, in Scala or in Python. This tutorial starts one, runs it on a laptop, and then uses the cart
+router sample to show what the sidecar does when a streamlet fails mid-stream.
+
+You need `flow`, Docker, and the language's build tool: sbt and a JDK 21 for Scala, uv for Python.
+[Install the tools](install.md) lists them.
+
+## Start a project
+
+**Scala**
+
+```bash
+flow init greeter
+cd greeter
+```
+
+**Python**
+
+```bash
+flow init greeter -l python
+cd greeter
+```
+
+The project's streamlet reads JSON objects from the topic `greeter.in`, adds a `greeting` field — its
+parameter of the same name, `hello, ankka-flow` unless the pipeline sets it — and writes them to
+`greeter.out`, keeping each record's key and headers. A value that is not a JSON object fails its
+batch.
+
+| File | What it is |
+|---|---|
+| the streamlet, its entry point and its test | under `src/` (and `tests/` for Python) |
+| `flow/descriptor.json` | the streamlet's descriptor, committed |
+| `flow/streamlet.conf` | the sidecar's configuration for the laptop |
+| `blueprint.conf` | the pipeline: an input topic something else writes, an output topic it owns |
+| `docker-compose.yml` | Kafka and the sidecar, for the laptop |
+| `k8s/in-cluster.conf` | deploy-time configuration for a kind cluster |
+| `build.sbt`, or `pyproject.toml` and a `Dockerfile` | the build and the image |
+| `README.md`, `.gitignore`, `.github/workflows/ci.yml` | the commands, and CI for the tests and the descriptor check |
+| `.claude/skills/` | the ankka-flow skills, for a coding agent |
+
+The project depends on the SDK of the same release as the `flow` that wrote it, and its compose file
+runs that release's sidecar image.
+
+## Test it, check its descriptor, verify its blueprint
+
+**Scala**
+
+```bash
+sbt test
+sbt descriptorCheck
+flow verify blueprint.conf --descriptors flow
+```
+
+**Python**
+
+```bash
+uv sync && uv run pytest -q
+uv run descriptor --check
+flow verify blueprint.conf --descriptors flow
+```
+
+The tests use the SDK's harness: no Kafka, no sidecar. The descriptor is what the blueprint is
+verified against and what the sidecar compares with the running process; the check fails when the
+committed file differs from what the streamlet declares, and `sbt descriptor` or `uv run descriptor`
+rewrites it.
+
+## Run it on a laptop
+
+Kafka and the sidecar run in containers and the streamlet runs on the host, where the sidecar dials it
+on port 9010. There is no operator on a laptop, so the topics are created by hand:
+
+```bash
+docker compose up -d
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic greeter.in --partitions 3
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic greeter.out --partitions 3
+```
+
+The first command may print connection warnings while Kafka starts, then create the topic. Start the
+streamlet:
+
+**Scala**
+
+```bash
+sbt stage && target/universal/stage/bin/greeter &
+```
+
+**Python**
+
+```bash
+uv run python -m greeter.main &
+```
+
+Send it a record and read the output topic:
+
+```bash
+echo 'k-1:{"id": 1}' | docker compose exec -T kafka /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 --topic greeter.in --property parse.key=true --property key.separator=:
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic greeter.out --from-beginning --property print.key=true --timeout-ms 10000
+```
+
+The consumer prints `k-1` and `{"id": 1}` with its greeting. Stop the streamlet with `kill %1` and the
+containers with `docker compose down`. The project's README has the same commands, and how to build
+its image and deploy it to a cluster.
+
+## What the sidecar does: the cart router
+
 The cart router is a streamlet with one inlet of cart events, keyed by cart id, and two outlets. It
 sends each event to the `review` outlet when the cart's total is above a threshold, and to the `valid`
 outlet otherwise. It is written twice, in Scala in `samples/cart-router-scala` and in Python in
 `samples/cart-router`; the two declare the same streamlet, so one blueprint and one sidecar
-configuration serve both. This tutorial runs it on a laptop: Kafka and the sidecar in Docker, the
-streamlet itself as an ordinary process on the host. Each step shows both languages; follow one.
+configuration serve both. It comes with scripts that send fifty events and check every promise the
+sidecar makes, which the steps below use to kill the router mid-stream. Run them from a clone of the
+repository; the Kafka and sidecar files and the scripts are in `samples/cart-router` and serve both
+languages.
 
-You need Docker, sbt and uv, and for Scala a JDK 21; [Install the tools](install.md) lists them. The
-Kafka and sidecar files, and the scripts that send and check events, are in `samples/cart-router`
-and serve both languages.
-
-## The streamlet
+### The streamlet
 
 The streamlet declares its ports and parameter and implements `process`, which receives one batch of
 records and returns the emits to make:
@@ -101,7 +208,7 @@ if __name__ == "__main__":
     serve(CartRouter())
 ```
 
-## Test it without Kafka
+### Test it without Kafka
 
 Build the sidecar image once, from the repository root:
 
@@ -129,7 +236,7 @@ The tests use the SDK's harness, which calls `process` with batches it builds an
 protocol's rules. No Kafka, sidecar or network is involved. [Test a streamlet](../build/testing.md)
 describes the harness.
 
-## Check the descriptor
+### Check the descriptor
 
 **Scala**
 
@@ -153,7 +260,7 @@ single record. The check fails when the committed file differs from the declarat
 samples' descriptors declare the same streamlet and differ only in the SDK that wrote them, which the
 sidecar does not compare.
 
-## Start Kafka and the sidecar
+### Start Kafka and the sidecar
 
 ```bash
 cd samples/cart-router      # for either language
@@ -168,7 +275,7 @@ operator writes that file; on a laptop it is committed beside the compose file.
 The sidecar looks for the streamlet on `host.docker.internal:9010` and keeps asking until it answers,
 so the two can start in either order.
 
-## Run the streamlet and send it events
+### Run the streamlet and send it events
 
 **Scala**
 
@@ -194,7 +301,7 @@ The sidecar subscribes to the input topic, sends batches to the router, writes t
 `cart.valid-carts` and `cart.review-carts`, and commits the input offsets only once the broker has
 confirmed every write.
 
-## Kill it mid-stream
+### Kill it mid-stream
 
 **Scala**
 
@@ -220,7 +327,7 @@ headers arrived intact. It reports repeats separately: delivery is at least once
 emits were written but whose offsets were not yet committed when the router died is delivered again. A
 repeat never reorders a cart. [Delivery and failure](../concepts/delivery.md) explains why.
 
-## Clean up
+### Clean up
 
 ```bash
 kill %1

@@ -23,3 +23,6 @@ needed it:
 - `-H:+AddAllCharsets` in `native-image.properties`: every `CliResetSuite` case failed against the
   binary with `UnsupportedCharsetException: UTF-32BE` from snakeyaml-engine's `YamlUnicodeReader`
   while fabric8 read the kubeconfig. A charset is not reflection, so the agent cannot record it.
+- `ankka-flow/templates/**` in the resources: `flow init`'s templates, read by name from each
+  language's `index.txt`. The agent records them only for the languages a case renders, and a
+  template file no case reads would be silently missing from the binary; the glob takes them all.

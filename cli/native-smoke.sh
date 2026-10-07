@@ -81,6 +81,33 @@ grep -q 'reset failed: Operation: \[get\] *for kind: \[AnkkaFlow\]\|cannot reach
 if grep -q 'Exception' "$work/reset.err"; then fail "reset answered with an exception: $(head -3 "$work/reset.err")"; fi
 echo "reset      the client loaded the kubeconfig and tried 127.0.0.1:1"
 
+# ── init: the templates are inside the binary ────────────────────────────────
+# `flow init` reads its templates as resources; a template file the image left out is a project
+# missing a file, so each project is checked for the files every one must have, its blueprint is
+# verified against its descriptor by the binary itself, and — given the JVM build — the two trees
+# must be identical.
+for language in scala python; do
+  out="$work/init/native/$language/greeter"
+  TIMEFORMAT=%R
+  seconds="$( { time "$bin" init greeter --language "$language" --dir "$out" > "$work/init-$language.out" 2>&1; } 2>&1 )" \
+    || fail "init $language failed: $(cat "$work/init-$language.out")"
+  for f in blueprint.conf flow/descriptor.json flow/streamlet.conf docker-compose.yml k8s/in-cluster.conf \
+           README.md .gitignore .github/workflows/ci.yml .claude/skills/ankka-flow/SKILL.md; do
+    [ -f "$out/$f" ] || fail "init $language wrote no $f: the image is missing a template file"
+  done
+  case "$language" in
+    scala)  [ -f "$out/build.sbt" ] && [ -f "$out/src/main/scala/greeter/Greeter.scala" ] || fail "init scala wrote no build or streamlet" ;;
+    python) [ -f "$out/pyproject.toml" ] && [ -f "$out/src/greeter/streamlet.py" ] || fail "init python wrote no build or streamlet" ;;
+  esac
+  if grep -rIl --exclude-dir=.claude '{{[a-z_]*}}' "$out" | grep -v '\.github/' | grep -q .; then
+    fail "init $language left a token: $(grep -rIl --exclude-dir=.claude '{{[a-z_]*}}' "$out" | head -3)"
+  fi
+  "$bin" verify "$out/blueprint.conf" --descriptors "$out/flow" > /dev/null 2> "$work/init-verify.err" \
+    || fail "init $language: its blueprint does not verify: $(cat "$work/init-verify.err")"
+  awk -v s="$seconds" 'BEGIN { exit !(s < 1.0) }' || fail "init $language took ${seconds}s, more than a second"
+  echo "init       $language: $(find "$out" -type f | wc -l | tr -d ' ') files in ${seconds}s, its blueprint verified"
+done
+
 # ── the JVM build, byte for byte ─────────────────────────────────────────────
 if [ -n "$jvm" ]; then
   for sample in samples/*/; do
@@ -93,6 +120,12 @@ if [ -n "$jvm" ]; then
 $(diff "$work/jvm/$name/$f" "$work/native/$name/$f" | head -10)"
     done
   done
-  echo "jvm        every verify and generate output identical to the JVM build's"
+  for language in scala python; do
+    "$jvm" init greeter --language "$language" --dir "$work/init/jvm/$language/greeter" > /dev/null 2>&1 \
+      || fail "the JVM build's init $language failed where the binary's did not"
+    diff -r "$work/init/jvm/$language" "$work/init/native/$language" > "$work/init.diff" \
+      || fail "init $language: the binary's project differs from the JVM build's: $(head -10 "$work/init.diff")"
+  done
+  echo "jvm        every verify and generate output, and both init projects, identical to the JVM build's"
 fi
 echo "native smoke: ok"

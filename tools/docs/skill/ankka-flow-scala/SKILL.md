@@ -66,6 +66,9 @@ process before it starts. The artifact is `"com.thinkmorestupidless" %% "ankka-f
    or `edge:<id>`), which the sink requires, and throws `IllegalArgumentException` for what the sink
    would refuse. `source` keeps the input's headers and tells the Harness the record was not skipped.
    In a test, `graph.read(emitted)` parses a record back and checks its key.
+11. **A project starts with `flow init <name>`.** It writes `build.sbt`, the streamlet, its suite,
+   `flow/descriptor.json` with `sbt descriptor` and `sbt descriptorCheck`, a blueprint, the image
+   build and the laptop compose file, depending on the SDK at the `flow` release that wrote it.
 
 ## Before writing
 
@@ -77,6 +80,8 @@ process before it starts. The artifact is `"com.thinkmorestupidless" %% "ankka-f
 
 ## Mistakes to check for
 
+- Copying a sample instead of running `flow init`, so the SDK points at a path or a version the
+  project does not build against.
 - A Kafka client in streamlet code or in its dependencies; the sidecar owns Kafka.
 - Throwing on a malformed record when the intent was to drop it.
 - Per-partition or per-key state held in memory across batches, or shared mutable state in the

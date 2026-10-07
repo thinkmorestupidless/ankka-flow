@@ -62,6 +62,9 @@ pod's loopback interface.
    ankka's CLI ships through; the two coexist), or a release's `ankka-flow-cli-<version>-<platform>.tar.gz`
    verified with its `.sha256`, for macOS arm64 and x64 and Linux arm64 and x64; no JVM. Building from
    source, with sbt and optionally GraalVM, is for changing ankka-flow or for another platform.
+13. **A project starts with `flow init`.** `flow init <name>` writes a Scala project, `-l python` a
+   Python one: the streamlet, its test, the committed descriptor, a blueprint that verifies, the
+   image build, the laptop compose file and these skills, at the `flow` release's SDK and sidecar.
 
 ## Before answering
 
@@ -74,6 +77,7 @@ pod's loopback interface.
 
 ## Mistakes to check for
 
+- Copying a sample out of the repository to start a project instead of running `flow init`.
 - Proposing Avro, Protobuf or a schema registry for a contract; only JSON by schema name exists.
 - A guide or script that builds `flow` from source instead of installing it, or that asks for a JVM
   to run it.
@@ -98,7 +102,7 @@ Open the one a task needs; each is one topic and stands alone.
 ### Get started
 
 - `references/get-started/install.md` — Install the flow CLI with Homebrew or from a release archive, pull or build the sidecar, operator and sample images, and set up the Python SDK.
-- `references/get-started/first-streamlet.md` — Run the sample cart router, in Scala or Python, on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
+- `references/get-started/first-streamlet.md` — Start a streamlet project with flow init, in Scala or Python — test it, check its descriptor, verify its blueprint and run it beside the sidecar on a laptop — then watch the cart router survive a restart.
 - `references/get-started/deploy-locally.md` — Install the operator and a development Kafka on a kind cluster, deploy the sample cart router as a pipeline with flow generate and kubectl, and watch it become Ready.
 - `references/get-started/coding-agents.md` — Give a coding agent this documentation as skills from the ankka marketplace, or as llms.txt and Markdown pages, and know what each skill carries.
 

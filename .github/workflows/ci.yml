@@ -38,6 +38,10 @@ jobs:
               - 'kustomization/**'
               - 'sdks/scala/**'
               - 'samples/cart-router-scala/**'
+              # flow init's template suite builds a Python project against this SDK, and the
+              # templates carry the plugin's skills.
+              - 'sdks/python/**'
+              - 'marketplace/plugins/ankka-flow/skills/**'
               # The Scala sample runs the Python sample's blueprint and checks the fixture.
               - 'samples/cart-router/blueprint.conf'
             # The living features, the glossary their steps are written in, the specs that name
@@ -61,6 +65,7 @@ jobs:
               - 'cli/**'
               - 'samples/*/blueprint.conf'
               - 'samples/*/flow/**'
+              - 'marketplace/plugins/ankka-flow/skills/**'
             sdk-python:
               - *workflow
               - 'build.sbt'

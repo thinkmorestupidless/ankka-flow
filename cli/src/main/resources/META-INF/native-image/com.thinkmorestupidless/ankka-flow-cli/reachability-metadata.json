@@ -3437,6 +3437,9 @@
     },
     {
       "bundle": "sun.util.logging.resources.logging"
+    },
+    {
+      "glob": "ankka-flow/templates/**"
     }
   ]
 }

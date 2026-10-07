@@ -126,7 +126,7 @@ Open the one a task needs; each is one topic and stands alone.
 
 ### Reference
 
-- `references/reference/cli.md` — Every command, option, message and exit code of the flow CLI, which verifies blueprints, generates the AnkkaFlow resource and requests resets.
+- `references/reference/cli.md` — Every command, option, message and exit code of the flow CLI, which starts streamlet projects, verifies blueprints, generates the AnkkaFlow resource and requests resets.
 - `references/reference/blueprint.md` — Every key of the blueprint file, the HOCON that names a pipeline's streamlets and the topics connecting their ports, and every rule flow verify checks it against.
 - `references/reference/resource.md` — Every field of the AnkkaFlow custom resource and its status, the Kafka cluster Secret, what the operator renders per streamlet, the events it records and the reset annotations.
 - `references/reference/operator.md` — The ankka-flow operator's settings, the namespace and permissions it runs with, and what one reconcile of an AnkkaFlow does, in order.

@@ -132,6 +132,13 @@ cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv
 
 ## What to do with them
 
-- [Your first streamlet](first-streamlet.md) runs the sample on a laptop, with Kafka and the sidecar in
-  containers.
+`flow init` starts a streamlet project of your own, in Scala or Python, with its test, descriptor,
+blueprint, image build and laptop setup:
+
+```bash
+flow init greeter                 # or: flow init greeter -l python
+```
+
+- [Your first streamlet](first-streamlet.md) starts from `flow init`, runs the project on a laptop with
+  Kafka and the sidecar in containers, and then shows the sidecar at work with the sample.
 - [Deploy to a local cluster](deploy-locally.md) runs the same streamlet on kind with the operator.

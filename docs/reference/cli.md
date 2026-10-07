@@ -1,13 +1,14 @@
 ---
 title: CLI
-description: Every command, option, message and exit code of the flow CLI, which verifies blueprints, generates the AnkkaFlow resource and requests resets.
+description: Every command, option, message and exit code of the flow CLI, which starts streamlet projects, verifies blueprints, generates the AnkkaFlow resource and requests resets.
 kind: reference
 related: [reference/blueprint.md, reference/resource.md, deploy/deploy-a-pipeline.md, deploy/configuration.md, deploy/reset.md]
 ---
 
 # CLI
 
-`flow` verifies a blueprint, writes the `AnkkaFlow` resource a cluster runs, and requests resets. It is
+`flow` starts a streamlet project, verifies a blueprint, writes the `AnkkaFlow` resource a cluster runs,
+and requests resets. It is
 one native executable with no JVM to install, for macOS (Apple silicon and Intel) and Linux (x64 and
 arm64). Homebrew installs it from the tap ankka's CLI ships through; every release also attaches an
 archive and a checksum per platform, and [Install the tools](../get-started/install.md) covers both:
@@ -27,7 +28,73 @@ flow version
 | `1` | refused or failed; every problem is on stderr, one per line |
 | `2` | usage error: an unknown command or option, or a missing argument |
 
-`verify` and `generate` need no image, no network and no language runtime. `reset` needs a kubeconfig.
+`init`, `verify` and `generate` need no image, no network and no language runtime. `reset` needs a
+kubeconfig.
+
+## `flow init`
+
+```text
+flow init <name> [--language scala|python] [--dir <directory>] [--package <package>]
+```
+
+Writes a new streamlet project from templates carried inside `flow`; it needs no network and no copy
+of the repository.
+
+| option | default | meaning |
+|---|---|---|
+| `<name>` | — | the streamlet's and the pipeline's name |
+| `--language`, `-l` | `scala` | `scala` or `python` |
+| `--dir` | `<name>` | where to write; it must not exist, or be empty |
+| `--package` | Scala: the name without `-`; Python: the name with `_` for `-` | the Scala package (dotted, lower case) or the Python module |
+
+It refuses, writing nothing and exiting 2, with one line per problem on stderr:
+
+| refused | message |
+|---|---|
+| a name that is not 1–63 of `[a-z0-9-]`, or that starts or ends with `-` | `name '<name>' must be 1-63 of [a-z0-9-], not starting or ending with '-'` |
+| a name longer than 40 characters | `name '<name>' must be at most 40 characters: it becomes the pipeline id` |
+| a name that does not start with a letter | `name '<name>' must start with a letter: it becomes a class, a package and a module` |
+| a Scala package that is not dotted lower-case identifiers | `'<package>' is not a Scala package: …` |
+| a Python module that is not a lower-case identifier, or is a keyword | `'<package>' is not a Python module: …` |
+| a directory that holds files | `<directory> is not empty: flow init writes a new project into an empty or new directory` |
+| a language other than `scala` or `python` | the usage, as for any wrong option |
+
+On success it prints the number of files written and the next commands: change into the directory,
+run the tests, check the descriptor, and `flow verify blueprint.conf --descriptors flow`. It exits 1,
+writing nothing, only if a template would leave a `{{token}}` unreplaced, which the CLI's own tests
+rule out.
+
+The project holds:
+
+| | Scala | Python |
+|---|---|---|
+| the streamlet | `src/main/scala/<package>/<Class>.scala` | `src/<module>/streamlet.py` |
+| its entry point | `src/main/scala/<package>/Main.scala` | `src/<module>/main.py` |
+| its test | `src/test/scala/<package>/<Class>Suite.scala` | `tests/test_streamlet.py` |
+| the build and the image | `build.sbt`, `project/`; `sbt Docker/publishLocal` | `pyproject.toml`, `Dockerfile` |
+| the descriptor command | `sbt descriptor`, `sbt descriptorCheck` | `uv run descriptor`, `uv run descriptor --check` |
+
+and, for both, `flow/descriptor.json`, `flow/streamlet.conf`, `blueprint.conf`, `docker-compose.yml`,
+`k8s/in-cluster.conf`, `README.md`, `.gitignore`, `.github/workflows/ci.yml` and the ankka-flow skills
+under `.claude/skills/`. `<Class>` is the name in UpperCamelCase.
+
+The streamlet has one inlet `in` and one outlet `out`, both JSON with the schema name `<name>.v1`, and
+a string parameter `greeting` (default `hello, ankka-flow`). It adds `"greeting": <greeting>` to each
+JSON object it reads and emits it with the record's key and headers; a value that is not a JSON object
+fails the batch. The blueprint reads the unmanaged topic `<name>.in` and writes the managed topic `out`
+(`<name>.out` in Kafka).
+
+Versions follow the `flow` that wrote the project:
+
+- the Scala project depends on `ankka-flow-sdk` at `flow`'s version;
+- the Python project pins `ankka-flow`, and the committed descriptor names its SDK version, at the
+  release's version — or `0.0.0` from a `flow` built between releases, the version the SDKs report
+  then;
+- `docker-compose.yml` runs `ghcr.io/thinkmorestupidless/ankka-flow-sidecar` at `flow`'s version, with
+  `+` written as `-` (a Docker tag cannot hold `+`).
+
+A project written by a `flow` built from source between releases names a version no registry holds:
+build it against the repository's SDK, or write it with a released `flow`.
 
 ## `flow verify`
 
