@@ -133,6 +133,8 @@ finds every file the JVM build writes; the docs build is clean and the tutorial'
 
 - **A name the protocol refuses** (capitals, a leading or trailing hyphen, longer than 63
   characters, an empty name): refused before anything is written, naming the rule.
+- **A name starting with a digit**: the protocol allows it for a streamlet, but the name also
+  becomes a class, a package and a module, so `flow init` refuses it, naming why.
 - **A package name that is not one** (for Scala, not a dotted lowercase identifier; for Python, not
   a module name): refused, naming the rule.
 - **A target directory that exists and is not empty**: refused; an existing empty directory is

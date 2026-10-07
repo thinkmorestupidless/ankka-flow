@@ -53,6 +53,7 @@ Feature: flow init starts a streamlet project
       | problem                                                  |
       | a name with a capital letter                             |
       | a name longer than sixty-three characters                |
+      | a name starting with a digit                             |
       | a directory to write into that already holds files       |
       | a package for a language that takes none                 |
       | a package that is not a package name                     |
