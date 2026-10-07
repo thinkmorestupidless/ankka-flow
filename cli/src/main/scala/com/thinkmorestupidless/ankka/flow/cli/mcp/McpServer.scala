@@ -157,9 +157,21 @@ private[cli] final class McpServer(
         )
         val arguments = params("arguments").getOrElse(obj())
         val result =
+          // Whatever a tool throws is the tool's failure, never the session's end: the model reads
+          // it and the client keeps its server. Only a fatal error passes.
           try tool.run(arguments)
           catch
             case failure: IllegalArgumentException => ToolResult(failure.getMessage, isError = true)
+            case scala.util.control.NonFatal(failure) =>
+              ToolResult(
+                s"${failure.getClass.getSimpleName}: ${Option(failure.getMessage).getOrElse("")}".trim,
+                isError = true
+              )
+            case failure: LinkageError =>
+              ToolResult(
+                s"${failure.getClass.getSimpleName}: ${Option(failure.getMessage).getOrElse("")}".trim,
+                isError = true
+              )
         Right(
           obj(
             "content" -> arr(obj("type" -> str("text"), "text" -> str(result.text))),

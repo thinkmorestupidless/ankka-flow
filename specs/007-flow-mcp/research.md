@@ -145,3 +145,37 @@ cluster; `flow init`'s page section names the two files.
 - **The sidecar logs path is a mock expectation**: the CRUD double stores no pod logs, so the
   suite answers the log endpoint for each container, and the tool's query (`container`,
   `tailLines`) is what the expectation matches.
+- **V3, the native image, found three things the suite could not**, each on kind with the native
+  binary driving the tools through a scripted client:
+  1. A real kubeconfig carries certificate data; the metadata listed only the kubeconfig-model
+     setters the suite's bare `server:` kubeconfig had reached, and the first cluster tool died on
+     `Cluster.setCertificateAuthorityData`. The kubeconfig model is now registered whole.
+  2. A real API server's answers carry `managedFields`, and a pod list carries the pod model;
+     the suite's double stores neither. The JVM `flow mcp` was run under the tracing agent
+     against kind, driving every cluster tool, and its recordings merged (as a union per class —
+     the first merge kept the older partial entries and dropped the agent's fuller ones).
+  3. `reset_pipeline`'s edit serializes the pipeline through getters no read had reached
+     (`ManagedFieldsEntry.getAdditionalProperties`). Every listed fabric8 model class and `crd`
+     class is now registered whole (`allDeclared*`), 532 of them, which is what a bean needs and
+     ends the chase; the binary is 70 MB.
+- **A tool's crash was the session's end.** `MissingReflectionRegistrationError` is an `Error`,
+  and the server caught `Exception`; the client lost its server with no answer. Any non-fatal
+  throwable and any `LinkageError` from a tool is now a tool result marked as an error.
+- **On kind, with the native binary** (quickstart tier 3): `apply_pipeline` created the pipeline
+  from a `flow init` project (its SDK pinned to this build's version, published locally first, as
+  the README says for a build between releases) and it went Ready; `list_pipelines`,
+  `get_pipeline` (status, topics, the `TopicCreated` event), `pipeline_logs` for both containers,
+  and `pipeline_lag` (three partitions through the port-forward) answered; a record produced to
+  `greeter.in` came out of `greeter.out` with its greeting; `reset_pipeline` was refused while the
+  streamlet ran and accepted once `apply_pipeline` with `replicas = 0` had stopped it; a second
+  `apply_pipeline` updated the resource in place. The cluster's other pipeline was never touched.
+- **The smoke script's JVM diff needs one sbt invocation**: `cli/stage` and the native image built
+  in separate invocations get different dynver timestamps on a dirty tree, and `flow init` writes
+  the version into a project, so the two trees differ in that line. CI and `just cli-native` build
+  both in one invocation.
+- **The whole build from the branch** passed: format checks, every suite (the CLI's 92 cases, both
+  template languages included), `mutationCheck`, the Scala sample's descriptor check, the Python
+  SDK's checks and conformance, `just features` (94 scenarios), `just docs` (41 pages), the README
+  check, and the native binary's smoke. One Kafka suite failed once on a container start-up
+  (`ContainerLaunchException`, before any test ran) and passed on its rerun; nothing it tests was
+  changed.

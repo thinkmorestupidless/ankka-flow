@@ -77,9 +77,9 @@
 
 ## Phase 7: Polish
 
-- [ ] T018 Quickstart tier 3 on kind by hand: `flow init greeter`, the image loaded, Claude Code (or a scripted client) applying, reading status, logs and lag, and resetting; record in `research.md`.
-- [ ] T019 `CLAUDE.md`: the commands (`flow mcp`, the suites) and a rule: the MCP server touches only `flow.toml`'s cluster, stdout is the protocol, the docs in the binary are the build's. Run the whole build (`caffeinate -i sbt scalafmtCheckAll scalafmtSbtCheck test mutationCheck`, the Python checks, `just features`, `just docs`, the README check, `just cli-native`); tick the reviewer's checklist.
-- [ ] T020 "Found during implementation" in `research.md` and the pull request description.
+- [X] T018 Quickstart tier 3 on kind by hand: `flow init greeter`, the image loaded, Claude Code (or a scripted client) applying, reading status, logs and lag, and resetting; record in `research.md`.
+- [X] T019 `CLAUDE.md`: the commands (`flow mcp`, the suites) and a rule: the MCP server touches only `flow.toml`'s cluster, stdout is the protocol, the docs in the binary are the build's. Run the whole build (`caffeinate -i sbt scalafmtCheckAll scalafmtSbtCheck test mutationCheck`, the Python checks, `just features`, `just docs`, the README check, `just cli-native`); tick the reviewer's checklist.
+- [X] T020 "Found during implementation" in `research.md` and the pull request description.
 
 ---
 

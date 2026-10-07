@@ -34,3 +34,19 @@ needed it:
   added them was `sbt -java-home $GRAALVM_HOME cli/test -Dflow.cli.agent=on -Dflow.template.tests=off`.
   `pipeline_lag`'s port-forward is not in the suite (no double serves it); it is proven on kind with
   the native binary.
+- The kubeconfig model (`io.fabric8.kubernetes.api.model.Cluster`, `Context`, `AuthInfo`, their
+  `Named*` wrappers, `Config`, `Preferences`, `NamedExtension`, `ExecConfig`, `ExecEnvVar`,
+  `AuthProviderConfig`) is registered whole (`allDeclared*`), not method by method: the agent
+  records only the setters the suite's kubeconfig exercised (a bare `server`), and the first
+  `flow mcp` tool run against a real kind kubeconfig died on `Cluster.setCertificateAuthorityData`.
+  A kubeconfig's fields are the user's, and any of them may be set.
+- The entries a real API server's answers reach (`ManagedFieldsEntry`, the pod model its lists
+  carry, the port-forward's classes): recorded by running the JVM build's `flow mcp` under the
+  agent against a kind cluster, driving every cluster tool
+  (`JAVA_HOME=$GRAALVM_HOME JAVA_OPTS=-agentlib:native-image-agent=config-output-dir=<dir> flow mcp`),
+  because the suite's double answers with the few fields it stores.
+- Every fabric8 model class and `crd` class the metadata lists is registered whole
+  (`allDeclared*`) rather than by the methods one run happened to reach: Jackson reads and writes
+  them through whichever getters and setters a response or an edit touches (`flow mcp`'s reset
+  edits a pipeline on a real cluster and needed `ManagedFieldsEntry.getAdditionalProperties`,
+  which no earlier run had), and a model bean has no reflection worth hiding.

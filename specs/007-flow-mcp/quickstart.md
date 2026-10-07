@@ -33,12 +33,12 @@ verifies a sample through the tool.
 
 ## Reviewer's checklist
 
-- [ ] stdout carries only the protocol; the terminal notice is on stderr
-- [ ] every tool has a description, a schema and hints; apply and reset are destructive
-- [ ] no cluster tool reads the kubeconfig's current context; all read `flow.toml`
-- [ ] pure tools' answers are byte-equal to the commands' output
-- [ ] every docs page is a resource; the docs in the binary are this build's
-- [ ] `flow init` writes `.mcp.json` and `flow.toml`; `InitSuite`'s index covers them
-- [ ] `install` merges and never overwrites another server
-- [ ] the native smoke script exercises the server
-- [ ] nothing in the SDKs, the sidecar, the operator or the protocol changed
+- [X] stdout carries only the protocol; the terminal notice is on stderr
+- [X] every tool has a description, a schema and hints; apply and reset are destructive
+- [X] no cluster tool reads the kubeconfig's current context; all read `flow.toml`
+- [X] pure tools' answers are byte-equal to the commands' output
+- [X] every docs page is a resource; the docs in the binary are this build's
+- [X] `flow init` writes `.mcp.json` and `flow.toml`; `InitSuite`'s index covers them
+- [X] `install` merges and never overwrites another server
+- [X] the native smoke script exercises the server
+- [X] nothing in the SDKs, the sidecar, the operator or the protocol changed
