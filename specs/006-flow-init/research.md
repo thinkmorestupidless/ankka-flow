@@ -37,7 +37,7 @@ becomes a string in Scala, unreadable and unreviewable.
 | `{{flow_version}}` | the `flow` that wrote it | `0.5.0` |
 | `{{sdk_version}}` | what the SDK reports at that version: `flow_version` for a release, `0.0.0` otherwise | `0.5.0` |
 | `{{protocol_version}}` | the protocol the CLI writes | `1.0` |
-| `{{sbt_version}}` | the sbt this repository builds with, from the build | `1.11.7` |
+| `{{sbt_version}}` | the sbt this repository builds with, from the build | `1.12.15` |
 | `{{native_packager_version}}` | the sbt-native-packager this repository uses, from the build | `1.11.7` |
 
 **Refusals (FR-002)**: the name must pass `DescriptorValidation`'s streamlet-name rule *and* start
