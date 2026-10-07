@@ -36,6 +36,9 @@ becomes a string in Scala, unreadable and unreviewable.
 | `{{module}}` | Python module (`--package`, default the name with `_` for `-`) | `order_greeter` |
 | `{{flow_version}}` | the `flow` that wrote it | `0.5.0` |
 | `{{sdk_version}}` | what the SDK reports at that version: `flow_version` for a release, `0.0.0` otherwise | `0.5.0` |
+| `{{image_version}}` | `flow_version` as a Docker tag (`+` becomes `-`) | `0.5.0` |
+| `{{fingerprint}}` | the contract fingerprint of `<name>.v1` | `…=` |
+| `{{scala_version}}` | the Scala 3 LTS the SDK is published for, from the build | `3.3.8` |
 | `{{protocol_version}}` | the protocol the CLI writes | `1.0` |
 | `{{sbt_version}}` | the sbt this repository builds with, from the build | `1.12.15` |
 | `{{native_packager_version}}` | the sbt-native-packager this repository uses, from the build | `1.11.7` |
@@ -48,9 +51,11 @@ must not exist or be empty. An unknown language is refused by decline.
 
 ## R3. Versions
 
-**Decision**: the project depends on the SDK at `{{flow_version}}` exactly: `"com.thinkmorestupidless"
-%% "ankka-flow-sdk" % "{{flow_version}}"` and `ankka-flow=={{flow_version}}`; the compose file runs
-`ghcr.io/thinkmorestupidless/ankka-flow-sidecar:{{flow_version}}`. The committed descriptor's SDK
+**Decision**: the project depends on the SDK at the CLI's version: `"com.thinkmorestupidless" %%
+"ankka-flow-sdk" % "{{flow_version}}"` and `ankka-flow=={{sdk_version}}` (equal at a release; between
+releases the Python pin is `0.0.0`, the version this repository's Python SDK has in its tree, because
+a dynver version is not a valid Python version); the compose file runs
+`ghcr.io/thinkmorestupidless/ankka-flow-sidecar:{{image_version}}`. The committed descriptor's SDK
 block says `{{sdk_version}}`, which equals what the published SDK of that version reports — its
 version at a release, `0.0.0` from any other build, the same rule the Scala SDK's build info and the
 Python SDK's tree follow. A `flow` built between releases names a version no registry holds; the

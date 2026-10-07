@@ -1,0 +1,38 @@
+{
+  "protocol_version": "{{protocol_version}}",
+  "sdk": {
+    "name": "ankka-flow-scala",
+    "version": "{{sdk_version}}"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "default_value": "hello, ankka-flow",
+        "description": "The greeting added to each record.",
+        "key": "greeting"
+      }
+    ],
+    "description": "Adds a greeting to each JSON object it reads.",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "{{fingerprint}}",
+          "format": "json",
+          "schema_name": "{{name}}.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "{{name}}",
+    "outlets": [
+      {
+        "contract": {
+          "fingerprint": "{{fingerprint}}",
+          "format": "json",
+          "schema_name": "{{name}}.v1"
+        },
+        "name": "out"
+      }
+    ]
+  }
+}

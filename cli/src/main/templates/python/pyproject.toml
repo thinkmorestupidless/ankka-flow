@@ -1,0 +1,25 @@
+[project]
+name = "{{name}}"
+version = "0.1.0"
+description = "An ankka-flow streamlet: adds a greeting to each JSON object it reads."
+requires-python = ">=3.12"
+# The SDK of the ankka-flow release this project was written by; move it with the sidecar image in
+# docker-compose.yml.
+dependencies = ["ankka-flow=={{sdk_version}}"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# `uv run descriptor` writes flow/descriptor.json from this streamlet; `--check` compares.
+[tool.ankka-flow]
+streamlet = "{{module}}.streamlet:{{class}}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{module}}"]
