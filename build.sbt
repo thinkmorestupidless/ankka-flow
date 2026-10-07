@@ -70,7 +70,10 @@ lazy val forwardedTestSwitches = Seq(
   "flow.cli.binary",
   // `on`: the CLI's suite under GraalVM's tracing agent, to regenerate the image's reachability
   // configuration. The test JVM must then be a GraalVM.
-  "flow.cli.agent"
+  "flow.cli.agent",
+  // Which languages' projects `flow init`'s template suite builds: `scala,python` (the default), a
+  // comma list, or `off`.
+  "flow.template.tests"
 )
 
 lazy val commonSettings = Seq(
@@ -318,9 +321,77 @@ lazy val operator = project
   )
 
 lazy val cliBuildInfo = Seq(
-  buildInfoKeys    := Seq[BuildInfoKey](version),
+  // `flow init` writes a Scala project built with this repository's sbt and sbt-native-packager,
+  // so neither drifts from what this build is proven with (feature 006, research R2).
+  buildInfoKeys := Seq[BuildInfoKey](
+    version,
+    BuildInfoKey.action("sbtVersion")(sbtVersion.value),
+    BuildInfoKey.action("scalaLtsVersion")(V.scalaLts),
+    BuildInfoKey.action("nativePackagerVersion") {
+      val plugins = IO.read((ThisBuild / baseDirectory).value / "project" / "plugins.sbt")
+      """"sbt-native-packager"\s*%\s*"([^"]+)"""".r
+        .findFirstMatchIn(plugins)
+        .map(_.group(1))
+        .getOrElse(sys.error("project/plugins.sbt names no sbt-native-packager version"))
+    }
+  ),
   buildInfoPackage := "com.thinkmorestupidless.ankka.flow.cli"
 )
+
+/**
+ * `flow init`'s templates (feature 006, research R1): for each language, `common/` then the
+ * language's own files from cli/src/main/templates, and the ankka-flow plugin's rendered skills as
+ * `.claude/skills/`, copied to `ankka-flow/templates/<language>/` with an `index.txt` — a directory
+ * inside a jar or a native image cannot be listed. The walk is by hand because sbt's resource
+ * filter drops hidden files (.gitignore, .github/, .claude/), and a path written twice fails the
+ * build.
+ */
+/**
+ * The SDK and its protocol, published locally for the template suite's Scala project, when it runs.
+ */
+lazy val templateArtifacts = Def.taskDyn {
+  val scala =
+    sys.props.get("flow.template.tests").forall(v => v.split(',').map(_.trim).contains("scala"))
+  if (scala) Def.task { (protocol / publishLocal).value; (sdk / publishLocal).value; () }
+  else Def.task(())
+}
+
+lazy val initTemplates = Def.task {
+  val root      = (ThisBuild / baseDirectory).value
+  val templates = root / "cli" / "src" / "main" / "templates"
+  val skills    = root / "marketplace" / "plugins" / "ankka-flow" / "skills"
+  val out       = (Compile / resourceManaged).value / "ankka-flow" / "templates"
+  def walk(dir: File): Seq[(File, String)] =
+    if (!dir.exists) Nil
+    else
+      (dir ** AllPassFilter).get
+        .filter(_.isFile)
+        .filterNot(_.getName == ".DS_Store")
+        .map(f => f -> IO.relativize(dir, f).get)
+  IO.delete(out)
+  Seq("scala", "python").flatMap { language =>
+    val sources = walk(templates / "common") ++ walk(templates / language) ++
+      walk(skills).map { case (f, rel) => f -> s".claude/skills/$rel" }
+    val twice =
+      sources.groupBy(_._2).collect { case (rel, fs) if fs.size > 1 => rel -> fs.map(_._1) }
+    if (twice.nonEmpty)
+      sys.error(
+        twice
+          .map { case (rel, fs) =>
+            s"$language template: '$rel' is written by ${fs.mkString(" and ")}"
+          }
+          .mkString("\n")
+      )
+    val copied = sources.map { case (f, rel) =>
+      val target = out / language / rel
+      IO.copyFile(f, target)
+      target
+    }
+    val index = out / language / "index.txt"
+    IO.write(index, sources.map(_._2).sorted.mkString("", "\n", "\n"))
+    copied :+ index
+  }
+}
 
 /** `flow`: verify, generate, reset, version. */
 lazy val cli = project
@@ -331,8 +402,12 @@ lazy val cli = project
   .settings(cliBuildInfo)
   .settings(noDocs)
   .settings(
-    name                := "ankka-flow-cli",
-    publish / skip      := true,
+    name           := "ankka-flow-cli",
+    publish / skip := true,
+    Compile / resourceGenerators += initTemplates.taskValue,
+    // The template suite builds a Scala project against the SDK this build publishes locally.
+    Test / test         := (Test / test).dependsOn(templateArtifacts).value,
+    Test / testOnly     := (Test / testOnly).dependsOn(templateArtifacts).evaluated,
     Compile / mainClass := Some("com.thinkmorestupidless.ankka.flow.cli.Main"),
     // `sbt cli/stage` is the JVM build: cli/target/universal/stage/bin/flow. On a JDK 24 or later
     // Scala 3's lazy vals draw a deprecation warning about sun.misc.Unsafe on every command; the

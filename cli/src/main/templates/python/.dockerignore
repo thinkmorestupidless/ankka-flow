@@ -1,0 +1,7 @@
+.venv
+__pycache__
+.claude
+.github
+flow
+k8s
+tests

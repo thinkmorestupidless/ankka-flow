@@ -38,6 +38,12 @@ object Main:
     )
     case ResetCmd(pipeline: String, streamlets: List[String], namespace: Option[String])
     case VersionCmd
+    case InitCmd(
+        name: String,
+        language: Init.Language,
+        dir: Option[Path],
+        packageName: Option[String]
+    )
 
   private val inputs: Opts[Verify.Inputs] =
     (
@@ -95,8 +101,25 @@ object Main:
   private val version =
     Opts.subcommand("version", "Print the CLI and protocol versions.")(Opts(Cmd.VersionCmd))
 
+  private val init = Opts.subcommand("init", "Write a new streamlet project, in Scala or Python.")(
+    (
+      Opts.argument[String]("name"),
+      Opts
+        .option[String]("language", "scala (the default) or python.", "l")
+        .withDefault("scala")
+        .mapValidated(s => Init.Language.parse(s).toValidatedNel),
+      Opts.option[Path]("dir", "Where to write the project (default: the name).").orNone,
+      Opts
+        .option[String](
+          "package",
+          "The Scala package or the Python module (default: from the name)."
+        )
+        .orNone
+    ).mapN(Cmd.InitCmd.apply)
+  )
+
   private val command = Command("flow", "Verify, generate and operate ankka-flow pipelines.")(
-    verify.orElse(generate).orElse(reset).orElse(version)
+    verify.orElse(generate).orElse(reset).orElse(init).orElse(version)
   )
 
   def run(args: List[String], out: PrintStream, err: PrintStream): Int =
@@ -119,12 +142,38 @@ object Main:
                 )
                 0
           case g: Cmd.GenerateCmd => generateResource(g, out, err)
+          case i: Cmd.InitCmd     => initProject(i, out, err)
           case Cmd.ResetCmd(pipeline, streamlets, namespace) =>
             Reset.kubernetes.request(pipeline, streamlets, namespace) match
               case Left(problems) => refuse(err, problems)
               case Right(id) =>
                 out.println(s"reset requested for '$pipeline': $id")
                 0
+
+  private def initProject(i: Cmd.InitCmd, out: PrintStream, err: PrintStream): Int =
+    val request  = Init.Request(i.name, i.language, i.dir.getOrElse(Path.of(i.name)), i.packageName)
+    val problems = Init.problems(request)
+    if problems.nonEmpty then
+      problems.foreach(err.println)
+      2
+    else
+      Scaffold.write(
+        request.dir,
+        Scaffold.files(i.language, Init.tokens(request, BuildInfo.version))
+      ) match
+        case Left(left) =>
+          left.foreach(err.println)
+          1
+        case Right(written) =>
+          val (test, check) = i.language match
+            case Init.Language.Scala  => ("sbt test", "sbt descriptorCheck")
+            case Init.Language.Python => ("uv run pytest -q", "uv run descriptor --check")
+          out.println(s"wrote ${written.size} files to ${request.dir}")
+          out.println(s"  cd ${request.dir}")
+          out.println(s"  $test")
+          out.println(s"  $check")
+          out.println("  flow verify blueprint.conf --descriptors flow")
+          0
 
   private def refuse(err: PrintStream, problems: Vector[String]): Int =
     problems.foreach(err.println)

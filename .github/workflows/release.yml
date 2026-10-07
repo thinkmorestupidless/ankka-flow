@@ -81,7 +81,9 @@ jobs:
           git diff-index --quiet HEAD -- || { echo "::error::${{ matrix.platform }}: working tree is dirty"; git status --porcelain; exit 1; }
       - run: sbt cli/stage cli/GraalVMNativeImage/packageBin
       - name: The CLI's suite, against the binary
-        run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow"
+        # The template suite builds projects with sbt, uv and Docker, which not every leg's runner
+        # has; the smoke script checks the binary's init on each.
+        run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow" -Dflow.template.tests=off
       - name: Everything a native image can silently lose, compared with the JVM build
         run: cli/native-smoke.sh cli/target/graalvm-native-image/flow "${GITHUB_REF_NAME#v}" cli/target/universal/stage/bin/flow
       - name: Attach the binary to the tag's release

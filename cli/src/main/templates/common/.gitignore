@@ -1,0 +1,14 @@
+# sbt
+target/
+.bsp/
+.metals/
+.bloop/
+# Python
+.venv/
+__pycache__/
+*.pyc
+dist/
+# editors
+.idea/
+.vscode/
+.DS_Store

@@ -44,6 +44,9 @@ what the sidecar compares with the running process before it starts.
    (`node:<id>` or `edge:<id>`), which the sink requires, and raises `ValueError` for what the sink
    would refuse. Passing `record` keeps its headers and tells the Harness the record was not skipped.
    In a test, `ankka_flow.graph.read(emitted)` parses a record back and checks its key.
+10. **A project starts with `flow init <name> -l python`.** It writes `pyproject.toml`, the streamlet,
+   its tests, `flow/descriptor.json`, a blueprint, the `Dockerfile` and the laptop compose file,
+   pinning `ankka-flow` at the `flow` release that wrote it.
 
 ## Before writing
 
@@ -54,6 +57,8 @@ what the sidecar compares with the running process before it starts.
 
 ## Mistakes to check for
 
+- Copying a sample instead of running `flow init`, so the SDK points at a path or a version the
+  project does not build against.
 - `import kafka` or any Kafka client in streamlet code; the sidecar owns Kafka.
 - Raising on a malformed record when the intent was to drop it.
 - Per-partition or per-key state held in memory across batches.
@@ -68,7 +73,7 @@ Open the one a task needs; each is one topic and stands alone.
 
 ### Get started
 
-- `references/get-started/first-streamlet.md` — Run the sample cart router, in Scala or Python, on a laptop — test it with the harness, check its descriptor, start Kafka and the sidecar in containers, and watch records flow through it and survive a restart.
+- `references/get-started/first-streamlet.md` — Start a streamlet project with flow init, in Scala or Python — test it, check its descriptor, verify its blueprint and run it beside the sidecar on a laptop — then watch the cart router survive a restart.
 
 ### Concepts
 

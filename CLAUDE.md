@@ -36,6 +36,8 @@ sbt 'sdk/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceM
 sbt mutationCheck                           # SC-006: the commit-after-write suite must FAIL with the commit moved first
 sbt docker:publishLocal sampleImage         # ankka-flow-sidecar, ankka-flow-operator, sample-cart-router
 sbt cli/stage                               # cli/target/universal/stage/bin/flow (the JVM build)
+sbt 'cli/testOnly *InitSuite'               # flow init: tokens, rendering, every refusal
+sbt 'cli/testOnly *TemplateSuite'           # flow init's projects built against this repo's SDKs; -Dflow.template.tests=scala,python|off
 just cli-native                             # the native flow: GraalVM 25 (GRAALVM_HOME), cli/target/graalvm-native-image/flow
 sbt cli/test -Dflow.cli.binary=$PWD/cli/target/graalvm-native-image/flow   # the same suite, driven through the binary
 cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow   # what an image silently loses, byte-compared
@@ -79,6 +81,7 @@ counting, and the failure looks like the platform's.
 | The native image's metadata is generated, then pruned | `cli/src/main/resources/META-INF/native-image/…/reachability-metadata.json` comes from the tracing agent (`-Dflow.cli.agent=on`, GraalVM as the JVM) and is cut down to what `flow` uses; its README says how. Regenerate on a fabric8 or Jackson upgrade, a new command, or a binary failing on a class or resource it cannot find. |
 | The tap is shared | `thinkmorestupidless/homebrew-tap` holds ankka's formula and ours. The `homebrew` job clones it, writes `Formula/ankka-flow.rb` and pushes an ordinary commit; never a subtree split or a force push, which would erase the other. A pre-release tag (with a hyphen) publishes the release page and the binaries only, and touches no formula, so the tap always installs a release. |
 | No logback in the CLI | `flow` logs nothing: `slf4j-nop`, so no classpath logging configuration has to survive the native image. fabric8 runs over `kubernetes-httpclient-jdk` there, with the Vert.x client excluded (Netty cannot be built as it comes). |
+| `flow init`'s templates are plain files | `cli/src/main/templates/{common,scala,python}` are indexed into the CLI jar with the plugin's skills (copied verbatim, never rendered) and registered in the native image. Rendering is exact `{{token}}` replacement; the descriptor in each template is proven by the template suite running the project's own check. A template change runs the template suite and is a docs change. |
 | Not in this build | pekko-http, pekko-grpc, Avro, spray-json, ScalaTest. If a change needs one, it is a design change: update `research.md` first. |
 
 ## Documentation

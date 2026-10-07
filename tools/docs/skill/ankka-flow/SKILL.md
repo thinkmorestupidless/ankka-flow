@@ -82,6 +82,9 @@ pod's loopback interface.
    ankka's CLI ships through; the two coexist), or a release's `ankka-flow-cli-<version>-<platform>.tar.gz`
    verified with its `.sha256`, for macOS arm64 and x64 and Linux arm64 and x64; no JVM. Building from
    source, with sbt and optionally GraalVM, is for changing ankka-flow or for another platform.
+13. **A project starts with `flow init`.** `flow init <name>` writes a Scala project, `-l python` a
+   Python one: the streamlet, its test, the committed descriptor, a blueprint that verifies, the
+   image build, the laptop compose file and these skills, at the `flow` release's SDK and sidecar.
 
 ## Before answering
 
@@ -94,6 +97,7 @@ pod's loopback interface.
 
 ## Mistakes to check for
 
+- Copying a sample out of the repository to start a project instead of running `flow init`.
 - Proposing Avro, Protobuf or a schema registry for a contract; only JSON by schema name exists.
 - A guide or script that builds `flow` from source instead of installing it, or that asks for a JVM
   to run it.

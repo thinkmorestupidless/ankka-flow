@@ -124,6 +124,40 @@ Then rebuild the binary and run both checks again. Continuous integration builds
 one platform for every change under `cli/`, runs the suite against it and runs the smoke script, so a
 missing entry is found at the pull request rather than at the tag.
 
+## The templates of `flow init`
+
+`flow init` writes projects from templates carried inside the CLI, the native binary included:
+
+- `cli/src/main/templates/common/` holds what both languages share: the blueprint, the sidecar's
+  configuration, the compose file, the cluster configuration and `.gitignore`;
+- `cli/src/main/templates/scala/` and `cli/src/main/templates/python/` hold each language's own files.
+
+The build copies `common/` and then a language's directory into the CLI's jar under
+`ankka-flow/templates/<language>/`, with the ankka-flow plugin's rendered skills as `.claude/skills/`,
+and writes an `index.txt` listing every file, because a directory inside a jar or a native image cannot
+be listed. Hidden files are copied too, and a path written twice fails the build.
+
+Rendering is exact token replacement in every path and file: `{{name}}`, `{{class}}`, `{{package}}`,
+`{{package_path}}`, `{{module}}`, `{{fingerprint}}`, `{{flow_version}}`, `{{sdk_version}}`,
+`{{image_version}}`, `{{protocol_version}}`, `{{scala_version}}`, `{{sbt_version}}` and
+`{{native_packager_version}}`; the last three come from this build, so a generated Scala project uses
+the sbt, sbt-native-packager and Scala 3 LTS this repository is proven with. Nothing else is expanded:
+GitHub's `${{ … }}` passes through. The skills are copied as they are, never rendered, because their
+pages show tokens of their own. Each template's `flow/descriptor.json` is a template too.
+
+The template suite renders each language's project through the CLI and builds it against this
+repository's SDK — the Scala SDK published locally, the Python SDK by path — running the project's
+tests, its descriptor check and its image build, and `flow verify` on its blueprint:
+
+```bash
+sbt 'cli/testOnly *TemplateSuite'                              # both languages
+sbt 'cli/testOnly *TemplateSuite' -Dflow.template.tests=python  # one; `off` for none
+```
+
+A change to a template is checked by that suite, and is a documentation change: the tutorial and the
+CLI reference describe what the projects hold. After changing a template's streamlet, render a project,
+run its descriptor command, and copy the result back with its tokens.
+
 ## Everything else
 
 ```bash
