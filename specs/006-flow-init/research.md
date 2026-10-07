@@ -37,6 +37,8 @@ becomes a string in Scala, unreadable and unreviewable.
 | `{{flow_version}}` | the `flow` that wrote it | `0.5.0` |
 | `{{sdk_version}}` | what the SDK reports at that version: `flow_version` for a release, `0.0.0` otherwise | `0.5.0` |
 | `{{protocol_version}}` | the protocol the CLI writes | `1.0` |
+| `{{sbt_version}}` | the sbt this repository builds with, from the build | `1.11.7` |
+| `{{native_packager_version}}` | the sbt-native-packager this repository uses, from the build | `1.11.7` |
 
 **Refusals (FR-002)**: the name must pass `DescriptorValidation`'s streamlet-name rule *and* start
 with a letter, because it becomes a class, a package and a module; a name starting with a digit is
@@ -108,8 +110,9 @@ languages.
     this build), so the project's dependency resolves as written; run the project's `sbt test
     descriptorCheck Docker/publishLocal` as a subprocess;
   - Python: add `[tool.uv.sources] ankka-flow = { path = "<repo>/sdks/python" }` to the rendered
-    `pyproject.toml`, then `uv sync`, `uv run pytest -q`, `uv run descriptor --check`, and
-    `docker build`;
+    `pyproject.toml`, then `uv sync`, `uv run pytest -q`, `uv run descriptor --check`; the image is
+    built from a second copy rendered at the latest released SDK version, so its unmodified
+    Dockerfile installs from PyPI as a reader's does (a development version is on no registry);
   - both: `flow verify blueprint.conf --descriptors flow` through `Main.run` passes.
 - `native-smoke.sh` gains init for both languages, a file-list check against the index, and a byte
   `cmp -r` against the JVM build's projects (SC-003).

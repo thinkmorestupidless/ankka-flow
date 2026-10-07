@@ -156,7 +156,7 @@ finds every file the JVM build writes; the docs build is clean and the tutorial'
 - **FR-001**: `flow init <name>` MUST write a new streamlet project into `<name>` (or `--dir`), in
   the language `--language` names: `scala` (the default) or `python`.
 - **FR-002**: `flow init` MUST refuse, before writing anything, a name the descriptor rules refuse
-  for a streamlet name, a target directory that exists and is not empty, an invalid `--package`, and
+  for a streamlet name or that does not start with a letter, a target directory that exists and is not empty, an invalid `--package`, and
   any option that does not apply to the chosen language; each refusal MUST name what to change and
   exit non-zero.
 - **FR-003**: The templates MUST be carried inside `flow`, the native binary included; `flow init`
@@ -219,7 +219,7 @@ finds every file the JVM build writes; the docs build is clean and the tutorial'
   records flowing through their own streamlet on a laptop in under ten minutes, following only the
   project's README.
 - **SC-003**: The native binary writes byte-identical projects to the JVM build for both languages.
-- **SC-004**: `flow init` itself completes in under a second, with no network.
+- **SC-004**: The native binary's `flow init` completes in under a second, with no network.
 - **SC-005**: The SDKs, the sidecar, the operator, the protocol and `flow`'s other commands pass the
   suites they pass today.
 
