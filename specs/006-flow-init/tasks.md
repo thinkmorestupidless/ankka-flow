@@ -66,7 +66,7 @@ is a section of `research.md`, "V*n*" an item of its *Verify first* list.
 
 **Independent Test**: `InitSuite`'s refusal cases.
 
-- [ ] T012 [US2] Add to `CLIT/InitSuite.scala` one test per row of `features/cli/init.feature`'s refusal outline and the edge cases: a capital, longer than 63, a digit first, a trailing hyphen, an empty name, a non-empty directory (an existing empty directory is used), `--package` invalid for Scala and for Python, a language that does not exist; each asserts exit 2, the rule in the message, and that the directory was not created or was left as found. Green; commit.
+- [X] T012 [US2] Add to `CLIT/InitSuite.scala` one test per row of `features/cli/init.feature`'s refusal outline and the edge cases: a capital, longer than 63, a digit first, a trailing hyphen, an empty name, a non-empty directory (an existing empty directory is used), `--package` invalid for Scala and for Python, a language that does not exist; each asserts exit 2, the rule in the message, and that the directory was not created or was left as found. Green; commit.
 
 **Checkpoint**: US2 holds.
 

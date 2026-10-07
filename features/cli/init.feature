@@ -55,7 +55,7 @@ Feature: flow init starts a streamlet project
       | a name longer than sixty-three characters                |
       | a name starting with a digit                             |
       | a directory to write into that already holds files       |
-      | a package for a language that takes none                 |
+      | a name longer than a pipeline id may be                  |
       | a package that is not a package name                     |
 
   Scenario: a project runs on a laptop beside the sidecar
