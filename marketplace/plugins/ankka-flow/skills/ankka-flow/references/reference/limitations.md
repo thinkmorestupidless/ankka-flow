@@ -11,9 +11,9 @@ What ankka-flow does not do, stated plainly so a design does not depend on it.
 - **JSON contracts only.** Avro and Protobuf contracts, schema registries and compatibility rules
   between schema versions are not supported, and nothing checks a record against its schema. A new
   contract version is a new schema name.
-- **One SDK.** Python. Any other language can implement the streamlet protocol directly and prove
-  itself with the descriptor fixtures and the conformance suite; see
-  [Adding a language SDK](../contributing/language-sdks.md).
+- **Two SDKs.** [Scala](scala-sdk.md) and [Python](python-sdk.md). Any other language can implement
+  the streamlet protocol directly and prove itself with the descriptor fixtures and the conformance
+  suite; see [Adding a language SDK](../contributing/language-sdks.md).
 - **One built-in stage.** The [Neo4j merge sink](neo4j-merge-sink.md) is the only streamlet that runs
   inside the sidecar, and there is no way to add a stage from outside the sidecar image; every other
   streamlet's logic runs in its own process.
@@ -41,6 +41,8 @@ What ankka-flow does not do, stated plainly so a design does not depend on it.
   partition count, replication or topic configuration on an existing topic is reported, not applied.
 - **No user interface and no hosted control plane.** A pipeline is a Kubernetes resource, operated
   with `kubectl` and the `flow` CLI.
-- **A JVM CLI.** `flow` needs a JVM and is built from source; there is no native binary or package.
+- **Four platforms for the native CLI.** `flow` ships as a native binary for macOS (Apple silicon
+  and Intel) and Linux (x64 and arm64), through Homebrew or a release archive. Anywhere else it is
+  built from source and runs on a JVM. There is no Windows build and no apt, dnf or winget package.
 - **Records under 4 MiB.** A record larger than the protocol's per-record limit, just under 4 MiB
   including its key and headers, fails the stream and stalls its partition.
