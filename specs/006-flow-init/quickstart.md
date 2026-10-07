@@ -32,10 +32,10 @@ just cli-native            # the smoke script now runs init for both languages a
 
 ## Reviewer's checklist
 
-- [ ] nothing in the SDKs, the sidecar, the operator or the protocol changed
-- [ ] each template's files equal its index; the build fails on a path written twice
-- [ ] the project depends on the SDK and the sidecar image at the CLI's version
-- [ ] no `{{` survives rendering
-- [ ] the template suite builds both languages against this repository's SDK
-- [ ] the native binary writes byte-identical projects
-- [ ] the tutorial starts from `flow init`; the CLI reference documents it
+- [X] nothing in the SDKs, the sidecar, the operator or the protocol changed
+- [X] each template's files equal its index; the build fails on a path written twice
+- [X] the project depends on the SDK and the sidecar image at the CLI's version
+- [X] no `{{` survives rendering
+- [X] the template suite builds both languages against this repository's SDK
+- [X] the native binary writes byte-identical projects
+- [X] the tutorial starts from `flow init`; the CLI reference documents it

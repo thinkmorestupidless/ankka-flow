@@ -166,3 +166,13 @@ the index is built; the skills say `flow init` is how a project starts.
   `k-1  {"id":1,"greeting":"hello, ankka-flow"}` (Python) read from `<name>.out`. The first topic
   command can print connection warnings while Kafka starts; the README says so. `sbt run` in the
   background waits on the terminal, so the Scala README stages the app and runs its script.
+- **The native binary** writes both projects in about 0.02 s each, byte-identical to the JVM
+  build's, and verifies their blueprints itself (SC-003, SC-004).
+- **CI**: the template suite needs sbt, uv and Docker, so it runs in the `build` job (given `uv`);
+  the native jobs, whose runners lack Docker or uv, run the CLI suite with
+  `-Dflow.template.tests=off` and check the binary's `init` with the smoke script. The suite
+  generates the Python SDK's protocol code itself, since it is not committed.
+- **The whole build from the branch** passed: format checks, every suite with both template
+  languages (the CLI's 66 cases), `mutationCheck`, the Python SDK's checks and conformance,
+  `just features`, `just docs`, the README check, and a fresh native binary's smoke. Nothing under
+  `sdks/`, `protocol/`, or the sidecar's or operator's sources changed.

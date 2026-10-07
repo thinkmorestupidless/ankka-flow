@@ -104,8 +104,8 @@ is a section of `research.md`, "V*n*" an item of its *Verify first* list.
 
 ## Phase 7: Polish
 
-- [ ] T021 Run the whole build (`caffeinate -i sbt scalafmtCheckAll scalafmtSbtCheck test mutationCheck` with both template languages, the Python SDK's checks, `just features`, `just docs`, the README check, `just cli-native`) and tick the reviewer's checklist in `specs/006-flow-init/quickstart.md`.
-- [ ] T022 Write "Found during implementation" in `specs/006-flow-init/research.md` (each V-item's answer) and the pull request description.
+- [X] T021 Run the whole build (`caffeinate -i sbt scalafmtCheckAll scalafmtSbtCheck test mutationCheck` with both template languages, the Python SDK's checks, `just features`, `just docs`, the README check, `just cli-native`) and tick the reviewer's checklist in `specs/006-flow-init/quickstart.md`.
+- [X] T022 Write "Found during implementation" in `specs/006-flow-init/research.md` (each V-item's answer) and the pull request description.
 
 ---
 
