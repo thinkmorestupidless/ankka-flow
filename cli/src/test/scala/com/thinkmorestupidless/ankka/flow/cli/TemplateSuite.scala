@@ -48,6 +48,30 @@ class TemplateSuite extends munit.FunSuite:
     assertEquals(r.code, 0, r.err)
     dir
 
+  /** The generated workflow: actionlint when it is installed, else the steps it must have. */
+  private def workflowChecked(dir: Path, steps: String*): Unit =
+    val wf = dir.resolve(".github/workflows/ci.yml")
+    val onPath = sys.env
+      .getOrElse("PATH", "")
+      .split(java.io.File.pathSeparator)
+      .exists(d => Files.isExecutable(Path.of(d, "actionlint")))
+    if onPath then sh(dir, "actionlint", wf.toString): Unit
+    val text = Files.readString(wf)
+    steps.foreach(step => assert(text.contains(step), s"the workflow does not run '$step'"))
+
+  /** The image's exposed ports: none, because the sidecar dials the process on loopback. */
+  private def exposesNoPort(image: String): Unit =
+    val ports = sh(
+      Path.of("."),
+      "docker",
+      "image",
+      "inspect",
+      "--format",
+      "{{json .Config.ExposedPorts}}",
+      image
+    ).trim
+    assert(ports == "null" || ports == "{}", s"$image exposes $ports")
+
   private def verified(dir: Path): Unit =
     val r = CliFixtures.flow(
       "verify",
@@ -63,8 +87,10 @@ class TemplateSuite extends munit.FunSuite:
   ) {
     assume(enabled("scala"), "-Dflow.template.tests leaves Scala out")
     val dir = init(Init.Language.Scala)
-    sh(dir, "sbt", "-batch", "test", "descriptorCheck")
+    sh(dir, "sbt", "-batch", "test", "descriptorCheck", "Docker/publishLocal"): Unit
     verified(dir)
+    workflowChecked(dir, "sbt test descriptorCheck")
+    exposesNoPort("order-greeter:0.1.0")
   }
 
   test(
@@ -78,8 +104,31 @@ class TemplateSuite extends munit.FunSuite:
       Files.readString(dir.resolve("pyproject.toml")) +
         s"""\n[tool.uv.sources]\nankka-flow = { path = "$sdk", editable = true }\n"""
     )
-    sh(dir, "uv", "sync", "-q")
-    sh(dir, "uv", "run", "pytest", "-q")
-    sh(dir, "uv", "run", "descriptor", "--check")
+    sh(dir, "uv", "sync", "-q"): Unit
+    sh(dir, "uv", "run", "pytest", "-q"): Unit
+    sh(dir, "uv", "run", "descriptor", "--check"): Unit
     verified(dir)
+    workflowChecked(dir, "uv run pytest -q", "uv run descriptor --check")
   }
+
+  /**
+   * The Python image installs the SDK from PyPI, which holds released versions only; a project
+   * rendered at the latest release builds as a reader's does, with its Dockerfile unchanged.
+   */
+  test("a Python project's image builds from its own Dockerfile, at a released SDK") {
+    assume(enabled("python"), "-Dflow.template.tests leaves Python out")
+    val dir     = Files.createTempDirectory("init-python-image").resolve("order-greeter")
+    val request = Init.Request("order-greeter", Init.Language.Python, dir, None)
+    Scaffold.write(
+      dir,
+      Scaffold.files(Init.Language.Python, Init.tokens(request, TemplateSuite.ReleasedSdk))
+    ) match
+      case Left(problems) => fail(problems.mkString("\n"))
+      case Right(_)       => ()
+    sh(dir, "docker", "build", "-q", "-t", "order-greeter-python:test", "."): Unit
+    exposesNoPort("order-greeter-python:test")
+  }
+
+object TemplateSuite:
+  /** The latest SDK release on PyPI and Maven Central, for the image a reader's project builds. */
+  val ReleasedSdk = "0.4.1"
