@@ -24,3 +24,8 @@ Feature: The documentation says install, and contributors still build
     Given the skills rendered from the documentation
     When they describe getting started
     Then they say install, not build
+
+  Scenario: the first-streamlet tutorial starts from flow init
+    Given the first-streamlet tutorial
+    When a reader follows it
+    Then its first command after installing "flow" is "flow init"
