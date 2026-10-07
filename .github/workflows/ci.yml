@@ -103,6 +103,10 @@ jobs:
           java-version: '21'
           cache: sbt
       - uses: sbt/setup-sbt@v1
+      # flow init's template suite builds a Python project with uv.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
       - run: sbt -Dflow.cluster.tests=off scalafmtCheckAll scalafmtSbtCheck compile test
       - run: sbt mutationCheck
       # The Scala sample: its committed descriptor is what it declares, and its image builds.
@@ -128,7 +132,9 @@ jobs:
           github-token: ${{ github.token }}
       - uses: sbt/setup-sbt@v1
       - run: sbt cli/stage cli/GraalVMNativeImage/packageBin
-      - run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow"
+      # The template suite builds projects with sbt, uv and Docker; the smoke script checks the
+      # binary's init instead.
+      - run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow" -Dflow.template.tests=off
       - run: cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
 
   sdk-python:

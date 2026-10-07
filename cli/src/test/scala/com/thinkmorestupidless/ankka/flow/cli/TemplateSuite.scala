@@ -99,6 +99,8 @@ class TemplateSuite extends munit.FunSuite:
     assume(enabled("python"), "-Dflow.template.tests leaves Python out")
     val dir = init(Init.Language.Python)
     val sdk = CliFixtures.repoRoot.resolve("sdks/python")
+    // The SDK's generated protocol code is not committed; generate it from its copy of the protocol.
+    sh(sdk, "uv", "run", "python", "scripts/proto.py"): Unit
     Files.writeString(
       dir.resolve("pyproject.toml"),
       Files.readString(dir.resolve("pyproject.toml")) +
