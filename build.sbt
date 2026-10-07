@@ -356,6 +356,26 @@ lazy val templateArtifacts = Def.taskDyn {
   else Def.task(())
 }
 
+/**
+ * The documentation inside `flow` (feature 007, research R2): every page of docs/ copied to
+ * `ankka-flow/docs/<path>` with an `index.txt`, so `flow mcp` serves the pages of the version it
+ * was built from, offline.
+ */
+lazy val docsPages = Def.task {
+  val docs = (ThisBuild / baseDirectory).value / "docs"
+  val out  = (Compile / resourceManaged).value / "ankka-flow" / "docs"
+  IO.delete(out)
+  val pages = (docs ** "*.md").get.map(f => f -> IO.relativize(docs, f).get).sortBy(_._2)
+  val copied = pages.map { case (f, rel) =>
+    val target = out / rel
+    IO.copyFile(f, target)
+    target
+  }
+  val index = out / "index.txt"
+  IO.write(index, pages.map(_._2).mkString("", "\n", "\n"))
+  copied :+ index
+}
+
 lazy val initTemplates = Def.task {
   val root      = (ThisBuild / baseDirectory).value
   val templates = root / "cli" / "src" / "main" / "templates"
@@ -405,6 +425,7 @@ lazy val cli = project
     name           := "ankka-flow-cli",
     publish / skip := true,
     Compile / resourceGenerators += initTemplates.taskValue,
+    Compile / resourceGenerators += docsPages.taskValue,
     // The template suite builds a Scala project against the SDK this build publishes locally.
     Test / test         := (Test / test).dependsOn(templateArtifacts).value,
     Test / testOnly     := (Test / testOnly).dependsOn(templateArtifacts).evaluated,

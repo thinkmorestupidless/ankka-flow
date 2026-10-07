@@ -26,3 +26,5 @@ needed it:
 - `ankka-flow/templates/**` in the resources: `flow init`'s templates, read by name from each
   language's `index.txt`. The agent records them only for the languages a case renders, and a
   template file no case reads would be silently missing from the binary; the glob takes them all.
+- `ankka-flow/docs/**` in the resources: the documentation pages `flow mcp` serves, read by name
+  from `index.txt`; the glob takes every page, whichever a case happened to read.

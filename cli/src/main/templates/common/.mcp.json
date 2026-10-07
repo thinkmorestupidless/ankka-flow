@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "ankka-flow": { "command": "flow", "args": ["mcp"] }
+  }
+}

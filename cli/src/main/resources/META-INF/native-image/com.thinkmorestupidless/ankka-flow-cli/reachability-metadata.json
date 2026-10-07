@@ -3440,6 +3440,9 @@
     },
     {
       "glob": "ankka-flow/templates/**"
+    },
+    {
+      "glob": "ankka-flow/docs/**"
     }
   ]
 }

@@ -1,0 +1,4 @@
+# The cluster `flow mcp`'s tools may touch: nothing else is ever used, whatever kubectl points at.
+# `kind-ankka` is the kind cluster ankka-flow's `just up` sets up; change both for another cluster.
+context   = "kind-ankka"
+namespace = "{{name}}"

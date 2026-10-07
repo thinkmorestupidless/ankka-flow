@@ -3,17 +3,8 @@ package com.thinkmorestupidless.ankka.flow.cli
 import java.io.PrintStream
 import java.nio.file.{Files, Path}
 
-import scala.sys.process.{Process, ProcessLogger}
-import scala.util.Try
-
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.thinkmorestupidless.ankka.flow.blueprint.{
-  BlueprintProblem,
-  BuiltinHasImage,
-  MissingImage
-}
-import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, OnDelete}
 import com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion
 
 /**
@@ -44,6 +35,8 @@ object Main:
         dir: Option[Path],
         packageName: Option[String]
     )
+    case McpCmd
+    case McpInstallCmd(req: mcp.McpInstall.Request)
 
   private val inputs: Opts[Verify.Inputs] =
     (
@@ -118,8 +111,56 @@ object Main:
     ).mapN(Cmd.InitCmd.apply)
   )
 
+  private val mcpInstall = Opts.subcommand(
+    "install",
+    "Configure Claude Code (for you, or a project's .mcp.json) or Claude Desktop to start `flow mcp`."
+  )(
+    (
+      Opts
+        .option[String]("client", "code (the default) or desktop.")
+        .withDefault("code")
+        .mapValidated {
+          case "code"    => mcp.McpInstall.Client.Code.validNel
+          case "desktop" => mcp.McpInstall.Client.Desktop.validNel
+          case other     => s"client '$other' is not code or desktop".invalidNel
+        },
+      Opts
+        .option[String](
+          "scope",
+          "user (the default: every project, for you) or project (a .mcp.json to commit)."
+        )
+        .withDefault("user")
+        .mapValidated {
+          case "user"    => mcp.McpInstall.Scope.User.validNel
+          case "project" => mcp.McpInstall.Scope.Project.validNel
+          case other     => s"scope '$other' is not user or project".invalidNel
+        },
+      Opts
+        .option[Path]("dir", "The project, for --scope project (default: here).")
+        .withDefault(Path.of(".")),
+      Opts
+        .option[String](
+          "command",
+          "The flow to start, for Claude Desktop (default: the first on PATH)."
+        )
+        .orNone,
+      Opts.flag("force", "Replace an existing ankka-flow entry.").orFalse,
+      Opts.flag("dry-run", "Print what would change; change nothing.").orFalse
+    ).mapN((client, scope, dir, command, force, dryRun) =>
+      Cmd.McpInstallCmd(mcp.McpInstall.Request(client, scope, dir, command, force, dryRun))
+    )
+  )
+
+  private val mcpCommand =
+    Opts.subcommand(
+      "mcp",
+      "Serve flow's tools and the documentation to a coding agent over MCP (stdio)."
+    )(
+      mcpInstall.orElse(Opts(Cmd.McpCmd))
+    )
+
   private val command = Command("flow", "Verify, generate and operate ankka-flow pipelines.")(
-    verify.orElse(generate).orElse(reset).orElse(init).orElse(version)
+    verify.orElse(generate).orElse(reset).orElse(init).orElse(mcpCommand).orElse(version)
   )
 
   def run(args: List[String], out: PrintStream, err: PrintStream): Int =
@@ -143,6 +184,31 @@ object Main:
                 0
           case g: Cmd.GenerateCmd => generateResource(g, out, err)
           case i: Cmd.InitCmd     => initProject(i, out, err)
+          case Cmd.McpCmd =>
+            val cluster = mcp.ProjectFile.read(Path.of(".").toAbsolutePath)
+            val tools   = mcp.FlowTools(cluster)
+            val server = mcp.McpServer(
+              "ankka-flow",
+              BuildInfo.version,
+              tools.instructions,
+              tools.all,
+              tools.resources
+            )
+            server.serve(
+              new java.io.BufferedReader(new java.io.InputStreamReader(System.in, "UTF-8")),
+              out,
+              err,
+              interactive = mcp.McpServer.startedAtTerminal()
+            )
+            0
+          case Cmd.McpInstallCmd(req) =>
+            try
+              out.println(mcp.McpInstall.perform(req))
+              0
+            catch
+              case e: IllegalArgumentException =>
+                err.println(e.getMessage)
+                1
           case Cmd.ResetCmd(pipeline, streamlets, namespace) =>
             Reset.kubernetes.request(pipeline, streamlets, namespace) match
               case Left(problems) => refuse(err, problems)
@@ -179,52 +245,24 @@ object Main:
     problems.foreach(err.println)
     1
 
-  private val PipelineName = """[a-z0-9]([-a-z0-9]*[a-z0-9])?""".r
-
   private def generateResource(g: Cmd.GenerateCmd, out: PrintStream, err: PrintStream): Int =
-    val verified = Verify.run(g.in)
-    val images   = Images.load(g.images, g.image)
-    val missing = verified.toOption.toVector.flatMap { v =>
-      val known              = images.getOrElse(Map.empty)
-      val (builtin, process) = v.blueprint.streamlets.partition(_.descriptor.builtin)
-      process
-        .filterNot(s => known.contains(s.name))
-        .map(s => BlueprintProblem.toMessage(MissingImage(s.name))) ++
-        builtin
-          .filter(s => known.contains(s.name))
-          .map(s => BlueprintProblem.toMessage(BuiltinHasImage(s.name)))
-    }
-    val pipeline = g.pipeline
-      .orElse(verified.toOption.flatMap(_.blueprint.name))
-      .getOrElse(g.in.blueprint.getFileName.toString.takeWhile(_ != '.'))
-    val nameProblem =
-      Option.when(!PipelineName.matches(pipeline) || pipeline.length > 40)(
-        s"pipeline id '$pipeline' must be 1-40 of [a-z0-9-], not starting or ending with '-'"
+    Generate.run(
+      Generate.Request(
+        g.in,
+        g.images,
+        g.image,
+        g.pipeline,
+        g.version,
+        g.namespace,
+        g.deleteManagedTopics
       )
-    val problems: Vector[String] =
-      (verified.left.toSeq.flatten ++ images.left.toSeq.flatten ++ missing ++ nameProblem).toVector
-    if problems.nonEmpty then refuse(err, problems.toVector)
-    else
-      val v        = verified.toOption.get
-      val version  = g.version.getOrElse(gitVersion(g.in.blueprint))
-      val onDelete = OnDelete(if g.deleteManagedTopics then OnDelete.Delete else OnDelete.Keep)
-      val resource =
-        ResourceWriter.write(v, images.toOption.get, pipeline, version, g.namespace, onDelete)
-      val yaml = FlowSerialization.toYaml(resource)
-      v.notes.foreach(err.println)
-      g.out match
-        case Some(p) =>
-          Files.write(p, yaml.getBytes("UTF-8"))
-          err.println(s"wrote $p")
-        case None => out.print(yaml)
-      0
-
-  private def gitVersion(blueprint: Path): String =
-    val dir = Option(blueprint.toAbsolutePath.getParent).getOrElse(Path.of("."))
-    Try(
-      Process(Seq("git", "-C", dir.toString, "describe", "--tags", "--always", "--dirty"))
-        .!!(ProcessLogger(_ => ()))
-        .trim
-    ).toOption
-      .filter(_.nonEmpty)
-      .getOrElse("unversioned")
+    ) match
+      case Left(problems) => refuse(err, problems)
+      case Right(generated) =>
+        generated.notes.foreach(err.println)
+        g.out match
+          case Some(p) =>
+            Files.write(p, generated.yaml.getBytes("UTF-8"))
+            err.println(s"wrote $p")
+          case None => out.print(generated.yaml)
+        0
