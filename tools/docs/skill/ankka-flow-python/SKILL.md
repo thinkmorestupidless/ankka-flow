@@ -59,6 +59,11 @@ what the sidecar compares with the running process before it starts.
    its tests, `flow/descriptor.json`, a blueprint, the `Dockerfile` and the laptop compose file,
    pinning `ankka-flow` at the `flow` release that wrote it.
 
+11. **The project's tools come from `flow mcp`.** `.mcp.json` connects Claude Code to it:
+   `verify_blueprint`, `generate_resource`, `flow_version`, `search_docs` and `read_doc` touch no
+   cluster; `list_pipelines`, `get_pipeline`, `pipeline_logs` and `pipeline_lag` read the cluster
+   `flow.toml` names; `apply_pipeline` and `reset_pipeline` change it, and nothing else.
+
 ## Before writing
 
 - What is each inlet's and outlet's schema name, and does it match the topic's other ports?
@@ -68,6 +73,7 @@ what the sidecar compares with the running process before it starts.
 
 ## Mistakes to check for
 
+- Running `kubectl` against the shell's current context instead of the cluster `flow.toml` names.
 - Copying a sample instead of running `flow init`, so the SDK points at a path or a version the
   project does not build against.
 - `import kafka` or any Kafka client in streamlet code; the sidecar owns Kafka.

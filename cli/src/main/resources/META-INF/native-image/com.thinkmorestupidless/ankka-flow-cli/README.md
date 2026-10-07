@@ -28,3 +28,9 @@ needed it:
   template file no case reads would be silently missing from the binary; the glob takes them all.
 - `ankka-flow/docs/**` in the resources: the documentation pages `flow mcp` serves, read by name
   from `index.txt`; the glob takes every page, whichever a case happened to read.
+- Twelve reflection entries from the agent run with `flow mcp`'s suite (the events model —
+  `ObjectReference`, `EventSource`, `EventSeries`, `MicroTimeSerDes` — the resource list type, and
+  the `Throwable`/`StackTraceElement` shapes a tool's error result reaches); the tracing run that
+  added them was `sbt -java-home $GRAALVM_HOME cli/test -Dflow.cli.agent=on -Dflow.template.tests=off`.
+  `pipeline_lag`'s port-forward is not in the suite (no double serves it); it is proven on kind with
+  the native binary.

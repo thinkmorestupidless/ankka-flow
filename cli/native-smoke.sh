@@ -108,6 +108,25 @@ for language in scala python; do
   echo "init       $language: $(find "$out" -type f | wc -l | tr -d ' ') files in ${seconds}s, its blueprint verified"
 done
 
+# ── mcp: the server, the docs inside the binary, a tool call ─────────────────
+# The server reads its pages and tools from the image; a page missing from the image is a server
+# listing fewer resources, and a class fabric8 or the YAML writer reaches through a tool is only
+# found by calling one.
+mcp_in="$work/mcp.in"; mcp_out="$work/mcp.out"
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"resources/list"}' \
+  "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"verify_blueprint\",\"arguments\":{\"blueprint\":\"$PWD/samples/cart-router/blueprint.conf\",\"descriptors\":\"$PWD/samples/cart-router/flow\"}}}" \
+  > "$mcp_in"
+(cd "$work" && "$bin" mcp < "$mcp_in" > "$mcp_out" 2> "$work/mcp.err") || fail "flow mcp exited $?: $(cat "$work/mcp.err")"
+grep -q '"protocolVersion":"2025-06-18"' "$mcp_out" || fail "mcp did not initialize: $(head -c 300 "$mcp_out")"
+pages="$(grep -o 'ankka-flow://docs/' "$mcp_out" | wc -l | tr -d ' ')"
+[ "$pages" -gt 0 ] || fail "mcp lists no documentation pages: the image is missing ankka-flow/docs"
+grep -q 'verified: 1 streamlets' "$mcp_out" || fail "mcp's verify_blueprint did not verify: $(tail -c 400 "$mcp_out")"
+"$bin" mcp install --scope project --dir "$work/mcp-project" > /dev/null || fail "mcp install --scope project failed"
+grep -q '"command": "flow"' "$work/mcp-project/.mcp.json" || fail "mcp install wrote no flow server: $(cat "$work/mcp-project/.mcp.json")"
+echo "mcp        initialized, $pages pages, verify_blueprint answered, install wrote .mcp.json"
+
 # ── the JVM build, byte for byte ─────────────────────────────────────────────
 if [ -n "$jvm" ]; then
   for sample in samples/*/; do

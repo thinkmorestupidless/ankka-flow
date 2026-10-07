@@ -42,6 +42,8 @@ batch.
 | `build.sbt`, or `pyproject.toml` and a `Dockerfile` | the build and the image |
 | `README.md`, `.gitignore`, `.github/workflows/ci.yml` | the commands, and CI for the tests and the descriptor check |
 | `.claude/skills/` | the ankka-flow skills, for a coding agent |
+| `.mcp.json` | connects Claude Code to `flow mcp`, which serves `flow`'s abilities as tools |
+| `flow.toml` | the one cluster those tools may touch: the kind cluster and this project's namespace |
 
 The project depends on the SDK of the same release as the `flow` that wrote it, and its compose file
 runs that release's sidecar image.

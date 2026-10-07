@@ -125,3 +125,23 @@ cluster; `flow init`'s page section names the two files.
 3. **R8**: which reachability entries the agent adds for port-forward and events.
 4. **R4**: a `flow.toml` in a project written by `flow init` is picked up by `flow mcp` started by
    Claude Code, whose working directory is the project's root.
+
+## Found during implementation
+
+- **V1**: the protocol module's `Json` serves the server as it is: its parser takes JSON-RPC
+  messages with numeric and string ids, and its AST keeps an object's fields in written order.
+  What it lacked — field accessors, and printers that keep that order (its own sort keys for the
+  canonical descriptor) — is `JsonText` in the CLI's `mcp` package, 80 lines; nothing was added to
+  the protocol module.
+- **Events are filtered in code, not by field selector.** fabric8's mock honours no
+  `involvedObject` field selector, and a namespace's events are few; `get_pipeline` lists the
+  namespace's events and keeps the pipeline's and the `PartitionStalled` ones on its pods.
+- **V2**: apply is `createOr(_.update())` on the custom resource — create or replace in place, which
+  is what a person's `kubectl apply` does to an `AnkkaFlow` — rather than server-side apply, which
+  the mock does not serve and the operator does not need.
+- **The reset case has its own pipeline.** The mock is shared by the suite's cases, and a pod left
+  by the logs case is a running streamlet to the reset guards; `reset_pipeline` is proven on a
+  pipeline no other case gives pods.
+- **The sidecar logs path is a mock expectation**: the CRUD double stores no pod logs, so the
+  suite answers the log endpoint for each container, and the tool's query (`container`,
+  `tailLines`) is what the expectation matches.

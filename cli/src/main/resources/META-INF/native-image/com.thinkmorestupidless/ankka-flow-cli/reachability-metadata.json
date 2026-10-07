@@ -3311,6 +3311,138 @@
     },
     {
       "type": "sun.util.resources.cldr.CalendarData"
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.cli.mcp.Docs$",
+      "fields": [
+        {
+          "name": "pages$lzy1"
+        }
+      ]
+    },
+    {
+      "type": "io.fabric8.kubernetes.api.model.DefaultKubernetesResourceList",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        },
+        {
+          "name": "setApiVersion",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "setItems",
+          "parameterTypes": [
+            "java.util.List"
+          ]
+        },
+        {
+          "name": "setKind",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "setMetadata",
+          "parameterTypes": [
+            "io.fabric8.kubernetes.api.model.ListMeta"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "io.fabric8.kubernetes.api.model.EventSeries"
+    },
+    {
+      "type": "io.fabric8.kubernetes.api.model.EventSource"
+    },
+    {
+      "type": "io.fabric8.kubernetes.api.model.MicroTimeSerDes$Deserializer",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "io.fabric8.kubernetes.api.model.ObjectReference",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        },
+        {
+          "name": "getAdditionalProperties",
+          "parameterTypes": []
+        },
+        {
+          "name": "getApiVersion",
+          "parameterTypes": []
+        },
+        {
+          "name": "getFieldPath",
+          "parameterTypes": []
+        },
+        {
+          "name": "getKind",
+          "parameterTypes": []
+        },
+        {
+          "name": "getName",
+          "parameterTypes": []
+        },
+        {
+          "name": "getNamespace",
+          "parameterTypes": []
+        },
+        {
+          "name": "getResourceVersion",
+          "parameterTypes": []
+        },
+        {
+          "name": "getUid",
+          "parameterTypes": []
+        },
+        {
+          "name": "setKind",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "setName",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Exception",
+      "serializable": true
+    },
+    {
+      "type": "java.lang.Object[][]"
+    },
+    {
+      "type": "java.lang.StackTraceElement",
+      "serializable": true
+    },
+    {
+      "type": "java.lang.StackTraceElement[]",
+      "serializable": true
+    },
+    {
+      "type": "java.lang.Throwable",
+      "serializable": true
+    },
+    {
+      "type": "java.util.Collections$EmptyList",
+      "serializable": true
     }
   ],
   "resources": [

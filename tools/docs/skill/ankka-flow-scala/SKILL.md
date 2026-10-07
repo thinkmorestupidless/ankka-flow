@@ -70,6 +70,11 @@ process before it starts. The artifact is `"com.thinkmorestupidless" %% "ankka-f
    `flow/descriptor.json` with `sbt descriptor` and `sbt descriptorCheck`, a blueprint, the image
    build and the laptop compose file, depending on the SDK at the `flow` release that wrote it.
 
+12. **The project's tools come from `flow mcp`.** `.mcp.json` connects Claude Code to it:
+   `verify_blueprint`, `generate_resource`, `flow_version`, `search_docs` and `read_doc` touch no
+   cluster; `list_pipelines`, `get_pipeline`, `pipeline_logs` and `pipeline_lag` read the cluster
+   `flow.toml` names; `apply_pipeline` and `reset_pipeline` change it, and nothing else.
+
 ## Before writing
 
 - What is each inlet's and outlet's schema name, and does it match the topic's other ports?
@@ -80,6 +85,7 @@ process before it starts. The artifact is `"com.thinkmorestupidless" %% "ankka-f
 
 ## Mistakes to check for
 
+- Running `kubectl` against the shell's current context instead of the cluster `flow.toml` names.
 - Copying a sample instead of running `flow init`, so the SDK points at a path or a version the
   project does not build against.
 - A Kafka client in streamlet code or in its dependencies; the sidecar owns Kafka.
