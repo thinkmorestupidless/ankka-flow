@@ -3,6 +3,11 @@
   <img src="docs/assets/brand/ankka-flow-lockup-black.png" alt="ankka-flow" width="400">
 </picture>
 
+[![ci](https://github.com/thinkmorestupidless/ankka-flow/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/thinkmorestupidless/ankka-flow/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+[![java 21+](https://img.shields.io/badge/java-21%2B-007396?logo=openjdk&logoColor=white)](docs/get-started/install.md) [![maven central](https://img.shields.io/maven-central/v/com.thinkmorestupidless/ankka-flow-sdk_3?label=maven%20central&logo=apachemaven&logoColor=white)](https://central.sonatype.com/artifact/com.thinkmorestupidless/ankka-flow-sdk_3)<br>
+[![python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](docs/get-started/install.md) [![pypi](https://img.shields.io/pypi/v/ankka-flow?label=pypi&logo=pypi&logoColor=white)](https://pypi.org/project/ankka-flow/)
+
 Streaming pipelines beside [ankka](https://github.com/thinkmorestupidless/ankka). A pipeline is a
 graph of **streamlets**, each with typed inlets and outlets, wired by a **blueprint** over Kafka
 topics. A streamlet's logic is written in any language and shipped as an image holding only that
