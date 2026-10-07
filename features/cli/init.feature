@@ -82,3 +82,9 @@ Feature: flow init starts a streamlet project
     Given a project written by "flow init"
     When a coding agent is opened in it
     Then it finds the skills of that flow's version
+
+  Scenario: a project connects Claude Code to flow mcp
+    Given a project written by "flow init"
+    When Claude Code is opened in it
+    Then it connects to "flow mcp" with no configuration
+    And the project file names the kind cluster the documentation sets up, and the project's own namespace

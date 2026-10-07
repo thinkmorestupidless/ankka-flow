@@ -82,5 +82,12 @@ registry holds: build it against the ankka-flow repository's SDK, or write it wi
 
 ## For a coding agent
 
+`.mcp.json` connects Claude Code to `flow mcp`, which serves this ankka-flow version's documentation
+and `flow`'s abilities as tools: verify the blueprint, generate the resource, and — on one cluster
+only — list and describe pipelines, read a streamlet's logs and lag, apply this pipeline and reset
+it. That cluster is the one `flow.toml` names, `kind-ankka` and this project's namespace as written;
+nothing else is ever touched, whatever kubectl points at. Claude Code asks once before starting a
+project's server; the tools that change the cluster are confirmed before they run.
+
 `.claude/skills/` holds the ankka-flow skills of this version: the platform, the Python SDK, the
 protocol and deploying. Claude Code reads them from here with no configuration.

@@ -26,7 +26,7 @@ Avoid: manifest, spec
 Settings supplied when a pipeline is deployed rather than written in its blueprint: replicas, a
 streamlet's parameters, a Secret's name.
 
-Avoid: config, settings
+Avoid: config
 
 ### resource
 The `AnkkaFlow` resource `flow` writes for a pipeline, which a cluster runs.
@@ -134,7 +134,7 @@ A rendering of the documentation for a coding agent, published with the plugin.
 A library a streamlet is written against, which writes the streamlet's descriptor,
 serves it to the sidecar and ships a harness. One per language.
 
-Avoid: library, client
+Avoid: library
 
 ### Python SDK
 The SDK for streamlets written in Python, published to PyPI.
@@ -281,7 +281,7 @@ Avoid: docker image
 The namespace a project's streamlet code lives in: a Scala package or a Python module.
 Not an installable; a Homebrew installable is a formula.
 
-Avoid: namespace
+Avoid: ns
 
 ### greeting
 The field the generated streamlet adds to each record, set to its parameter of the same name.
@@ -290,6 +290,40 @@ The field the generated streamlet adds to each record, set to its parameter of t
 A documentation page that takes a reader through a first task from the start.
 
 Avoid: walkthrough
+
+## The server
+
+### server
+The Model Context Protocol server "flow mcp" runs, serving the documentation and flow's abilities to
+one coding agent over standard input and output.
+
+Avoid: daemon, service
+
+### tool
+One operation the server offers a coding agent, with a description, an input schema and whether it
+changes a cluster.
+
+Avoid: function, action
+
+### resource
+In the server, one documentation page addressed by its path. (A pipeline's Kubernetes resource is
+the resource of the platform section.)
+
+### client
+The coding agent's side of the Model Context Protocol: what connects to the server, such as Claude
+Code or Claude Desktop.
+
+### named cluster
+The Kubernetes context and namespace the project file names: the only cluster "flow mcp"'s tools
+touch.
+
+### project file
+"flow.toml" in a project's root, naming the cluster the project's tools may touch.
+
+### connection file
+The file naming the server's command for a client: ".mcp.json" in a project, or the client's settings.
+
+Avoid: config
 
 ## Everyday words
 
@@ -321,4 +355,4 @@ reach, compares, compared, copy, two, shared, gives, give, containers, host, pro
 wires, wired, routed, affect, round, trip, manual, fresh, project, naming, compiles, compile,
 uploaded, upload, rest, equivalent, coordinates, named, looks, pass, change, build, drift,
 lines, line, written, writes, write, reads, read, shows, shown, show, learn, kept, sends, sent,
-once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON, starting, digit, may, id,
+once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON, starting, digit, may, id, client, initializes, initialized, session, newest, offered, schema, answers, answer, among, Markdown, continues, reached, phase, conditions, recent, container, asked, consumer, lag, created, updated, sent, draws, marked, read-only, settings, entry, dry, run, Claude, Code, touch, Protocol, Model, Context, abilities, kubectl, apply, applied, verified, verifies, calls, namespace, searches, title, exist, result, logs, lines, Desktop, connects, connected, speaks, description, generate, verify, reset, images, list, get, sets, up, kind,

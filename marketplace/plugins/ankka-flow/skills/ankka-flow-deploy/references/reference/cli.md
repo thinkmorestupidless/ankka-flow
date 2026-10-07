@@ -225,6 +225,69 @@ Otherwise it writes the annotation `flow.ankka.thinkmorestupidless.com/reset-off
 `{"id":"<uuid>","streamlets":[…]}` and prints `reset requested for '<pipeline>': <uuid>`. An empty
 `streamlets` list means every streamlet with an inlet.
 
+## `flow mcp`
+
+```text
+flow mcp
+```
+
+Serves a Model Context Protocol server over standard input and output, for a coding agent: `flow`'s
+abilities as tools and this documentation as resources. Standard output carries only the protocol;
+started at a terminal, it prints a notice on standard error and waits for a client. [Work with a coding
+agent](../get-started/coding-agents.md#the-mcp-server) lists the tools and how to connect a client.
+
+It reads `flow.toml` from the directory it is started in — the project's root, when Claude Code starts
+it — and that file's `context` and `namespace` are the only cluster the cluster tools touch:
+
+```toml
+context   = "kind-ankka"
+namespace = "greeter"
+```
+
+Without the file, or with either key empty, every cluster tool answers with a refusal saying what to
+write there, and the tools that need no cluster still work. The kubeconfig's current context is never
+used.
+
+| tool | hints | does |
+|---|---|---|
+| `verify_blueprint` | read-only | what `flow verify` prints, refusals included |
+| `generate_resource` | read-only | the YAML `flow generate` writes; nothing is applied |
+| `flow_version` | read-only | what `flow version` prints |
+| `search_docs`, `read_doc` | read-only | this version's documentation, also served as `ankka-flow://docs/<path>` resources |
+| `list_pipelines`, `get_pipeline`, `pipeline_logs`, `pipeline_lag` | read-only, on the named cluster | the namespace's pipelines; one pipeline's status and events; a streamlet's process or sidecar log; consumer lag per inlet partition from each sidecar's metrics |
+| `apply_pipeline` | destructive, on the named cluster | verify, generate and create or update the resource, as `flow generate | kubectl apply` would |
+| `reset_pipeline` | destructive, on the named cluster | what `flow reset` requests, with its refusals |
+
+A tool's failure is answered as an error result the agent can read; the session continues.
+
+## `flow mcp install`
+
+```text
+flow mcp install [--client code|desktop] [--scope user|project] [--dir <project>]
+                 [--command <path>] [--force] [--dry-run]
+```
+
+Tells an MCP client how to start `flow mcp`.
+
+| option | default | meaning |
+|---|---|---|
+| `--client` | `code` | `code` for Claude Code, `desktop` for Claude Desktop |
+| `--scope` | `user` | `user`: every project, for you, through `claude mcp add --scope user`; `project`: a `.mcp.json` in the project, to commit |
+| `--dir <project>` | `.` | the project, for `--scope project` |
+| `--command <path>` | the first `flow` on `PATH` | the `flow` Claude Desktop starts; Desktop does not see a shell's `PATH`, so the entry holds an absolute path, and for the JVM build a `JAVA_HOME` |
+| `--force` | — | replace an existing `ankka-flow` entry |
+| `--dry-run` | — | print what would change; change nothing |
+
+Every write merges: other servers and settings in the file are kept in their order, and an existing
+server named `ankka-flow` that differs is left as it is and shown, unless `--force`. A project written
+by `flow init` already has its `.mcp.json`, so it needs no install.
+
+It exits 0 when it changed what it said, or had nothing to change, and 1 with the reason on stderr
+when it could not: `--scope project` with `--client desktop`, Claude Desktop on an operating system
+without it, a configuration file that is not valid JSON (left as it is), no `flow` to name for Desktop,
+or a `claude` command that failed. When `claude` is not on `PATH`, `--scope user` changes nothing and
+prints the command to run; that is exit 0.
+
 ## `flow version`
 
 ```text

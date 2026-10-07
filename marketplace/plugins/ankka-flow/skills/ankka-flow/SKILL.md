@@ -66,6 +66,12 @@ pod's loopback interface.
    Python one: the streamlet, its test, the committed descriptor, a blueprint that verifies, the
    image build, the laptop compose file and these skills, at the `flow` release's SDK and sidecar.
 
+14. **In a project from `flow init`, `flow`'s abilities are tools.** `.mcp.json` starts `flow mcp`:
+   `verify_blueprint`, `generate_resource`, `flow_version`, `search_docs` and `read_doc` need no
+   cluster; `list_pipelines`, `get_pipeline`, `pipeline_logs` and `pipeline_lag` read the one cluster
+   `flow.toml` names; `apply_pipeline` and `reset_pipeline` change it. Nothing touches any other
+   cluster, whatever kubectl points at.
+
 ## Before answering
 
 - Is this a pipeline at all, or one ankka consumer? Apply rule 1 first.
@@ -78,6 +84,7 @@ pod's loopback interface.
 ## Mistakes to check for
 
 - Copying a sample out of the repository to start a project instead of running `flow init`.
+- Running `kubectl` against the shell's current context instead of the cluster `flow.toml` names.
 - Proposing Avro, Protobuf or a schema registry for a contract; only JSON by schema name exists.
 - A guide or script that builds `flow` from source instead of installing it, or that asks for a JVM
   to run it.
@@ -104,7 +111,7 @@ Open the one a task needs; each is one topic and stands alone.
 - `references/get-started/install.md` — Install the flow CLI with Homebrew or from a release archive, pull or build the sidecar, operator and sample images, and set up the Python SDK.
 - `references/get-started/first-streamlet.md` — Start a streamlet project with flow init, in Scala or Python — test it, check its descriptor, verify its blueprint and run it beside the sidecar on a laptop — then watch the cart router survive a restart.
 - `references/get-started/deploy-locally.md` — Install the operator and a development Kafka on a kind cluster, deploy the sample cart router as a pipeline with flow generate and kubectl, and watch it become Ready.
-- `references/get-started/coding-agents.md` — Give a coding agent this documentation as skills from the ankka marketplace, or as llms.txt and Markdown pages, and know what each skill carries.
+- `references/get-started/coding-agents.md` — Give a coding agent this documentation as skills from the ankka marketplace and flow's abilities as tools through flow mcp — connecting Claude, naming the one cluster the tools may touch, and the loop from a change to a running pipeline.
 
 ### Concepts
 

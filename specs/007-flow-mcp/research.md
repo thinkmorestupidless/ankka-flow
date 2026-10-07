@@ -1,0 +1,181 @@
+# Research: `flow mcp`
+
+## R1. ankka's server, with the protocol module's JSON
+
+**What is there**: `ankka mcp` is a hand-written JSON-RPC 2.0 server over stdio (`McpServer.scala`,
+248 lines): `initialize` negotiating among four protocol versions, `ping`, `tools/list`,
+`tools/call`, `resources/list`, `resources/read`, an empty `resources/templates/list`; notifications
+ignored, batches tolerated; a tool's failure is an `isError` result, a protocol failure a JSON-RPC
+error; a notice on stderr when started at a terminal. It carries its own 118-line JSON AST.
+
+**Decision**: port the server as it is, under `cli/…/mcp/`, and use the protocol module's `Json`
+(AST, parser, compact printer) instead of a second one: `Json.Obj` fields, `Json.parse`,
+`Json.compact`. A `field`/`string` accessor pair is added where ankka's AST had them. No MCP
+library and no JSON library enter the build.
+
+**Alternatives considered**: an MCP SDK for Java — a dependency with its own JSON and threading
+for four methods. Copying ankka's `Json.scala` — two JSON ASTs in one CLI.
+
+## R2. The documentation inside the binary
+
+**Decision**: a `Compile / resourceGenerators` task on `cli` copies every `docs/**/*.md` to
+`ankka-flow/docs/<path>` with an `index.txt`, as the templates are (feature 006, R1), and the
+native image registers `ankka-flow/docs/**`. `Docs` reads a page's `title`, `description` and
+`kind` from its frontmatter; `search_docs` scores a query's words over title, description and
+body (ankka's scorer); `read_doc` returns the page; every page is a resource at
+`ankka-flow://docs/<path>` of type `text/markdown`. The pages served are the ones this `flow` was
+built from, so the docs always match the CLI.
+
+## R3. The tools
+
+| Tool | Hints | Does |
+|---|---|---|
+| `verify_blueprint` | read-only | `Verify.run` on a blueprint path, a descriptors directory and `--conf` files; the notes, the summary line, or the refusals |
+| `generate_resource` | read-only | `Verify.run` then `ResourceWriter.write` with images, pipeline id, version and namespace; the YAML `flow generate` prints; nothing applied |
+| `flow_version` | read-only | `flow version`'s line |
+| `search_docs` | read-only | pages ranked for a query |
+| `read_doc` | read-only | one page as Markdown |
+| `list_pipelines` | read-only, cluster | every `AnkkaFlow` in the named namespace: name, phase, detail, streamlets' ready/desired |
+| `get_pipeline` | read-only, cluster | one pipeline's spec summary, status (phase, detail, streamlets, topics) and the last events on it (`involvedObject.kind=AnkkaFlow`, name) plus `PartitionStalled` events on its pods |
+| `pipeline_logs` | read-only, cluster | the last N lines (default 200) of one streamlet's `process` or `sidecar` container, by the pod labels the sidecar's reset already uses |
+| `pipeline_lag` | read-only, cluster | per streamlet pod: port-forward 2050, GET `/metrics`, the `records_lag` lines parsed to (client id, topic, partition, lag) |
+| `apply_pipeline` | destructive, cluster | `generate_resource`'s inputs; verifies, writes the resource, server-side applies it in the named namespace; refuses a blueprint that does not verify before anything is sent |
+| `reset_pipeline` | destructive, cluster | `KubernetesReset.request` with the named cluster's client: the same guards and the same annotation |
+
+Every tool's text answer is what the command prints, so SC-001 is a byte comparison in the suite.
+
+## R4. The named cluster: `flow.toml`
+
+**Decision** (clarified): `flow mcp` reads `flow.toml` from the directory it is started in:
+
+```toml
+# The cluster flow mcp's tools may touch. Nothing else is ever used, whatever kubectl points at.
+context   = "kind-ankka"
+namespace = "greeter"
+```
+
+Two keys, read by a small parser of `key = "value"` lines (comments and blank lines ignored; an
+optional `[cluster]` table header accepted); a TOML library would be a dependency for two keys.
+`flow init` writes it with `kind-ankka` and the project's name. With no file, or no `context`, every
+cluster tool answers `no cluster named: write context and namespace in flow.toml …` as an error
+result; the server says on stderr at start whether it has a cluster. The kubeconfig's current
+context is never consulted.
+
+## R5. Reaching the cluster
+
+**Decision**: one `KubernetesClient` per tool call, built from
+`Config.autoConfigure(context)` with the namespace set, and closed after — as `KubernetesReset`
+builds and closes one per request. `KubernetesReset` gains a client factory parameter so the MCP
+tool passes the named cluster's. Apply is `client.resource(flow).inNamespace(ns).serverSideApply()`
+with a field manager `flow`, which is what `kubectl apply --server-side` does. Logs:
+`pods.withLabel(pipeline).withLabel(streamlet)` then `.inContainer(name).tailingLines(n).getLog`.
+Events: `client.v1().events().inNamespace(ns).withField("involvedObject.name", name)`. Lag:
+`pod.portForward(2050)` — the call `FlowClusterSuite` already makes against k3s — then an HTTP GET
+of `/metrics` on the local port, with the `records_lag` lines parsed.
+
+## R6. `flow mcp install`
+
+**Decision**: port `McpInstall`: `--scope user` (default) runs `claude mcp add --scope user
+ankka-flow -- flow mcp`; `--scope project` merges `{"ankka-flow": {"command": "flow", "args":
+["mcp"]}}` into `.mcp.json` (`--dir`); `--client desktop` merges into Claude Desktop's config with
+the absolute path of the first `flow` on `PATH` (and `JAVA_HOME` for the JVM build); every write
+merges, an existing `ankka-flow` entry is kept unless `--force`, `--dry-run` prints the change.
+The server's name in every client is `ankka-flow`.
+
+## R7. `flow init` writes the connection
+
+**Decision**: `cli/src/main/templates/common/.mcp.json` (`flow mcp`, by name) and
+`common/flow.toml` (tokens `{{name}}`); the template READMEs gain a paragraph; `InitSuite`'s index
+check covers both.
+
+## R8. The proof
+
+- `McpServerSuite`: the protocol against the server with a fabric8 `KubernetesMockServer` (CRUD
+  dispatcher, as `CliResetSuite`) reached through a temporary kubeconfig naming a context — version
+  negotiation; a parse error; notifications ignored; every tool listed with schema and hints;
+  `verify_blueprint` and `generate_resource` byte-equal to `Main.run`'s output on the test
+  blueprints; `flow_version`; `search_docs` finds a page by title and `read_doc` returns it; every
+  page a resource; the six cluster tools refused with no `flow.toml`; `list_pipelines`,
+  `get_pipeline` (status and events put on the mock), `pipeline_logs` (a mock expectation for the
+  log endpoint), `apply_pipeline` (the resource lands on the mock; an unverifiable blueprint sends
+  nothing), `reset_pipeline` (the annotation, and the running-streamlet refusal) against the mock.
+- `pipeline_lag`: the metrics parser unit-tested on a captured `/metrics`; the port-forward path is
+  the one `FlowClusterSuite` proves against k3s, and quickstart tier 3 runs the tool on kind by hand.
+- `McpInstallSuite`: the merge rules, Desktop's paths, a scripted fake `claude`, `--dry-run`.
+- `native-smoke.sh`: pipe `initialize`, `resources/list` and a `verify_blueprint` call into the
+  binary's `flow mcp`; expect `ankka-flow://docs/` resources and `verified:` in the answer.
+- Fabric8's port-forward and events paths may reach classes the image's metadata does not list:
+  the suite runs under the tracing agent once (`-Dflow.cli.agent=on`), the new entries are merged
+  and pruned, and the smoke script's tool call holds them.
+
+## R9. Documentation
+
+**Decision**: `docs/get-started/coding-agents.md` gains "The MCP server", "Connect Claude to it",
+"What the tools can do" and "The named cluster" on ankka's page's shape; `reference/cli.md`
+documents `mcp` and `mcp install`; the skills say what the tools are for and which change a
+cluster; `flow init`'s page section names the two files.
+
+## Verify first
+
+1. **R1**: the protocol module's `Json` round-trips every message shape the server needs
+   (nested objects, arrays, numbers for ids, escaped strings); ankka's clients send ids as numbers
+   and strings.
+2. **R5**: the fabric8 mock server honours `serverSideApply` on a custom resource with the CRUD
+   dispatcher; if not, `createOrReplace` in the suite with the real call named.
+3. **R8**: which reachability entries the agent adds for port-forward and events.
+4. **R4**: a `flow.toml` in a project written by `flow init` is picked up by `flow mcp` started by
+   Claude Code, whose working directory is the project's root.
+
+## Found during implementation
+
+- **V1**: the protocol module's `Json` serves the server as it is: its parser takes JSON-RPC
+  messages with numeric and string ids, and its AST keeps an object's fields in written order.
+  What it lacked — field accessors, and printers that keep that order (its own sort keys for the
+  canonical descriptor) — is `JsonText` in the CLI's `mcp` package, 80 lines; nothing was added to
+  the protocol module.
+- **Events are filtered in code, not by field selector.** fabric8's mock honours no
+  `involvedObject` field selector, and a namespace's events are few; `get_pipeline` lists the
+  namespace's events and keeps the pipeline's and the `PartitionStalled` ones on its pods.
+- **V2**: apply is `createOr(_.update())` on the custom resource — create or replace in place, which
+  is what a person's `kubectl apply` does to an `AnkkaFlow` — rather than server-side apply, which
+  the mock does not serve and the operator does not need.
+- **The reset case has its own pipeline.** The mock is shared by the suite's cases, and a pod left
+  by the logs case is a running streamlet to the reset guards; `reset_pipeline` is proven on a
+  pipeline no other case gives pods.
+- **The sidecar logs path is a mock expectation**: the CRUD double stores no pod logs, so the
+  suite answers the log endpoint for each container, and the tool's query (`container`,
+  `tailLines`) is what the expectation matches.
+- **V3, the native image, found three things the suite could not**, each on kind with the native
+  binary driving the tools through a scripted client:
+  1. A real kubeconfig carries certificate data; the metadata listed only the kubeconfig-model
+     setters the suite's bare `server:` kubeconfig had reached, and the first cluster tool died on
+     `Cluster.setCertificateAuthorityData`. The kubeconfig model is now registered whole.
+  2. A real API server's answers carry `managedFields`, and a pod list carries the pod model;
+     the suite's double stores neither. The JVM `flow mcp` was run under the tracing agent
+     against kind, driving every cluster tool, and its recordings merged (as a union per class —
+     the first merge kept the older partial entries and dropped the agent's fuller ones).
+  3. `reset_pipeline`'s edit serializes the pipeline through getters no read had reached
+     (`ManagedFieldsEntry.getAdditionalProperties`). Every listed fabric8 model class and `crd`
+     class is now registered whole (`allDeclared*`), 532 of them, which is what a bean needs and
+     ends the chase; the binary is 70 MB.
+- **A tool's crash was the session's end.** `MissingReflectionRegistrationError` is an `Error`,
+  and the server caught `Exception`; the client lost its server with no answer. Any non-fatal
+  throwable and any `LinkageError` from a tool is now a tool result marked as an error.
+- **On kind, with the native binary** (quickstart tier 3): `apply_pipeline` created the pipeline
+  from a `flow init` project (its SDK pinned to this build's version, published locally first, as
+  the README says for a build between releases) and it went Ready; `list_pipelines`,
+  `get_pipeline` (status, topics, the `TopicCreated` event), `pipeline_logs` for both containers,
+  and `pipeline_lag` (three partitions through the port-forward) answered; a record produced to
+  `greeter.in` came out of `greeter.out` with its greeting; `reset_pipeline` was refused while the
+  streamlet ran and accepted once `apply_pipeline` with `replicas = 0` had stopped it; a second
+  `apply_pipeline` updated the resource in place. The cluster's other pipeline was never touched.
+- **The smoke script's JVM diff needs one sbt invocation**: `cli/stage` and the native image built
+  in separate invocations get different dynver timestamps on a dirty tree, and `flow init` writes
+  the version into a project, so the two trees differ in that line. CI and `just cli-native` build
+  both in one invocation.
+- **The whole build from the branch** passed: format checks, every suite (the CLI's 92 cases, both
+  template languages included), `mutationCheck`, the Scala sample's descriptor check, the Python
+  SDK's checks and conformance, `just features` (94 scenarios), `just docs` (41 pages), the README
+  check, and the native binary's smoke. One Kafka suite failed once on a container start-up
+  (`ContainerLaunchException`, before any test ran) and passed on its rerun; nothing it tests was
+  changed.

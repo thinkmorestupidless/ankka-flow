@@ -86,6 +86,12 @@ pod's loopback interface.
    Python one: the streamlet, its test, the committed descriptor, a blueprint that verifies, the
    image build, the laptop compose file and these skills, at the `flow` release's SDK and sidecar.
 
+14. **In a project from `flow init`, `flow`'s abilities are tools.** `.mcp.json` starts `flow mcp`:
+   `verify_blueprint`, `generate_resource`, `flow_version`, `search_docs` and `read_doc` need no
+   cluster; `list_pipelines`, `get_pipeline`, `pipeline_logs` and `pipeline_lag` read the one cluster
+   `flow.toml` names; `apply_pipeline` and `reset_pipeline` change it. Nothing touches any other
+   cluster, whatever kubectl points at.
+
 ## Before answering
 
 - Is this a pipeline at all, or one ankka consumer? Apply rule 1 first.
@@ -98,6 +104,7 @@ pod's loopback interface.
 ## Mistakes to check for
 
 - Copying a sample out of the repository to start a project instead of running `flow init`.
+- Running `kubectl` against the shell's current context instead of the cluster `flow.toml` names.
 - Proposing Avro, Protobuf or a schema registry for a contract; only JSON by schema name exists.
 - A guide or script that builds `flow` from source instead of installing it, or that asks for a JVM
   to run it.
