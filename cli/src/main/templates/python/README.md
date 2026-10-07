@@ -47,6 +47,7 @@ docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-s
   --topic {{name}}.out --from-beginning --property print.key=true --timeout-ms 10000
 ```
 
+The first `kafka-topics.sh` may print connection warnings while Kafka starts, then create the topic.
 The consumer prints `k-1` and the object with its greeting. `docker compose down` stops it all.
 
 ## The image

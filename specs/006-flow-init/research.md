@@ -137,3 +137,32 @@ the index is built; the skills say `flow init` is how a project starts.
 2. The rendered Scala project resolves the locally published SDK by its snapshot version.
 3. The Python `Dockerfile` builds with `pip install .` against the path SDK in the suite (the image
    built in the suite installs the SDK from the repository, not PyPI).
+
+## Found during implementation
+
+- **V1**: the resource generator carries `.github/`, `.claude/` and `.gitignore` into the jar; each
+  language's index lists 70-odd files, most of them the plugin's skills.
+- **The skills are copied, never rendered.** The plugin's pages show tokens of their own
+  (`{{version}}` in an example), so anything under `.claude/` is copied byte for byte and left out
+  of the leftover-token check.
+- **Two more tokens.** The descriptor holds the fingerprint of `<name>.v1`, which depends on the
+  name, so `{{fingerprint}}` is computed by the CLI; and `{{scala_version}}` is the build's Scala 3
+  LTS, beside `{{sbt_version}}` and `{{native_packager_version}}`.
+- **A project name is at most 40 characters.** It becomes the pipeline id, which `flow generate`
+  limits to 40, so `flow init` refuses a longer one rather than write a project that cannot deploy.
+- **The Python pin is the SDK version, not the CLI's.** A dynver version (`0.4.1+7-…+…`) is not a
+  valid Python version, so hatchling refused the project; the pin is `{{sdk_version}}` — the
+  release's, or `0.0.0` between releases, which is what this repository's Python SDK says it is. The
+  sidecar tag is `{{image_version}}`, the version with `+` as `-`, as the build tags images.
+- **V2**: the rendered Scala project resolves the locally published SDK by the build's snapshot
+  version, and passes its tests, its descriptor check and `Docker/publishLocal`.
+- **V3**: the Python image built in the suite is rendered at the latest release (0.4.1), so its
+  unchanged Dockerfile installs from PyPI; tests and the descriptor check run on the path SDK.
+- **The generated workflows pass actionlint.**
+- **The released sidecar image is public**: `docker pull ghcr.io/thinkmorestupidless/ankka-flow-sidecar:0.4.1`
+  succeeds logged out.
+- **The laptop loop, by hand, both languages**, with the released 0.4.1 sidecar and the current
+  build's SDK: `k-1  {"greeting":"hello, ankka-flow","id":1}` (Scala) and
+  `k-1  {"id":1,"greeting":"hello, ankka-flow"}` (Python) read from `<name>.out`. The first topic
+  command can print connection warnings while Kafka starts; the README says so. `sbt run` in the
+  background waits on the terminal, so the Scala README stages the app and runs its script.
