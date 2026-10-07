@@ -27,10 +27,21 @@ Feature: flow init starts a streamlet project
     When it writes a project
     Then the project depends on the SDK of that same version
 
-  Scenario: the streamlet does something visible to each record
-    Given a project written by "flow init"
+  Scenario: the streamlet adds a greeting to each record
+    Given a project written by "flow init", and a record holding a JSON object with "id" set to "1"
+    When the record goes through its streamlet
+    Then the record on the output topic holds "id" set to "1" and "greeting" set to "hello, ankka-flow"
+    And it keeps the input's key and headers
+
+  Scenario: the greeting is the parameter's deploy-time value
+    Given a project written by "flow init", deployed with the parameter "greeting" set to "hej"
     When a record goes through its streamlet
-    Then the record on the output topic differs from the input in a way a person can see
+    Then the record on the output topic holds the greeting "hej"
+
+  Scenario: a value that is not a JSON object fails the batch
+    Given a project written by "flow init"
+    When a record whose value is "not json" goes through its streamlet
+    Then the batch fails and nothing is emitted
 
   Scenario Outline: flow init refuses what it cannot write a working project for
     Given <problem>

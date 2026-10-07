@@ -38,6 +38,14 @@ command gives a directory that builds, tests, writes and checks its descriptor, 
 blueprint, runs on a laptop beside the sidecar and builds its image — depending on the published SDK
 of the same version as the `flow` that wrote it.
 
+## Clarifications
+
+### Session 2026-10-07
+
+- Q: The five proposed glossary terms (project, template, image, package, tutorial): accept, reword or defer? → A: Accept all five, each with an `Avoid:` line; none remain proposed.
+- Q: What does the generated streamlet do to each record? → A: It reads a JSON object, adds a `greeting` field whose value is the parameter `greeting` (default `hello, ankka-flow`), and emits it with the same key and headers; a value that is not a JSON object fails the batch.
+- Q: How does the laptop loop put records in and read them out? → A: The README uses Kafka's own console producer and consumer through `docker compose exec`, the same commands for both languages; the project carries no produce or verify program.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - A working streamlet project from one command (Priority: P1)
@@ -58,7 +66,9 @@ project's tests, its descriptor check, and `flow verify` of its blueprint; each 
 - added `features/cli/init.feature`: a project's committed descriptor is what its streamlet declares
 - added `features/cli/init.feature`: a project's blueprint verifies against its descriptor
 - added `features/cli/init.feature`: a project depends on the SDK of the flow that wrote it
-- added `features/cli/init.feature`: the streamlet does something visible to each record
+- added `features/cli/init.feature`: the streamlet adds a greeting to each record
+- added `features/cli/init.feature`: the greeting is the parameter's deploy-time value
+- added `features/cli/init.feature`: a value that is not a JSON object fails the batch
 
 ---
 
@@ -155,7 +165,9 @@ finds every file the JVM build writes; the docs build is clean and the tutorial'
 **The project**
 
 - **FR-005**: The project MUST hold one streamlet with one JSON inlet and one JSON outlet that
-  changes each record in a way a person can see in the output topic, and one parameter.
+  reads each record as a JSON object, adds a `greeting` field whose value is its one parameter,
+  `greeting` (default `hello, ankka-flow`), and emits the result with the record's key and headers;
+  a value that is not a JSON object fails the batch, as the cart router's does.
 - **FR-006**: The project MUST hold a harness test of the streamlet that passes as written.
 - **FR-007**: The project MUST hold its streamlet's descriptor, committed, equal to what the SDK
   writes for the declaration, and the project's descriptor command and its check MUST work as
@@ -165,7 +177,10 @@ finds every file the JVM build writes; the docs build is clean and the tutorial'
 - **FR-009**: The project MUST build an image holding only the streamlet and the SDK: with the
   build's own packaging for Scala and a Dockerfile for Python.
 - **FR-010**: The project MUST hold the laptop loop — Kafka and the sidecar in containers, the
-  sidecar's configuration for that network — and deploy-time configuration for a local cluster.
+  sidecar's configuration for that network — and deploy-time configuration for a local cluster. Its
+  README MUST put records on the input topic and read the output topic with Kafka's own console
+  tools through the compose file, the same commands for both languages; the project carries no
+  program of its own for that.
 - **FR-011**: The project MUST hold a README with every command it needs, a `.gitignore`, and a CI
   workflow that runs its tests and its descriptor check.
 - **FR-012**: The project MUST carry the ankka-flow agent skills of the `flow` version that wrote
@@ -213,8 +228,8 @@ finds every file the JVM build writes; the docs build is clean and the tutorial'
   fetches its Scala template with `sbt new`. The embedded path is the one pinned to the CLI's version
   and the one a native binary can serve; both languages here use it.
 - **One streamlet, the cart router's shape.** The generated streamlet is smaller than the cart
-  router and does something visible to each record (it uppercases a field, say); the plan picks the
-  transform. A multi-streamlet pipeline is out of scope.
+  router: it adds a greeting to each record, so the change is visible in a console consumer and the
+  parameter's deploy-time value is too. A multi-streamlet pipeline is out of scope.
 - **The skills are the published plugin's.** The project's `.claude/skills/` is the ankka-flow
   plugin's skills as rendered for that `flow` version, as ankka's projects carry ankka's.
 - **No MCP file yet.** A `.mcp.json` names a server command; it arrives with the MCP feature.

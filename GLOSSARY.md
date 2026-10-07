@@ -262,21 +262,34 @@ The command that checks every documentation page and builds the site.
 A model writing code with the skills as its documentation.
 
 ### project
-*Proposed.* The directory flow init writes: a streamlet, its test, its descriptor, a blueprint, an
+The directory flow init writes: a streamlet, its test, its descriptor, a blueprint, an
 image build, the laptop loop, deploy-time configuration, a README, a CI workflow and the skills.
 
+Avoid: scaffold, skeleton
+
 ### template
-*Proposed.* The files for one language that flow carries, with names to be replaced by a project's.
+The files for one language that flow carries, with names to be replaced by a project's.
+
+Avoid: boilerplate
 
 ### image
-*Proposed.* The container image a streamlet runs from, holding only its code and its SDK.
+The container image a streamlet runs from, holding only its code and its SDK.
+
+Avoid: docker image
 
 ### package
-*Proposed.* The namespace a project's streamlet code lives in: a Scala package or a Python module.
+The namespace a project's streamlet code lives in: a Scala package or a Python module.
 Not an installable; a Homebrew installable is a formula.
 
+Avoid: namespace
+
+### greeting
+The field the generated streamlet adds to each record, set to its parameter of the same name.
+
 ### tutorial
-*Proposed.* A documentation page that takes a reader through a first task from the start.
+A documentation page that takes a reader through a first task from the start.
+
+Avoid: walkthrough
 
 ## Everyday words
 
@@ -308,4 +321,4 @@ reach, compares, compared, copy, two, shared, gives, give, containers, host, pro
 wires, wired, routed, affect, round, trip, manual, fresh, project, naming, compiles, compile,
 uploaded, upload, rest, equivalent, coordinates, named, looks, pass, change, build, drift,
 lines, line, written, writes, write, reads, read, shows, shown, show, learn, kept, sends, sent,
-once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows,
+once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON,
