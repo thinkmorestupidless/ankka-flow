@@ -60,6 +60,9 @@ its fourth story and 008 is not built separately.
 - Q: Who installs the Flink Kubernetes Operator? → A: Whoever installs ankka-flow's operator, as a prerequisite. ankka-flow's operator neither installs nor upgrades it, and refuses a Flink streamlet where it is absent.
 - Q: How do an ankka project's declarations reach `flow verify`? → A: As a file a person exports with ankka's own CLI. `flow` holds no ankka login and calls no control plane.
 - Q: Does a call straight into an ankka service belong in this feature? → A: No. It is the next feature. Here a result reaches ankka through a topic.
+- Q: Which language is a Flink streamlet written in: the SDK, the sample and the documentation's tested code? → A: Java. The Flink SDK is a Java library, and the sample aggregator and every Flink sample on a page are Java. Writing one in Scala is neither prevented nor documented.
+- Q: How does a streamlet author run a pipeline without Kubernetes, now the sidecar's laptop walkthrough is gone? → A: Each streamlet runs as an ordinary process against Kafka in a container: a Pekko Streams streamlet as itself, a Flink streamlet in Flink's local mode from the same main. A Flink streamlet's state there is not kept between runs.
+- Q: Do the glossary's proposed terms stand, and do version one's terms go? → A: All stand. Terms only version one used are deleted from the glossary in this feature.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -86,6 +89,7 @@ rewritten on the second; a streamlet killed mid-flow resumes and loses nothing.
 - added `features/pipelines/engines.feature`: a Pekko Streams streamlet reads its inlet and writes its outlet
 - added `features/pipelines/engines.feature`: a Pekko Streams streamlet commits a record only after what it wrote is confirmed
 - added `features/pipelines/engines.feature`: a Pekko Streams streamlet is reset to read its topics again from the start
+- added `features/pipelines/laptop.feature`: a streamlet runs as a command on the host in the laptop walkthrough
 
 ---
 
@@ -114,6 +118,7 @@ deployed and an open window's count carries over.
 - added `features/pipelines/flink.feature`: a new image that cannot read the state leaves the streamlet failed and says so
 - added `features/pipelines/flink.feature`: a reset Flink streamlet discards its state and reads its topics again from the start
 - added `features/pipelines/flink.feature`: a pipeline with a Flink streamlet is refused where the cluster lacks what Flink needs
+- added `features/pipelines/laptop.feature`: a Flink streamlet on a laptop keeps its state only while it runs
 
 ---
 
@@ -250,6 +255,7 @@ the protocol, either SDK or the merge sink.
 - removed `features/cli/release.feature`: the images, the Python SDK and the plugin are published whatever the native binaries do
 - added `features/cli/release.feature`: the images and the plugin are published whatever the native binaries do
 - changed `features/cli/mcp.feature`: a pipeline's lag is read through a tool
+- changed `features/cli/mcp.feature`: a streamlet's logs are read through a tool
 
 ---
 
@@ -297,6 +303,9 @@ the protocol, either SDK or the merge sink.
   group.
 - **FR-005**: An engine SDK MUST ship a harness with which a streamlet is tested with no broker
   and no cluster.
+- **FR-029**: A streamlet of either engine MUST run as an ordinary process, with no cluster,
+  against a Kafka its settings name, from the same main its image runs. A Flink streamlet run so
+  keeps its state only while it runs, and says so when it starts.
 
 **Pekko Streams**
 
@@ -368,7 +377,8 @@ the protocol, either SDK or the merge sink.
   Pekko Streams and which an ankka consumer; the limitations page MUST state each engine's
   delivery promise and what this feature does not do; and every page MUST describe engine
   streamlets only.
-- **FR-028**: `flow mcp`'s lag tool MUST read the lag this feature reports, for every engine.
+- **FR-028**: `flow mcp`'s lag tool MUST read the lag this feature reports, for every engine, and
+  its logs tool MUST read a streamlet's pods, there being no sidecar to choose.
 
 ### Key Entities *(each a term in the project glossary)*
 
@@ -405,9 +415,9 @@ the protocol, either SDK or the merge sink.
 - **Nothing depends on version one.** No pipeline of version one is kept running anywhere that
   matters, so there is no migration, no deprecation period and no compatibility layer. The Neo4j
   merge sink already lives in `ankka-contrib` as an ankka service and is not rebuilt here.
-- **Two engines, two SDKs, JVM only.** Pekko Streams streamlets are written in Scala on the
-  repository's own Pekko line. Flink streamlets are written against Flink's Java API, from Java or
-  Scala, on Flink's own dependency line, which is pinned here and not mirrored from ankka. The
+- **Two engines, two SDKs, JVM only** (clarified). Pekko Streams streamlets are written in Scala
+  on the repository's own Pekko line. Flink streamlets are written in Java against Flink's Java
+  API, on Flink's own dependency line, which is pinned here and not mirrored from ankka. The
   plan confirms the Flink release and that nothing it brings carries a BSL licence.
 - **The Flink operator and the state store are the cluster's** (clarified). The Flink Kubernetes
   Operator is installed by whoever installs ankka-flow's operator, as a prerequisite; ankka-flow's operator
@@ -431,7 +441,8 @@ the protocol, either SDK or the merge sink.
 ## Out of Scope
 
 - Spark, and any third engine.
-- Flink SQL, a streamlet that is only a query, and Flink streamlets in Python.
+- Flink SQL, a streamlet that is only a query, Flink streamlets in Python, and a documented or
+  tested path for Flink streamlets in Scala.
 - A layer that lets one streamlet's logic run on more than one engine.
 - Windows, timers or state for Pekko Streams streamlets.
 - A call from a streamlet straight into an ankka service, over a granted route or gRPC method: the

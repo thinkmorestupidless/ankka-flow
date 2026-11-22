@@ -39,11 +39,13 @@
   the spec's Clarifications: version one is removed; the Flink operator is a prerequisite; an
   ankka project's declarations reach `flow verify` as a file; the call straight into an ankka
   service is the next feature.
-- `GLOSSARY.md`: 25 terms proposed under "Engines and ankka"; `streamlet` redefined; `service`
-  removed from the words `server` refuses. Terms that describe only version one (sidecar,
-  protocol, batch, emit, harness, the SDKs, the cart router and others) are still defined and are
-  for `/speckit-clarify` to retire.
+- Clarified again on 2026-11-22: Flink streamlets are Java; each streamlet runs as an ordinary
+  process on a laptop (FR-029, `features/pipelines/laptop.feature`); the proposed terms stand.
+- `GLOSSARY.md`: the 25 terms under "Engines and ankka" are settled and `Flink SDK` added; 18
+  terms only version one used are deleted; `SDK`, `harness`, `image`, `release`, `project`,
+  `cart event` and `laptop walkthrough` redefined.
 - Features: `features/sdk/` and `features/cli/init.feature` removed; one scenario removed from
-  `install-page.feature`; one renamed in `release.feature`; one changed in `mcp.feature`.
+  `install-page.feature`; one renamed in `release.feature`; two changed in `mcp.feature`;
+  `features/pipelines/` added with five features.
 - `specs-from` moved to "009": specs 004 to 007 name scenarios this feature removes.
-- `features-check.sh`: 0 findings in 74 scenarios.
+- `features-check.sh`: 0 findings in 77 scenarios.

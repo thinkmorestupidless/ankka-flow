@@ -55,7 +55,7 @@ Feature: flow mcp serves the platform to a coding agent
   Scenario: a streamlet's logs are read through a tool
     Given "flow mcp" started with a cluster named, running a pipeline
     When the client calls the pipeline logs tool for one of its streamlets
-    Then the answer holds the recent lines of the streamlet's process container, or of its sidecar when asked
+    Then the answer holds the recent lines of the streamlet's pods
 
   Scenario: a pipeline's lag is read through a tool
     Given "flow mcp" started with a cluster named, running a pipeline
