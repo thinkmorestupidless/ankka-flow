@@ -55,14 +55,73 @@ class RenderingSuite extends munit.FunSuite:
     )
   }
 
-  test("a Flink streamlet with no state store is refused, naming the Secret to create") {
-    val rendered = render(cartWithCounter())
-    assertEquals(deployments(rendered), Vector.empty)
-    assert(
-      events(rendered).exists(_.note == Rendering.stateStoreMissing(settings)),
-      events(rendered)
+  private def refusedFor(o: Observed, kind: String, message: String) =
+    val rendered = render(cartWithCounter(), o)
+    val st       = status(rendered)
+    assertEquals(st.phase, AnkkaFlowStatus.Failed)
+    val c = st.conditions.find(_.`type` == kind).getOrElse(fail(s"no $kind in ${st.conditions}"))
+    assertEquals((c.status, c.message), (Condition.True, message))
+    assertEquals(
+      st.conditions.find(_.`type` == Condition.Ready).map(_.status),
+      Some(Condition.False)
     )
-    assertEquals(status(rendered).phase, AnkkaFlowStatus.Failed)
+    assert(events(rendered).exists(e => e.reason == kind && e.note == message), events(rendered))
+    // none of its streamlets, of either engine, is started; nothing else is touched
+    assertEquals(
+      rendered.actions.filterNot(a =>
+        a.isInstanceOf[Action.RecordEvent] || a.isInstanceOf[Action.SetStatus]
+      ),
+      Vector.empty
+    )
+
+  test("a pipeline with a Flink streamlet is refused where the cluster lacks the Flink operator") {
+    refusedFor(
+      flinkObserved.copy(flinkCrd = false),
+      Condition.FlinkOperatorMissing,
+      Conditions.FlinkOperatorMissingMessage
+    )
+  }
+
+  test("a pipeline with a Flink streamlet is refused where the cluster lacks a state store") {
+    refusedFor(
+      flinkObserved.copy(stateStore = None),
+      Condition.StateStoreMissing,
+      "create the Secret flink-state in namespace ankka-flow with a dir key"
+    )
+  }
+
+  test("lacking both, both conditions are listed") {
+    val st = status(render(cartWithCounter(), observed))
+    assertEquals(
+      st.conditions.map(_.`type`),
+      List(Condition.FlinkOperatorMissing, Condition.StateStoreMissing, Condition.Ready)
+    )
+  }
+
+  test(
+    "with the Flink operator and a state store, neither condition; without Flink, neither needed"
+  ) {
+    val withBoth = status(render(cartWithCounter(), flinkObserved))
+    assert(
+      !withBoth.conditions.exists(c =>
+        c.`type` == Condition.FlinkOperatorMissing || c.`type` == Condition.StateStoreMissing
+      ),
+      withBoth.conditions
+    )
+    assertNotEquals(withBoth.phase, AnkkaFlowStatus.Failed)
+    assertNotEquals(status(render(cart(), observed)).phase, AnkkaFlowStatus.Failed)
+  }
+
+  test("a condition that still holds keeps the time it was first reported") {
+    val o     = flinkObserved.copy(flinkCrd = false)
+    val first = status(Rendering.render(cartWithCounter(), settings, o, "2026-11-22T10:00:00Z"))
+    val r     = cartWithCounter()
+    r.setStatus(first)
+    val second = status(Rendering.render(r, settings, o, "2026-11-22T10:05:00Z"))
+    assertEquals(
+      second.conditions.map(_.lastTransitionTime).distinct,
+      List("2026-11-22T10:00:00Z")
+    )
   }
 
   test(

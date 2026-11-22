@@ -36,10 +36,6 @@ object Rendering:
 
   private def isFlink(s: StreamletSpec): Boolean = s.engine == "flink"
 
-  /** `StateStoreMissing`'s message (contracts/resource-and-operator.md). */
-  def stateStoreMissing(settings: Settings): String =
-    s"create the Secret ${StateStore.SecretName} in namespace ${settings.clustersNamespace} with a dir key"
-
   final case class Rendered(
       actions: Vector[Action],
       resolved: Vector[ResolvedTopic],
@@ -71,12 +67,26 @@ object Rendering:
     val refusals: Vector[String] =
       topicsResolved.toVector.collect { case (_, Left(e)) => e } ++
         spec.topics.flatMap(t => t.cluster.flatMap(observed.clusterProblems.get)).distinct ++
-        spec.streamlets.flatMap(s => descriptorProblems(s)) ++
-        Option
-          .when(spec.streamlets.exists(isFlink) && observed.stateStore.isEmpty)(
-            stateStoreMissing(settings)
-          )
-          .toVector
+        spec.streamlets.flatMap(s => descriptorProblems(s))
+    // What Flink needs of the cluster: each a condition, and the whole resource refused (R11).
+    val missing =
+      Conditions.prerequisites(spec.streamlets.exists(isFlink), observed, settings, now)
+    if missing.nonEmpty then
+      val conditions = Conditions.merge(
+        Conditions.previous(resource),
+        missing :+ Conditions.ready(false, missing.head.`type`, missing.head.message, now)
+      )
+      return Rendered(
+        missing.toVector.map(c => Action.RecordEvent(c.`type`, Events.Warning, c.message)) ++
+          refusals.map(p => Action.RecordEvent("Refused", Events.Warning, p)) :+
+          Action.SetStatus(
+            LifecycleRules
+              .failed(resource, missing.map(_.message).toVector ++ refusals, now)
+              .copy(conditions = conditions)
+          ),
+        Vector.empty,
+        Map.empty
+      )
     if refusals.nonEmpty then
       return Rendered(
         refusals.map(p => Action.RecordEvent("Refused", Events.Warning, p)) :+

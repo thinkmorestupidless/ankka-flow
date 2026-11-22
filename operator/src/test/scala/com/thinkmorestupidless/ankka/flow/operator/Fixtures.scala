@@ -106,7 +106,7 @@ object Fixtures:
     Map("AWS_ACCESS_KEY_ID" -> "minio", "AWS_SECRET_ACCESS_KEY"                  -> "minio-secret")
   )
 
-  val flinkObserved: Observed = observed.copy(stateStore = Some(stateStore))
+  val flinkObserved: Observed = observed.copy(flinkCrd = true, stateStore = Some(stateStore))
 
   /** The cart pipeline with the counter on Flink reading the cleaner's managed output. */
   def cartWithCounter(

@@ -16,6 +16,8 @@ final case class Observed(
     clusterProblems: Map[String, String] = Map.empty,
     /** Kafka topic name to what Kafka says about it; absent when not yet described. */
     topics: Map[String, TopicState] = Map.empty,
+    /** The CRD `flinkdeployments.flink.apache.org` exists: the Flink operator is installed. */
+    flinkCrd: Boolean = false,
     /** The Secret `flink-state`, when it exists with a `dir`. */
     stateStore: Option[StateStore] = None,
     /** Streamlet name to its `FlinkDeployment`'s state, for those labelled with this pipeline. */
