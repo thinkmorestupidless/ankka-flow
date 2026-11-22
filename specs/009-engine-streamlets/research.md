@@ -670,7 +670,14 @@ How it is built (T020): not with `CommitWhen.NextOffsetObserved`, whose committe
 drained stop's last offset uncommitted in `RunnerKafkaSuite`, but in
 `CommitAfterWrite.flowCommittingAfter`: after the ordered write, a `statefulMap` holds each
 partition's latest confirmed offset, releases it when a later one of that partition is confirmed,
-and releases every held offset when the stream completes (never on failure). The committer then
+and releases every held offset when the stream completes (never on failure). Found at the review
+before the pull request: `statefulMap` runs its `onComplete` on failure as well and emits what it
+returns, and the committer commits a batch in flight as an emergency when its upstream fails, so a
+record made into two elements whose second write failed could be committed. The release on
+completion is now a marker concatenated after the writes, which only a normal completion reaches,
+and `onComplete` releases nothing. `HoldUntilNextSuite` fails with the old release; the Kafka case
+beside it (`RunnerKafkaSuite`, the second of two writes past the broker's size limit) passed with
+the defect too, because whether the emergency commit lands races the consumer's stop. The committer then
 commits what it is handed (`OffsetFirstObserved`). The consumer's stop timeout is zero, so a failed
 run leaves its group at once and its restart is assigned promptly; a stop is
 `drainAndShutdown`.

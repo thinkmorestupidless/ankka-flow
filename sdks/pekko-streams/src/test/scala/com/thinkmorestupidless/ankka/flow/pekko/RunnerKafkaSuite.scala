@@ -146,6 +146,38 @@ class RunnerKafkaSuite extends KafkaSuite:
     assertEquals(committed(group), 5L)
   }
 
+  /**
+   * Each record written twice, as `v` and `v!`; `big`'s second while asked is past the broker's
+   * limit.
+   */
+  final class Twice(val failing: AtomicBoolean) extends PekkoStreamlet("upper"):
+    val in    = inlet("in", Contract("x.v1"), Codec.string)
+    val out   = outlet("out", Contract("x.v1"), Codec.string)
+    val tries = new AtomicInteger(0)
+    def logic(ctx: Context): Logic = from(in) {
+      _.mapConcat { r =>
+        if r.value == "big" then tries.incrementAndGet(): Unit
+        val second =
+          if r.value == "big" && failing.get then "x" * (2 * 1024 * 1024) else s"${r.value}!"
+        Seq(out(Record(r.key, r.value)), out(Record(r.key, second)))
+      }
+    }
+
+  test("a record made into two whose second write fails is retried, and its offset not committed") {
+    val (in, out) = (createTopic(uniqueTopic("in"), 1), createTopic(uniqueTopic("out"), 1))
+    val group     = uniqueTopic("g")
+    val twice     = new Twice(new AtomicBoolean(true))
+    val run       = start(twice, settings(in, out, group))
+    try
+      publish(in, Seq("a", "big").map(v => (Some("k"), v, Nil)))
+      eventually()(assert(twice.tries.get >= 3, s"tries ${twice.tries.get}"))
+      assert(committed(group) <= 1L, s"committed ${committed(group)}")
+      twice.failing.set(false)
+      eventually()(assert(values(out, 20, 2.seconds).toSet == Set("a", "a!", "big", "big!")))
+    finally run.stop()
+    assertEquals(committed(group), 2L)
+  }
+
   private def values(topic: String, n: Int, within: FiniteDuration) =
     consumeAll(topic, n, within).map(r => str(r.value))
 

@@ -29,7 +29,7 @@ import org.apache.pekko.kafka.ConsumerMessage.{
   GroupTopicPartition
 }
 import org.apache.pekko.kafka.scaladsl.Committer
-import org.apache.pekko.stream.scaladsl.{Flow, Keep, Sink}
+import org.apache.pekko.stream.scaladsl.{Flow, Keep, Sink, Source}
 
 /**
  * Commit-after-write, carried from Cloudflow's `PekkoStreamletLogic.sinkCommittingAfter`
@@ -100,29 +100,52 @@ object CommitAfterWrite:
    * several) are all confirmed before it is committed. A failed write fails the stream with nothing
    * from it onwards committed, and what was held back is not committed either.
    */
+  /**
+   * Holds each partition's latest confirmed offset, and hands it on once a later offset of that
+   * partition arrives, or when the stream completes. On failure nothing held is handed on:
+   * `statefulMap` runs its `onComplete` on failure too, so the release on completion is a marker
+   * concatenated after the upstream, which only a normal completion reaches.
+   */
+  private[pekko] def holdUntilNext[K, O](
+      key: O => K,
+      position: O => Long
+  ): Flow[O, Seq[O], NotUsed] =
+    Flow[O]
+      .map(Some(_))
+      .concat(Source.single(None))
+      .statefulMap(() => Map.empty[K, O])(
+        (held, next) =>
+          next match
+            case Some(o) =>
+              val k = key(o)
+              (held.updated(k, o), held.get(k).filter(position(_) < position(o)).toSeq)
+            case None => (Map.empty, held.values.toSeq)
+        ,
+        _ => None
+      )
+      .filter(_.nonEmpty)
+
   def flowCommittingAfter[T](
       write: T => Future[Any],
       committerSettings: CommitterSettings,
       parallelism: Int
   )(using ExecutionContext): Flow[(T, CommittableOffset), Done, NotUsed] =
-    type Held = Map[GroupTopicPartition, CommittableOffset]
-    Flow[(T, CommittableOffset)]
+    val written = Flow[(T, CommittableOffset)]
       .mapAsync(parallelism) { (element, offset) =>
         if commitFirst then
           write(element): Unit
           Future.successful(offset)
         else write(element).map(_ => offset)
       }
-      .statefulMap(() => Map.empty: Held)(
-        (held, offset) =>
-          val key = offset.partitionOffset.key
-          val released =
-            held.get(key).filter(_.partitionOffset.offset < offset.partitionOffset.offset)
-          // Under the mutation the offset goes straight to the committer, as it was handed over.
-          if commitFirst then (held, CommittableOffsetBatch(offset))
-          else (held.updated(key, offset), CommittableOffsetBatch(released.toSeq))
-        ,
-        held => Option.when(held.nonEmpty)(CommittableOffsetBatch(held.values.toSeq))
-      )
-      .filter(_.batchSize > 0)
+    // Under the mutation each offset goes straight to the committer, as it was handed over.
+    val released: Flow[CommittableOffset, Seq[CommittableOffset], NotUsed] =
+      if commitFirst then Flow[CommittableOffset].map(Seq(_))
+      else
+        holdUntilNext[GroupTopicPartition, CommittableOffset](
+          _.partitionOffset.key,
+          _.partitionOffset.offset
+        )
+    written
+      .via(released)
+      .map(CommittableOffsetBatch(_))
       .via(Committer.flow(committerSettings))
