@@ -85,7 +85,7 @@ object StreamletFiles:
           InletSettings(
             port,
             t.name,
-            Names.group(pipeline, s.name, port),
+            Names.group(pipeline, s.name, port, t.groupPrefix),
             Names.clientId(pipeline, s.name, port),
             t.connectionConfig ++ t.consumerConfig ++
               Map("bootstrap.servers" -> t.bootstrapServers) ++ committed

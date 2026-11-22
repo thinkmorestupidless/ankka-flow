@@ -56,7 +56,7 @@ object Reset:
               .get(topicId)
               .map(t =>
                 Action.ResetGroup(
-                  ResetTarget(s.name, inlet, ResetRequest.groupId(pipeline, s.name, inlet), t)
+                  ResetTarget(s.name, inlet, Names.group(pipeline, s.name, inlet, t.groupPrefix), t)
                 )
               )
           }

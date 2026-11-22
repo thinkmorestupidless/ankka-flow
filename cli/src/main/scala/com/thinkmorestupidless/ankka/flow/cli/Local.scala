@@ -32,7 +32,18 @@ object Local:
 
   /** Every streamlet's settings, by its name in the blueprint. */
   def settings(r: Request): Either[Vector[String], Vector[Settings]] =
-    Verify.run(r.in).map { v =>
+    Verify.run(r.in).flatMap { v =>
+      if r.ankkaBootstrapServers.isEmpty && v.blueprint.topics.exists(_.ankka.isDefined) then
+        Left(
+          Vector(
+            "the blueprint reads or writes ankka topics: pass --ankka-bootstrap-servers HOST:PORT, the broker of ankka's local platform"
+          )
+        )
+      else Right(write(r, v))
+    }
+
+  private def write(r: Request, v: Verify.Verified): Vector[Settings] =
+    locally {
       val pipeline =
         v.blueprint.name.getOrElse(r.in.blueprint.getFileName.toString.takeWhile(_ != '.'))
       def ports(streamlet: String, outlet: Boolean): Vector[(String, VerifiedTopic)] =
@@ -42,8 +53,12 @@ object Local:
             .map(_.portName -> t)
         )
       def topic(t: VerifiedTopic) = TopicSettings.fromConfig(v.overrides.topicConfig(t))
+      def broker(t: VerifiedTopic) =
+        Map(
+          "bootstrap.servers" -> (if t.ankka.isDefined then r.ankkaBootstrapServers.get
+                                  else r.bootstrapServers)
+        )
       v.blueprint.streamlets.map { s =>
-        val broker = Map("bootstrap.servers" -> r.bootstrapServers)
         Settings(
           pipeline = pipeline,
           streamlet = s.name,
@@ -57,7 +72,7 @@ object Local:
               t.kafkaName(pipeline),
               group,
               group,
-              topic(t).consumerConfig ++ broker
+              topic(t).consumerConfig ++ broker(t)
             )
           },
           outlets = ports(s.name, outlet = true).map { (port, t) =>
@@ -67,7 +82,7 @@ object Local:
               s"$pipeline.${s.name}.$port",
               Delivery.AtLeastOnce,
               None,
-              topic(t).producerConfig ++ broker
+              topic(t).producerConfig ++ broker(t)
             )
           }
         )

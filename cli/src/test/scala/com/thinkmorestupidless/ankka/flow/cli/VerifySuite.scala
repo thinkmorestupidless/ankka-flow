@@ -272,3 +272,255 @@ class VerifySuite extends munit.FunSuite:
     assertEquals(flow("verify").code, 2)
     assertEquals(flow("frobnicate").code, 2)
   }
+
+  // ── One blueprint, several engines ───────────────────────────────────────────────────────
+
+  private val FlinkBlock =
+    """"engine": "flink",
+      |    "flink": {
+      |      "entry_class": "fixture.Streamlet",
+      |      "version": "2.2"
+      |    },""".stripMargin
+
+  /** A fixture's descriptor as a streamlet of `engine`, its ports and contracts unchanged. */
+  private def asEngine(engine: String)(json: String): String =
+    val pekko = json.replaceAll(
+      """(?s)"engine": "flink",\s*"flink": \{[^}]*\},""",
+      """"engine": "pekko-streams","""
+    )
+    if engine == "flink" then pekko.replace(""""engine": "pekko-streams",""", FlinkBlock) else pekko
+
+  test("a blueprint wires a Pekko Streams streamlet's outlet to a Flink streamlet's inlet") {
+    val engines = Vector("cart-cleaner.json", "cart-counter.json").map(n =>
+      n -> """"engine": "([^"]+)"""".r
+        .findFirstMatchIn(Files.readString(cart.resolve(s"descriptors/$n")))
+        .get
+        .group(1)
+    )
+    assertEquals(
+      engines,
+      Vector("cart-cleaner.json" -> "pekko-streams", "cart-counter.json" -> "flink")
+    )
+    assertEquals(verify(cart).code, 0)
+  }
+
+  for
+    writer <- Vector("pekko-streams", "flink")
+    reader <- Vector("flink", "pekko-streams")
+  do
+    test(
+      s"a $writer writer and a $reader reader disagreeing on a contract are refused naming both"
+    ) {
+      val dir = variant(descriptors =
+        Map(
+          "cart-cleaner.json" -> asEngine(writer),
+          "cart-counter.json" -> (asEngine(reader).andThen(
+            _.replace("clean-carts.v1", "clean-carts.v2")
+          ))
+        )
+      )
+      refused(
+        verify(dir),
+        "cleaner.out",
+        "counter.in",
+        "contract clean-carts.v1",
+        "contract clean-carts.v2"
+      )
+      val agreeing = variant(descriptors =
+        Map("cart-cleaner.json" -> asEngine(writer), "cart-counter.json" -> asEngine(reader))
+      )
+      assertEquals(verify(agreeing).code, 0, verify(agreeing).err)
+    }
+
+  test(
+    "generate writes a resource whose streamlets each carry their engine; the blueprint names none"
+  ) {
+    assert(!Files.readString(cart.resolve("blueprint.conf")).contains("engine"))
+    val r = flow(
+      "generate",
+      cart.resolve("blueprint.conf").toString,
+      "--descriptors",
+      cart.resolve("descriptors").toString,
+      "--images",
+      cart.resolve("images.conf").toString,
+      "--version",
+      "0.6.0"
+    )
+    assertEquals(r.code, 0, r.err)
+    val spec = com.thinkmorestupidless.ankka.flow.crd.FlowSerialization.fromYaml(r.out).getSpec
+    assertEquals(
+      spec.streamlets.map(s => s.name -> s.engine).toMap,
+      Map("cleaner" -> "pekko-streams", "counter" -> "flink")
+    )
+  }
+
+  // ── ankka topics ──────────────────────────────────────────────────────────────────────────
+
+  private val checkoutTopics = repoRoot.resolve("cli/src/test/resources/ankka/checkout-topics.json")
+
+  /**
+   * The cart pipeline on ankka topics of project `checkout`: the cleaner (Pekko Streams) reads
+   * `cart-events` and writes `clean-carts`; the counter (Flink) reads `clean-carts` and writes
+   * `cart-counts`. Each port of either engine, inlet and outlet, is on an ankka topic.
+   */
+  private def onAnkka(edit: String => String = identity) =
+    variant(blueprint =
+      b =>
+        edit(
+          b.replace(
+            "managed    = false\n      topic.name = \"shop.cart-events.v1\"\n      cluster    = shop",
+            "ankka      = \"checkout/cart-events\""
+          ).replace(
+            "producers  = [cleaner.out]\n      consumers  = [counter.in]\n      partitions = 6\n      replicas   = 1\n      topic { retention.ms = 86400000 }",
+            "ankka      = \"checkout/clean-carts\"\n      producers  = [cleaner.out]\n      consumers  = [counter.in]"
+          ).replace(
+            "producers = [counter.out]",
+            "ankka     = \"checkout/cart-counts\"\n      producers = [counter.out]"
+          )
+        )
+    )
+
+  private def withTopics(f: String => String) =
+    val file = Files.createTempFile("checkout", ".json")
+    Files.writeString(file, f(Files.readString(checkoutTopics)))
+    s"checkout=$file"
+
+  test("an inlet and an outlet of each engine on ankka topics whose contracts agree verify") {
+    val dir = onAnkka()
+    assert(Files.readString(dir.resolve("blueprint.conf")).contains("checkout/clean-carts"))
+    val r = verify(dir, "--ankka-topics", s"checkout=$checkoutTopics")
+    assertEquals(r.code, 0, r.err)
+    assertEquals(r.err, "")
+  }
+
+  for (topic, ports) <- Seq(
+      "cart-events" -> Seq("cleaner.in"),
+      "clean-carts" -> Seq("cleaner.out", "counter.in"),
+      "cart-counts" -> Seq("counter.out")
+    )
+  do
+    test(s"a port whose contract differs from the ankka topic's is refused: $topic") {
+      val other = withTopics(t => t.replace(s"\"name\": \"$topic.v1\"", s"\"name\": \"$topic.v9\""))
+      val r     = verify(onAnkka(), "--ankka-topics", other)
+      refused(r, ports.map(p => s"$p declares contract")*)
+      assert(r.err.contains(s"ankka topic checkout/$topic declares $topic.v9"), r.err)
+    }
+
+  test("a fingerprint that differs where both state one is refused") {
+    val other = withTopics(_.replace("sha256:f19f4516", "sha256:00004516"))
+    refused(
+      verify(onAnkka(), "--ankka-topics", other),
+      "cleaner.in declares contract cart-events.v1 sha256:f19f4516",
+      "ankka topic checkout/cart-events declares cart-events.v1 sha256:00004516"
+    )
+  }
+
+  test("an ankka topic the project does not declare is refused by name, listing what it does") {
+    refused(
+      verify(
+        onAnkka(_.replace("checkout/cart-counts", "checkout/cart-totals")),
+        "--ankka-topics",
+        s"checkout=$checkoutTopics"
+      ),
+      "ankka topic checkout/cart-totals is not declared; project checkout declares: cart-checkouts, cart-counts, cart-events, clean-carts, clean-checkouts, notices"
+    )
+  }
+
+  test("an ankka topic that declares no contract is refused, saying what to declare") {
+    refused(
+      verify(
+        onAnkka(_.replace("checkout/cart-counts", "checkout/notices")),
+        "--ankka-topics",
+        s"checkout=$checkoutTopics"
+      ),
+      "ankka topic checkout/notices declares no contract: declare one with ankka projects topics set notices --contract"
+    )
+  }
+
+  test(
+    "a blueprint verified without the project's declarations says its ankka topics were not checked"
+  ) {
+    val r = verify(onAnkka())
+    assertEquals(r.code, 0, r.err)
+    assertEquals(
+      r.lines,
+      Vector(
+        "note: ankka topics of project 'checkout' were not checked: pass --ankka-topics checkout=<file>"
+      )
+    )
+  }
+
+  test("declarations for a project the blueprint does not name are refused, naming it") {
+    refused(
+      verify(
+        onAnkka(),
+        "--ankka-topics",
+        s"checkout=$checkoutTopics",
+        "--ankka-topics",
+        s"money=$checkoutTopics"
+      ),
+      "--ankka-topics names project 'money', which no topic of the blueprint does"
+    )
+  }
+
+  test("an ankka topic declared managed is refused, with or without the declarations") {
+    val dir = onAnkka(
+      _.replace(
+        "ankka      = \"checkout/cart-events\"",
+        "ankka      = \"checkout/cart-events\"\n      managed    = true"
+      )
+    )
+    for extra <- Seq(Seq.empty, Seq("--ankka-topics", s"checkout=$checkoutTopics")) do
+      refused(
+        verify(dir, extra*),
+        "an ankka topic is the ankka project's: a pipeline never creates it"
+      )
+  }
+
+  test("generate writes an ankka topic's project and name, its Kafka name and its cluster") {
+    val dir       = onAnkka()
+    val pipelines = Files.createTempFile("ankka", ".conf")
+    Files.writeString(pipelines, "flow.ankka.cluster = pipelines\n")
+    def generated(extra: String*) =
+      val r = flow(
+        Seq(
+          "generate",
+          dir.resolve("blueprint.conf").toString,
+          "--descriptors",
+          dir.resolve("descriptors").toString,
+          "--images",
+          dir.resolve("images.conf").toString,
+          "--version",
+          "t"
+        ) ++ extra*
+      )
+      assertEquals(r.code, 0, r.err)
+      r.out
+    val yaml = generated()
+    assert(
+      yaml.contains("name: \"checkout.cart-events\"") || yaml.contains(
+        "name: checkout.cart-events"
+      ),
+      yaml
+    )
+    assert(yaml.contains("project: \"checkout\"") || yaml.contains("project: checkout"), yaml)
+    assert(yaml.contains("cluster: \"ankka\"") || yaml.contains("cluster: ankka"), yaml)
+    assert(!yaml.contains("managed: true"), yaml)
+    val named = generated("--conf", pipelines.toString)
+    assert(named.contains("cluster: \"pipelines\"") || named.contains("cluster: pipelines"), named)
+  }
+
+  test("the ankka sample verifies against the project's declarations") {
+    val sample = repoRoot.resolve("samples/cart-pipeline/ankka")
+    val r = flow(
+      "verify",
+      sample.resolve("blueprint.conf").toString,
+      "--descriptors",
+      sample.resolve("flow").toString,
+      "--ankka-topics",
+      s"checkout=$checkoutTopics"
+    )
+    assertEquals(r.code, 0, r.err)
+    assertEquals(r.out.trim, "verified: 1 streamlets, 2 topics")
+    assertEquals(r.err, "")
+  }

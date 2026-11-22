@@ -23,7 +23,11 @@ final case class Observed(
     /** Streamlet name to its `FlinkDeployment`'s state, for those labelled with this pipeline. */
     flinkDeployments: Map[String, FlinkState] = Map.empty,
     /** The `state-epochs` annotation: streamlet name to its state epoch; absent means 1. */
-    stateEpochs: Map[String, Int] = Map.empty
+    stateEpochs: Map[String, Int] = Map.empty,
+    /** Consumer group to its lag on its inlet's topic; absent when Kafka could not be asked. */
+    lag: Map[String, Long] = Map.empty,
+    /** Topic id to what its machine may do with it, for each topic on a machine's cluster. */
+    grants: Map[String, Grant] = Map.empty
 ):
   def epoch(streamlet: String): Int = stateEpochs.getOrElse(streamlet, 1)
 
@@ -52,7 +56,9 @@ final case class FlinkState(
     jobManagerStatus: Option[String] = None,
     error: Option[String] = None,
     /** The image of `status.reconciliationStatus.lastStableSpec`: what last ran healthy. */
-    lastStableImage: Option[String] = None
+    lastStableImage: Option[String] = None,
+    /** The message of the latest `JobException` event of the job running now. */
+    jobException: Option[String] = None
 )
 
 /** A topic as Kafka describes it. `configs` holds only the keys the resource sets. */

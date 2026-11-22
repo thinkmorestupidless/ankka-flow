@@ -64,8 +64,7 @@ class LocalSuite extends munit.FunSuite:
     assertEquals(Files.list(out).count(), 0L)
   }
 
-  // Pending until T044 gives blueprints ankka topics.
-  test("an ankka topic without --ankka-bootstrap-servers is refused".ignore) {
+  test("an ankka topic without --ankka-bootstrap-servers is refused") {
     val dir = variant(blueprint =
       _.replace(
         "managed    = false\n      topic.name = \"shop.cart-events.v1\"",
@@ -75,4 +74,12 @@ class LocalSuite extends munit.FunSuite:
     val r = local(dir, Files.createTempDirectory("local"))
     assertEquals(r.code, 1)
     assert(r.err.contains("--ankka-bootstrap-servers"), r.err)
+
+    val out = Files.createTempDirectory("local")
+    val ok  = local(dir, out, "--ankka-bootstrap-servers", "localhost:9192")
+    assertEquals(ok.code, 0, ok.err)
+    val cleaner = Files.readString(out.resolve("cleaner/streamlet.properties"))
+    assert(cleaner.contains("inlet.in.topic=shop.cart-events"), cleaner)
+    assert(cleaner.contains("inlet.in.kafka.bootstrap.servers=localhost:9192"), cleaner)
+    assert(cleaner.contains("outlet.out.kafka.bootstrap.servers=localhost:9092"), cleaner)
   }

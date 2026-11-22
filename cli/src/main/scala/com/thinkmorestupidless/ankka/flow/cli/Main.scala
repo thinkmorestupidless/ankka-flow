@@ -46,10 +46,16 @@ object Main:
       Opts
         .option[Path](
           "descriptors",
-          "Directory of descriptor files (*.json); optional when every streamlet is built in."
+          "Directory of descriptor files (*.json)."
         )
         .orNone,
-      Opts.options[Path]("conf", "Deploy-time configuration (HOCON); later files win.").orEmpty
+      Opts.options[Path]("conf", "Deploy-time configuration (HOCON); later files win.").orEmpty,
+      Opts
+        .options[String](
+          "ankka-topics",
+          "project=file: what `ankka projects topics list -p <project> -o json` prints; repeatable."
+        )
+        .orEmpty
     ).mapN(Verify.Inputs.apply)
 
   private val verify =

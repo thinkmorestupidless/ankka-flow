@@ -41,13 +41,20 @@ final case class Topic(
     cluster: Option[String] = None,
     kafkaConfig: Config = ConfigFactory.empty(),
     problems: Vector[BlueprintProblem] = Vector.empty[BlueprintProblem],
-    verified: Option[VerifiedTopic] = None
+    verified: Option[VerifiedTopic] = None,
+    ankka: Option[String] = None
 ):
   import Topic.*
 
-  def name: String = Try(kafkaConfig.getString(Blueprint.TopicKey)).getOrElse(id)
+  private val ankkaRef = ankka.flatMap(AnkkaTopicRef.parse)
 
-  def managed: Boolean = Try(kafkaConfig.getBoolean(Blueprint.ManagedKey)).getOrElse(true)
+  def name: String =
+    ankkaRef
+      .map(_.kafkaName)
+      .getOrElse(Try(kafkaConfig.getString(Blueprint.TopicKey)).getOrElse(id))
+
+  def managed: Boolean =
+    ankka.isEmpty && Try(kafkaConfig.getBoolean(Blueprint.ManagedKey)).getOrElse(true)
 
   def verify(verifiedStreamlets: Vector[VerifiedStreamlet]): Topic =
     val invalidTopicError = name match
@@ -83,9 +90,22 @@ final case class Topic(
       else Some(InvalidKafkaClusterName(clusterName))
     }.toVector
 
+    // An ankka topic is ankka's: it says neither where it lives nor that the pipeline owns it.
+    val ankkaErrors = ankka.toVector.flatMap { value =>
+      Vector(
+        Option.when(ankkaRef.isEmpty)(InvalidAnkkaTopic(id, value)),
+        Option.when(Try(kafkaConfig.getBoolean(Blueprint.ManagedKey)).getOrElse(false))(
+          AnkkaTopicManaged(id)
+        )
+      ).flatten ++
+        Vector(Blueprint.TopicKey, Blueprint.BootstrapServersKey)
+          .filter(kafkaConfig.hasPath)
+          .map(AnkkaTopicNamesKafka(id, _))
+    }
+
     // A topic the platform does not own is only ever read, and must say where it lives.
     val unmanagedErrors =
-      if managed then Vector.empty
+      if managed || ankka.isDefined then Vector.empty
       else
         Vector(
           Option.when(producers.nonEmpty)(UnmanagedTopicHasProducers(id, producers)),
@@ -100,7 +120,7 @@ final case class Topic(
       ) ++ verifiedConsumerPortsResult.getOrElse(
         Vector.empty[VerifiedPort]
       )
-    // Batching was version one's sidecar's; nothing reads it now, so it is refused, not ignored.
+    // Batching was version one's; nothing reads it, so it is refused, not ignored.
     val removedSettings =
       Option
         .when(kafkaConfig.hasPath(s"${Blueprint.ConsumerConfigKey}.flow.batch"))(
@@ -111,7 +131,7 @@ final case class Topic(
     copy(
       problems =
         invalidTopicError ++ patternErrors ++ portPathErrors ++ producerErrors ++ consumerErrors ++ clusterNameError ++
-          unmanagedErrors ++ removedSettings ++ contractErrors,
+          ankkaErrors ++ unmanagedErrors ++ removedSettings ++ contractErrors,
       verified =
         if verifiedPorts.nonEmpty then
           Some(
@@ -119,7 +139,8 @@ final case class Topic(
               id,
               verifiedPorts.distinct.sortBy(_.portPath.toString),
               cluster,
-              kafkaConfig
+              kafkaConfig,
+              ankkaRef
             )
           )
         else None

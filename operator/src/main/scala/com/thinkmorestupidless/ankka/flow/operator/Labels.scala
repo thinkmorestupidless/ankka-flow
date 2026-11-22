@@ -1,6 +1,6 @@
 package com.thinkmorestupidless.ankka.flow.operator
 
-import com.thinkmorestupidless.ankka.flow.crd.AnkkaFlowDefinition
+import com.thinkmorestupidless.ankka.flow.crd.{AnkkaFlowDefinition, ResetRequest}
 
 /** Labels and annotations, under `flow.ankka.thinkmorestupidless.com/`. */
 object Labels:
@@ -30,11 +30,15 @@ object Labels:
 
 /** Names of everything the operator renders, and the Kafka identities (FR-015). */
 object Names:
-  def deployment(pipeline: String, streamlet: String)             = s"flow-$pipeline-$streamlet"
-  def secret(pipeline: String, streamlet: String)                 = s"flow-$pipeline-$streamlet"
-  def serviceAccount(pipeline: String)                            = s"flow-$pipeline"
-  def kafkaClusterSecret(cluster: String)                         = s"kafka-cluster-$cluster"
-  def group(pipeline: String, streamlet: String, inlet: String)   = s"$pipeline.$streamlet.$inlet"
+  def deployment(pipeline: String, streamlet: String) = s"flow-$pipeline-$streamlet"
+  def secret(pipeline: String, streamlet: String)     = s"flow-$pipeline-$streamlet"
+  def serviceAccount(pipeline: String)                = s"flow-$pipeline"
+  def kafkaClusterSecret(cluster: String)             = s"kafka-cluster-$cluster"
+  def group(pipeline: String, streamlet: String, inlet: String, prefix: Option[String] = None) =
+    ResetRequest.groupId(pipeline, streamlet, inlet, prefix)
   def clientId(pipeline: String, streamlet: String, port: String) = s"$pipeline.$streamlet.$port"
 
   val DefaultCluster = "default"
+
+  /** The cluster an ankka topic that names none is reached through. */
+  val AnkkaCluster = "ankka"

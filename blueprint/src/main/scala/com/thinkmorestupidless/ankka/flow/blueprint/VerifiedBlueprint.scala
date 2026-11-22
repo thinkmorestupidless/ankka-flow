@@ -53,16 +53,26 @@ final case class VerifiedTopic(
     id: String,
     connections: Vector[VerifiedPort],
     cluster: Option[String],
-    kafkaConfig: Config
+    kafkaConfig: Config,
+    ankka: Option[AnkkaTopicRef] = None
 ):
   def managed: Boolean =
-    !kafkaConfig.hasPath(Blueprint.ManagedKey) || kafkaConfig.getBoolean(Blueprint.ManagedKey)
+    ankka.isEmpty &&
+      (!kafkaConfig.hasPath(Blueprint.ManagedKey) || kafkaConfig.getBoolean(Blueprint.ManagedKey))
   def producers: Vector[VerifiedPort] = connections.filter(_.isOutlet)
   def consumers: Vector[VerifiedPort] = connections.filterNot(_.isOutlet)
   def kafkaName(pipeline: String): String =
-    if kafkaConfig.hasPath(Blueprint.TopicKey) then kafkaConfig.getString(Blueprint.TopicKey)
+    if ankka.isDefined then ankka.get.kafkaName
+    else if kafkaConfig.hasPath(Blueprint.TopicKey) then kafkaConfig.getString(Blueprint.TopicKey)
     else if managed then s"$pipeline.$id"
     else id
+
+  /**
+   * The Kafka cluster Secret the topic is reached through: its own `cluster`; for an ankka topic
+   * without one, `ankkaCluster` (the overrides' `flow.ankka.cluster`, else `ankka`).
+   */
+  def clusterFor(ankkaCluster: String): Option[String] =
+    if ankka.isDefined then cluster.orElse(Some(ankkaCluster)) else cluster
 
 sealed trait VerifiedPort:
   def streamlet: VerifiedStreamlet

@@ -36,6 +36,41 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
         current
       }): Unit
 
+  /**
+   * The latest `JobException` warning the Flink operator recorded on each `FlinkDeployment` of the
+   * namespace, by its uid: how a job that cannot restore its state shows it, the deployment staying
+   * `DEPLOYED` while the job restarts (research V6).
+   */
+  private def jobExceptions(namespace: String): Map[String, (java.time.Instant, String)] =
+    Try(
+      // Filtered here: not every API server honours a field selector on involvedObject.
+      client.v1.events
+        .inNamespace(namespace)
+        .list()
+        .getItems
+        .asScala
+        .toVector
+    ).getOrElse(Vector.empty)
+      .filter(e =>
+        e.getReason == "JobException" &&
+          Option(e.getInvolvedObject).exists(_.getKind == FlinkRendering.Kind)
+      )
+      .flatMap { e =>
+        // The latest of the times an event can carry: a repeated event updates `lastTimestamp`,
+        // or, kept as a series, `series.lastObservedTime` while `eventTime` stays the first.
+        val at = Vector(
+          Option(e.getLastTimestamp),
+          Option(e.getEventTime).map(_.getTime),
+          Option(e.getSeries).flatMap(sr => Option(sr.getLastObservedTime)).map(_.getTime),
+          Option(e.getFirstTimestamp)
+        ).flatten.flatMap(t => Try(java.time.Instant.parse(t)).toOption).maxOption
+        for
+          uid  <- Option(e.getInvolvedObject).flatMap(o => Option(o.getUid))
+          when <- at
+        yield uid -> (when, Option(e.getMessage).getOrElse(""))
+      }
+      .groupMapReduce(_._1)(_._2)((a, b) => if a._1.isAfter(b._1) then a else b)
+
   private def flinkDeployments(namespace: String) =
     client.genericKubernetesResources(Fabric8Executor.FlinkDeploymentContext).inNamespace(namespace)
 
@@ -115,6 +150,7 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
     val flink =
       if !crd then Map.empty[String, FlinkState]
       else
+        val exceptions = jobExceptions(namespace)
         flinkDeployments(namespace)
           .withLabel(Labels.PipelineKey, pipeline)
           .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
@@ -129,7 +165,7 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
           .flatMap(d =>
             Option(d.getMetadata.getLabels)
               .flatMap(l => Option(l.get(Labels.StreamletKey)))
-              .map(_ -> Fabric8Executor.flinkState(d))
+              .map(_ -> Fabric8Executor.flinkState(d, exceptions.get(d.getMetadata.getUid)))
           )
           .toMap
     Observed(
@@ -274,7 +310,7 @@ object Fabric8Executor:
 
   // Read with the build's mapper, whose Scala module gives an untyped object as a Scala map; an
   // object built in this JVM is a Java one.
-  private def at(root: Any, path: String*): Option[Any] =
+  private[operator] def at(root: Any, path: String*): Option[Any] =
     path.foldLeft(Option(root)) {
       case (Some(m: java.util.Map[?, ?]), key) => Option(m.get(key))
       case (Some(m: scala.collection.Map[?, ?]), key) =>
@@ -285,14 +321,25 @@ object Fabric8Executor:
   private def text(root: Any, path: String*): Option[String] =
     at(root, path*).collect { case s: String => s }.filter(_.nonEmpty)
 
-  /** What the operator reads of a `FlinkDeployment`: what it applied, and the status. */
-  def flinkState(d: GenericKubernetesResource): FlinkState =
+  /**
+   * What the operator reads of a `FlinkDeployment`: what it applied, and the status. `exception` is
+   * the latest `JobException` event the Flink operator recorded on it, with its time; it counts
+   * only when it is of the job running now (research V6).
+   */
+  def flinkState(
+      d: GenericKubernetesResource,
+      exception: Option[(java.time.Instant, String)] = None
+  ): FlinkState =
     val props  = d.getAdditionalProperties
     val spec   = props.get("spec")
     val status = props.get("status")
-    // `lastStableSpec` is the spec, as JSON text, that last ran healthy.
+    // `lastStableSpec` is JSON text of the spec that last ran healthy, under `spec` beside
+    // `resource_metadata`.
     val lastStableImage = text(status, "reconciliationStatus", "lastStableSpec").flatMap(t =>
-      Try(json.readTree(t)).toOption.flatMap(n => Option(n.get("image"))).map(_.asText)
+      Try(json.readTree(t)).toOption
+        .flatMap(n => Option(n.get("spec")))
+        .flatMap(n => Option(n.get("image")))
+        .map(_.asText)
     )
     FlinkState(
       image = text(spec, "image").getOrElse(""),
@@ -303,7 +350,14 @@ object Fabric8Executor:
       jobState = text(status, "jobStatus", "state"),
       jobManagerStatus = text(status, "jobManagerDeploymentStatus"),
       error = text(status, "error"),
-      lastStableImage = lastStableImage
+      lastStableImage = lastStableImage,
+      jobException = exception.collect {
+        case (when, message)
+            if at(status, "jobStatus", "startTime")
+              .flatMap(_.toString.toLongOption)
+              .forall(started => !when.isBefore(java.time.Instant.ofEpochMilli(started - 5000))) =>
+          message
+      }
     )
 
   def parseEpochs(text: Option[String]): Map[String, Int] =

@@ -631,3 +631,34 @@ and releases every held offset when the stream completes (never on failure). The
 commits what it is handed (`OffsetFirstObserved`). The consumer's stop timeout is zero, so a failed
 run leaves its group at once and its restart is assigned promptly; a stop is
 `drainAndShutdown`.
+
+**V6: what a new image that cannot read the state shows** (2026-11-22, T038, on k3s with the
+Flink Kubernetes Operator 1.16.1 and Flink 2.2.1). The counter's window state is a POJO `Tally`;
+the suite's third image retypes its field `long count` to `int count`. Deployed with
+`upgradeMode: last-state` over a running job, the Flink operator suspends the old deployment and
+submits the new one, which recovers from the high-availability checkpoint and fails in
+`WindowOperator`'s restore. It then restarts under `exponential-delay` without end: the
+`FlinkDeployment` stays `lifecycleState: DEPLOYED`, `jobManagerDeploymentStatus: READY`, the job
+cycles `CREATED`, `RUNNING`, `RESTARTING`, and `status.error` stays empty. R17's assumption, a
+`FAILED` deployment with the cause in `status.error`, does not hold. What does show it: a
+`Warning` event `JobException` on the `FlinkDeployment`, repeated each restart, whose message is
+the top of the trace only (581 characters): `java.lang.Exception: Exception while creating
+StreamOperatorStateContext.` with the first frames; the causes (`Could not restore keyed state
+backend for WindowOperator…`, `Failed when trying to restore heap backend`) are only in the job
+manager's log. Decided, within R17's "pin the matched text to what V6 shows": the operator lists
+the namespace's `JobException` events (RBAC: `list` on core `events`), keeps the latest per
+`FlinkDeployment` uid that is no older than the current job's `jobStatus.startTime`, and a Flink
+streamlet whose image is not the last stable one (`lastStableSpec`) and whose latest such event
+names a restore failure is failed with `StateUnreadable`. `Exception while creating
+StreamOperatorStateContext` joins R17's texts. The same exception with the image that last ran is a
+failure without the condition; a different exception after a new image is still rolling out. The
+contract is unchanged: the condition, its phase `Degraded` and how it clears. The checkpoint
+directory is untouched: nothing in the operator writes to the store.
+
+**The last stable image is under `spec`** (2026-11-22, T038). `status.reconciliationStatus.lastStableSpec`
+is JSON text of the form `{"spec":{…,"image":…},"resource_metadata":{…}}`, not the bare spec. Read
+at the top level, the image was never found, so no new image counted as changed and a job that
+could not restore its state stayed `rolling out` while its `JobException` event repeated each
+restart (twenty times in twelve minutes on k3s). The unit fixture had the bare shape and passed;
+it now has the operator's. The Flink operator keeps that event as one core event, its `count` and
+`lastTimestamp` moving on each restart; `eventTime` and `series` stay empty.

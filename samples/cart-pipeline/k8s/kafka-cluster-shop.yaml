@@ -1,0 +1,13 @@
+# A named Kafka cluster the operator resolves topics against: a topic with `cluster = shop` uses
+# these brokers and settings. It lives in the operator's namespace. Never commit real credentials.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-cluster-shop
+  namespace: ankka-flow
+  labels:
+    flow.ankka.thinkmorestupidless.com/kafka-cluster: shop
+stringData:
+  bootstrap.servers: kafka.kafka.svc:9092
+  connection-config: |
+    security.protocol=PLAINTEXT

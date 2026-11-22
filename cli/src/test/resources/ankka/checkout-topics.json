@@ -1,0 +1,40 @@
+[
+  {
+    "name": "cart-events",
+    "partitions": 3,
+    "cleanup": "delete",
+    "contract": {
+      "name": "cart-events.v1",
+      "fingerprint": "sha256:f19f4516ec394cb282c806a2b02b5ff3e9d4e99a6152cecffe9639c8453d36b8"
+    },
+    "phase": "provisioned"
+  },
+  {
+    "name": "clean-carts",
+    "partitions": 6,
+    "contract": { "name": "clean-carts.v1", "fingerprint": "sha256:5c0a7f0e0a3c3b5e1b9f7d1c2e4a6b8d0f1e3c5a7b9d2f4e6a8c0b2d4f6e8a0c" },
+    "phase": "provisioned"
+  },
+  {
+    "name": "cart-counts",
+    "partitions": 3,
+    "contract": { "name": "cart-counts.v1", "fingerprint": "sha256:7e2d4c6b8a0f1e3d5c7b9a2f4e6d8c0b1a3f5e7d9c2b4a6f8e0d1c3b5a7f9e2d" },
+    "phase": "provisioned"
+  },
+  { "name": "notices", "partitions": 1, "phase": "provisioned" },
+  {
+    "name": "cart-checkouts",
+    "partitions": 3,
+    "contract": {
+      "name": "cart-events.v1",
+      "fingerprint": "sha256:f19f4516ec394cb282c806a2b02b5ff3e9d4e99a6152cecffe9639c8453d36b8"
+    },
+    "phase": "provisioned"
+  },
+  {
+    "name": "clean-checkouts",
+    "partitions": 3,
+    "contract": { "name": "clean-carts.v1" },
+    "phase": "provisioned"
+  }
+]

@@ -69,9 +69,14 @@ class LifecycleRulesSuite extends munit.FunSuite:
       assertEquals(counter(s).detail, "rolling out")
     }
 
+  private val CounterInlet = InletStatus("in", "cart.clean-carts", "cart.counter.in", None)
+
   test("STABLE with its job RUNNING is running, ready 1, and the pipeline Ready") {
     val s = status(Some(job("STABLE", Some("RUNNING"), Some("READY"))))
-    assertEquals(counter(s), StreamletStatus("counter", "flink", 1, 1, "running"))
+    assertEquals(
+      counter(s),
+      StreamletStatus("counter", "flink", 1, 1, "running", List(CounterInlet))
+    )
     assertEquals(s.phase, AnkkaFlowStatus.Ready)
     assertEquals(s.conditions.find(_.`type` == Condition.Ready).map(_.status), Some(Condition.True))
     assertEquals(s.detail, "")
@@ -101,7 +106,17 @@ class LifecycleRulesSuite extends munit.FunSuite:
       ),
       "t"
     )
-    assertEquals(counter(s), StreamletStatus("counter", "flink", 0, 0, "suspended"))
+    assertEquals(
+      counter(s),
+      StreamletStatus(
+        "counter",
+        "flink",
+        0,
+        0,
+        "suspended",
+        List(CounterInlet.copy(topic = "clean-carts"))
+      )
+    )
     assertEquals(s.phase, AnkkaFlowStatus.Ready)
   }
 
@@ -142,6 +157,43 @@ class LifecycleRulesSuite extends munit.FunSuite:
     val s =
       status(Some(job("FAILED", error = Some("StateMigrationException"), lastStable = Some(image))))
     assertEquals(conditionTypes(s), Nil)
+  }
+
+  // V6: what a FlinkDeployment shows when its new image cannot restore the state. The deployment
+  // stays DEPLOYED, the job restarts without end, status.error is empty, and the Flink operator
+  // records JobException events whose message is the top of the trace.
+  private val restoreException =
+    "java.lang.Exception: Exception while creating StreamOperatorStateContext.\n\tat org.apache.flink.streaming.api.operators.StreamTaskStateInitializerImpl.streamOperatorStateContext"
+
+  test("a new image whose job restarts on a state restore exception is StateUnreadable") {
+    for jobState <- Seq("RESTARTING", "RUNNING", "CREATED") do
+      val restarting = job("DEPLOYED", Some(jobState), Some("READY"), lastStable = Some("old"))
+        .copy(jobException = Some(restoreException))
+      val s = status(Some(restarting))
+      assertEquals(conditionTypes(s), List(Condition.StateUnreadable), jobState)
+      assertEquals(counter(s).detail, LifecycleRules.stateUnreadableMessage("counter"))
+      assertEquals(s.phase, AnkkaFlowStatus.Degraded)
+  }
+
+  test("the same exception with the image that last ran is a failure, not StateUnreadable") {
+    val s = status(
+      Some(
+        job("DEPLOYED", Some("RESTARTING"), Some("READY"), lastStable = Some(image))
+          .copy(jobException = Some(restoreException))
+      )
+    )
+    assertEquals(conditionTypes(s), Nil)
+  }
+
+  test("another job exception after a new image is still rolling out") {
+    val s = status(
+      Some(
+        job("DEPLOYED", Some("RESTARTING"), Some("READY"), lastStable = Some("old"))
+          .copy(jobException = Some("java.net.ConnectException: Connection refused"))
+      )
+    )
+    assertEquals(conditionTypes(s), Nil)
+    assertEquals(s.phase, AnkkaFlowStatus.Pending)
   }
 
   test("another failure after a new image is not StateUnreadable") {

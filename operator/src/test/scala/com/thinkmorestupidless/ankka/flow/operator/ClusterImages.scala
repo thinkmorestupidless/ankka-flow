@@ -1,35 +1,43 @@
 package com.thinkmorestupidless.ankka.flow.operator
 
-import java.nio.file.{Files, StandardCopyOption}
+import java.nio.file.Files
 
-import com.github.dockerjava.api.exception.NotFoundException
-import org.testcontainers.DockerClientFactory
+import scala.sys.process.*
+
 import org.testcontainers.k3s.K3sContainer
 import org.testcontainers.utility.MountableFile
 
-/** Imports a locally built image into k3s's containerd, as ankka's suites do. */
+/**
+ * Imports images from the local Docker daemon into k3s's containerd, as ankka's suites do. The
+ * build's own images must already be there; any other is pulled. Saved for the daemon's own
+ * platform: Docker's containerd store keeps a pulled image's index, which `ctr import` cannot read
+ * whole. Images that share layers are imported from one archive, so each layer is copied once.
+ */
 object ClusterImages:
 
-  def importInto(k3s: K3sContainer, image: String): Unit =
-    val docker = DockerClientFactory.instance().client()
-    try docker.inspectImageCmd(image).exec(): Unit
-    catch
-      case _: NotFoundException =>
-        if image.startsWith("apache/kafka") || image.startsWith("neo4j") then
-          docker.pullImageCmd(image).start().awaitCompletion(): Unit
-        else
-          throw new IllegalStateException(
-            s"image '$image' is not in the local Docker daemon. `sbt operator/test` builds it; `testOnly` alone does too, through clusterImages."
-          )
-    val tar = Files.createTempFile("flow-image", ".tar")
+  private def ours(image: String): Boolean =
+    image.startsWith("ankka-flow-") || image.startsWith("sample-")
+
+  private lazy val platform: String =
+    s"linux/${Seq("docker", "version", "--format", "{{.Server.Arch}}").!!.trim}"
+
+  private def present(image: String): Boolean =
+    Seq("docker", "image", "inspect", image).!(ProcessLogger(_ => (), _ => ())) == 0
+
+  def importInto(k3s: K3sContainer, images: String*): Unit =
+    images.filterNot(present).foreach { image =>
+      if ours(image) then
+        throw new IllegalStateException(
+          s"image '$image' is not in the local Docker daemon. `sbt operator/test` builds it; `testOnly` alone does too, through clusterImages."
+        )
+      if Seq("docker", "pull", "-q", "--platform", platform, image).! != 0 then
+        throw new IllegalStateException(s"pulling $image failed")
+    }
+    val tar = Files.createTempFile("flow-images", ".tar")
     try
-      val (name, tag) = image.lastIndexOf(':') match
-        case -1 => (image, "latest")
-        case at => (image.substring(0, at), image.substring(at + 1))
-      val stream = docker.saveImageCmd(name).withTag(tag).exec()
-      try Files.copy(stream, tar, StandardCopyOption.REPLACE_EXISTING): Unit
-      finally stream.close()
-      val inContainer = "/tmp/flow-image.tar"
+      val save = Seq("docker", "save", "--platform", platform, "-o", tar.toString) ++ images
+      if save.! != 0 then throw new IllegalStateException(s"saving ${images.mkString(", ")} failed")
+      val inContainer = "/tmp/flow-images.tar"
       k3s.copyFileToContainer(MountableFile.forHostPath(tar), inContainer)
       // `ctr` on k3s's own containerd socket, in the k8s.io namespace kubelet reads (ankka's lesson:
       // the default namespace imports fine and kubelet never sees it).
@@ -44,5 +52,8 @@ object ClusterImages:
         inContainer
       )
       if result.getExitCode != 0 then
-        throw new IllegalStateException(s"importing $image into k3s failed: ${result.getStderr}")
+        throw new IllegalStateException(
+          s"importing ${images.mkString(", ")} into k3s failed: ${result.getStderr}"
+        )
+      k3s.execInContainer("rm", "-f", inContainer): Unit
     finally Files.deleteIfExists(tar): Unit

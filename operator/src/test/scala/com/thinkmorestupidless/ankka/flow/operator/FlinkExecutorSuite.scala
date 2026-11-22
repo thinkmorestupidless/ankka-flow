@@ -158,7 +158,8 @@ class FlinkExecutorSuite extends munit.FunSuite:
         "jobManagerDeploymentStatus" -> "READY",
         "jobStatus"                  -> Map[String, AnyRef]("state" -> "RUNNING").asJava,
         "reconciliationStatus" -> Map[String, AnyRef](
-          "lastStableSpec" -> """{"image":"ghcr.io/example/cart-counter:0.5.0"}"""
+          // As the Flink operator writes it: the spec under `spec`, beside `resource_metadata`.
+          "lastStableSpec" -> """{"spec":{"image":"ghcr.io/example/cart-counter:0.5.0","job":{"state":"running"}},"resource_metadata":{"apiVersion":"flink.apache.org/v1beta1","firstDeployment":false}}"""
         ).asJava
       ).asJava
     )
@@ -179,6 +180,63 @@ class FlinkExecutorSuite extends munit.FunSuite:
           lastStableImage = Some("ghcr.io/example/cart-counter:0.5.0")
         )
       )
+    )
+  }
+
+  test("the latest JobException of the job running now is observed with the FlinkDeployment") {
+    val resource = client.resources(classOf[AnkkaFlow]).inNamespace("shop").withName("cart").get()
+    val live     = flinkDeployments("shop").withName("flow-cart-counter").get()
+    val started  = java.time.Instant.parse("2026-11-22T17:00:00Z")
+    def status(jobStarted: java.time.Instant) =
+      val st = live.getAdditionalProperties.get("status") match
+        case m: java.util.Map[?, ?] =>
+          new java.util.HashMap[String, AnyRef](m.asInstanceOf[java.util.Map[String, AnyRef]])
+        case m: scala.collection.Map[?, ?] =>
+          new java.util.HashMap[String, AnyRef](
+            m.asInstanceOf[scala.collection.Map[String, AnyRef]].asJava
+          )
+        case _ => new java.util.HashMap[String, AnyRef]()
+      st.put(
+        "jobStatus",
+        Map[String, AnyRef](
+          "state"     -> "RESTARTING",
+          "startTime" -> jobStarted.toEpochMilli.toString
+        ).asJava
+      )
+      live.getAdditionalProperties.put("status", st)
+      flinkDeployments("shop").resource(live).update(): Unit
+    def event(name: String, at: java.time.Instant, message: String) =
+      client.v1.events
+        .inNamespace("shop")
+        .resource(
+          new io.fabric8.kubernetes.api.model.EventBuilder()
+            .withMetadata(new ObjectMetaBuilder().withName(name).withNamespace("shop").build())
+            .withInvolvedObject(
+              new io.fabric8.kubernetes.api.model.ObjectReferenceBuilder()
+                .withKind(FlinkRendering.Kind)
+                .withName("flow-cart-counter")
+                .withUid(live.getMetadata.getUid)
+                .build()
+            )
+            .withReason("JobException")
+            .withType("Warning")
+            .withMessage(message)
+            .withLastTimestamp(at.toString)
+            .build()
+        )
+        .create(): Unit
+    status(started)
+    event("old", started.minusSeconds(600), "an exception of the job before")
+    assertEquals(executor.observe(resource).flinkDeployments("counter").jobException, None)
+    event("new", started.plusSeconds(20), "Exception while creating StreamOperatorStateContext.")
+    event(
+      "newer",
+      started.plusSeconds(40),
+      "Exception while creating StreamOperatorStateContext. again"
+    )
+    assertEquals(
+      executor.observe(resource).flinkDeployments("counter").jobException,
+      Some("Exception while creating StreamOperatorStateContext. again")
     )
   }
 

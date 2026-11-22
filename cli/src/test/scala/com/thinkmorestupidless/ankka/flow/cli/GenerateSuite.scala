@@ -112,10 +112,10 @@ class GenerateSuite extends munit.FunSuite:
     )
   }
 
-  test("nothing in the resource names the sidecar image (FR-020)") {
+  test("nothing in the resource names the state store or an image the operator chooses") {
     val r = generate()
     assertEquals(r.code, 0, r.err)
-    assert(!r.out.contains("sidecar"), r.out)
+    Seq("flink-state", "ankka-flow-operator").foreach(w => assert(!r.out.contains(w), r.out))
   }
 
   test("a streamlet without an image is refused; --image supplies one") {

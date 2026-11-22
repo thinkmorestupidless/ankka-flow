@@ -76,6 +76,24 @@ object BlueprintProblem:
         s"Streamlet '$streamletRef' names descriptor '$descriptorName', which no descriptor declares."
       case UnmanagedTopicHasProducers(topic, paths) =>
         s"Topic '$topic' is not managed but has producers ${paths.mkString(", ")}; the platform only reads topics it does not own."
+      case AnkkaTopicManaged(topic) =>
+        s"Topic '$topic' is an ankka topic, and an ankka topic is the ankka project's: a pipeline never creates it."
+      case AnkkaTopicNamesKafka(topic, key) =>
+        s"Topic '$topic' is an ankka topic and names $key; ankka names its Kafka topic and its brokers."
+      case InvalidAnkkaTopic(topic, value) =>
+        s"Topic '$topic' names ankka topic '$value', which is not <project>/<name>."
+      case AnkkaTopicNotDeclared(ref, declared) =>
+        s"ankka topic $ref is not declared; project ${ref.project} declares: ${
+            if declared.isEmpty then "no topics" else declared.mkString(", ")
+          }"
+      case AnkkaTopicWithoutContract(ref) =>
+        s"ankka topic $ref declares no contract: declare one with ankka projects topics set ${ref.name} --contract … --schema …"
+      case AnkkaContractMismatch(port, contract, ref, declared) =>
+        s"$port declares contract ${PortDescriptor.show(contract)} and ankka topic $ref declares ${PortDescriptor.show(declared)}"
+      case AnkkaTopicsNotChecked(project) =>
+        s"ankka topics of project '$project' were not checked: pass --ankka-topics $project=<file>"
+      case AnkkaProjectNotInBlueprint(project) =>
+        s"--ankka-topics names project '$project', which no topic of the blueprint does"
       case UnmanagedTopicWithoutBrokers(topic) =>
         s"Topic '$topic' is not managed and names no bootstrap.servers or cluster."
       case MissingImage(streamlet) =>
@@ -110,7 +128,7 @@ final case class IncompatibleContract(
 final case class EngineSettingNotAllowed(streamlet: String, key: String, engine: Engine)
     extends BlueprintProblem
 
-/** A topic that sets `consumer-config.flow.batch`, which version one's sidecar read. */
+/** A topic that sets `consumer-config.flow.batch`, a setting of version one's streamlets. */
 final case class BatchSettingRemoved(topic: String) extends BlueprintProblem
 
 final case class InvalidTopicName(topicName: String) extends BlueprintProblem
@@ -140,7 +158,16 @@ final case class StreamletDescriptorNotFound(streamletRef: String, descriptorNam
 final case class UnmanagedTopicHasProducers(topic: String, paths: immutable.IndexedSeq[String])
     extends BlueprintProblem
 final case class UnmanagedTopicWithoutBrokers(topic: String) extends BlueprintProblem
-final case class MissingImage(streamlet: String)             extends BlueprintProblem
+
+/** An ankka topic declared `managed = true`. */
+final case class AnkkaTopicManaged(topic: String) extends BlueprintProblem
+
+/** An ankka topic that also sets `topic.name` or `bootstrap.servers`. */
+final case class AnkkaTopicNamesKafka(topic: String, key: String) extends BlueprintProblem
+
+/** An `ankka` value that is not `<project>/<name>`. */
+final case class InvalidAnkkaTopic(topic: String, value: String) extends BlueprintProblem
+final case class MissingImage(streamlet: String)                 extends BlueprintProblem
 
 sealed trait UnconnectedPorts extends BlueprintProblem:
   def nonEmpty: Boolean
@@ -151,3 +178,24 @@ final case class UnconnectedPort(streamletRef: String, port: PortDescriptor)
 final case class UnconnectedOutlets(unconnectedOutlets: immutable.IndexedSeq[UnconnectedPort])
     extends UnconnectedPorts:
   def nonEmpty: Boolean = unconnectedOutlets.nonEmpty
+
+/** An ankka topic its project's declarations do not list. */
+final case class AnkkaTopicNotDeclared(ref: AnkkaTopicRef, declared: Vector[String])
+    extends BlueprintProblem
+
+/** An ankka topic whose project declares it with no contract. */
+final case class AnkkaTopicWithoutContract(ref: AnkkaTopicRef) extends BlueprintProblem
+
+/** A port on an ankka topic whose contract is not the one ankka declares for it. */
+final case class AnkkaContractMismatch(
+    port: String,
+    contract: Contract,
+    ref: AnkkaTopicRef,
+    declared: Contract
+) extends BlueprintProblem
+
+/** A project the blueprint names whose declarations were not given: a note, not a refusal. */
+final case class AnkkaTopicsNotChecked(project: String) extends BlueprintProblem
+
+/** Declarations given for a project no topic of the blueprint names. */
+final case class AnkkaProjectNotInBlueprint(project: String) extends BlueprintProblem

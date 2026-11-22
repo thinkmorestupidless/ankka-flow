@@ -99,6 +99,7 @@ Removed: `builtin`, `BatchSpec`, `protocolVersion`. Annotations: `reset-offsets`
 | `STABLE` and job `RUNNING` | running (`ready = 1`) |
 | `SUSPENDED` | stopped (`desired = 0`) |
 | `FAILED`, or JM `ERROR` | failed; detail from `status.error`; `StateUnreadable` when R17's text matches |
+| an image not yet stable, its current job's latest `JobException` event naming a restore failure (V6) | failed; `StateUnreadable` |
 
 ## Operator
 

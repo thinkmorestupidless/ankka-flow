@@ -47,7 +47,7 @@ final case class Overrides(config: Config):
       .get(topic.id)
       .filter(_.hasPath(Blueprint.ClusterKey))
       .map(_.getString(Blueprint.ClusterKey))
-      .orElse(topic.cluster)
+      .orElse(topic.clusterFor(ankkaCluster))
 
   def replicas(streamlet: VerifiedStreamlet): Either[String, Int] =
     val name = streamlet.name

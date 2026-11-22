@@ -96,6 +96,7 @@ object ResourceWriter:
       id = t.id,
       name = t.kafkaName(pipeline),
       managed = t.managed,
+      ankka = t.ankka.map(a => AnkkaRef(a.project, a.name)),
       cluster = verified.overrides.cluster(t),
       bootstrapServers = s.bootstrapServers,
       partitions = s.partitions,

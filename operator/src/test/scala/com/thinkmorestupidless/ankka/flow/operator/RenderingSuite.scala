@@ -382,3 +382,33 @@ class RenderingSuite extends munit.FunSuite:
     )
     refusedWith(render(r), "the resource says engine 'flink' and its descriptor 'pekko-streams'")
   }
+
+  // ── Lag on the status, whatever the engine ───────────────────────────────────────────────
+
+  test("each streamlet's inlets carry their topic, group and lag on the status, for both engines") {
+    val o  = flinkObserved.copy(lag = Map("cart.cleaner.in" -> 7L, "cart.counter.in" -> 12L))
+    val st = status(Rendering.render(cartWithCounter(), settings, o, "t"))
+    assertEquals(
+      st.streamlets.map(s => s.name -> s.inlets).toMap,
+      Map(
+        "cleaner" -> List(InletStatus("in", "shop.cart-events.v1", "cart.cleaner.in", Some(7L))),
+        "counter" -> List(InletStatus("in", "cart.clean-carts", "cart.counter.in", Some(12L)))
+      )
+    )
+    val unknown = status(Rendering.render(cartWithCounter(), settings, flinkObserved, "t"))
+    assertEquals(unknown.streamlets.flatMap(_.inlets).map(_.lag), List(None, None))
+  }
+
+  test("a changed lag alone is a different report, so the status is written again") {
+    def at(lag: Long) =
+      status(
+        Rendering.render(
+          cartWithCounter(),
+          settings,
+          flinkObserved.copy(lag = Map("cart.counter.in" -> lag)),
+          "t"
+        )
+      )
+    assert(at(3L).sameReport(at(3L)))
+    assert(!at(3L).sameReport(at(4L)))
+  }

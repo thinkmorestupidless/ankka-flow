@@ -17,6 +17,8 @@ final class Operator(client: KubernetesClient, settings: Settings, reconciler: R
   private val queue = new WorkQueue(settings, reconciler.reconcile)
 
   private var informers: Vector[SharedIndexInformer[?]] = Vector.empty
+  @volatile private var flinkInformer: Option[SharedIndexInformer[GenericKubernetesResource]] =
+    None
 
   private def refOf(resource: AnkkaFlow): Option[PipelineRef] =
     Option(resource.getMetadata).map(m => PipelineRef(m.getNamespace, m.getName))
@@ -49,24 +51,35 @@ final class Operator(client: KubernetesClient, settings: Settings, reconciler: R
       .inAnyNamespace()
       .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
       .inform(handler[Deployment](refOf), resync)
-    // A FlinkDeployment's status changes feed the queue when the Flink operator is installed; a
-    // CRD installed later is found by each reconcile and by the resync.
-    val flink = Option.when(new Fabric8Executor(client, settings).flinkCrdInstalled()) {
-      client
-        .genericKubernetesResources(Fabric8Executor.FlinkDeploymentContext)
-        .inAnyNamespace()
-        .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
-        .inform(handler[GenericKubernetesResource](refOf), resync)
+    informers = Vector(flows, deployments)
+    informFlink()
+    // The observe pass: what no informer reports (lag, grants), and a Flink operator installed
+    // after this one started, whose FlinkDeployments are then informed on too.
+    queue.every(settings.observeInterval) { () =>
+      informFlink()
+      flows.getStore.list.asScala.flatMap(refOf).foreach(queue.enqueue)
     }
-    informers = Vector(flows, deployments) ++ flink
     queue.start()
     log.info("ankka-flow operator {} watching pipelines in every namespace", BuildInfo.version)
+
+  /** A FlinkDeployment's status changes feed the queue once the Flink operator is installed. */
+  private def informFlink(): Unit = synchronized {
+    if flinkInformer.isEmpty && new Fabric8Executor(client, settings).flinkCrdInstalled() then
+      flinkInformer = Some(
+        client
+          .genericKubernetesResources(Fabric8Executor.FlinkDeploymentContext)
+          .inAnyNamespace()
+          .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
+          .inform(handler[GenericKubernetesResource](refOf), settings.resyncInterval.toMillis)
+      )
+  }
 
   def awaitTermination(): Unit =
     try Thread.currentThread().join()
     catch case _: InterruptedException => Thread.currentThread().interrupt()
 
   def close(): Unit =
-    informers.foreach(_.close())
+    (informers ++ flinkInformer).foreach(_.close())
     informers = Vector.empty
+    flinkInformer = None
     queue.stop()

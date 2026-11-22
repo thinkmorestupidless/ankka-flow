@@ -15,7 +15,12 @@ import com.typesafe.config.ConfigFactory
 object Verify:
 
   /** `descriptors` is optional on the command line; without it every streamlet is unknown. */
-  final case class Inputs(blueprint: Path, descriptors: Option[Path], conf: List[Path])
+  final case class Inputs(
+      blueprint: Path,
+      descriptors: Option[Path],
+      conf: List[Path],
+      ankkaTopics: List[String] = Nil
+  )
 
   final case class Verified(
       blueprint: VerifiedBlueprint,
@@ -53,9 +58,16 @@ object Verify:
           )
 
     val blueprintProblems = parsed.fold(identity, _.problems.map(BlueprintProblem.toMessage))
+    val verified          = parsed.toOption.flatMap(_.verified.toOption)
+    val declarations      = in.ankkaTopics.toVector.map(AnkkaDeclarations.load)
+    val (ankkaProblems, ankkaNotes) =
+      verified.fold((Vector.empty[String], Vector.empty[String]))(v =>
+        AnkkaDeclarations.check(v, declarations.collect { case Right(d) => d })
+      )
     val notes =
-      parsed.toOption.toVector.flatMap(_.notes.map(n => s"note: ${BlueprintProblem.toMessage(n)}"))
-    val verified = parsed.toOption.flatMap(_.verified.toOption)
+      parsed.toOption.toVector.flatMap(
+        _.notes.map(n => s"note: ${BlueprintProblem.toMessage(n)}")
+      ) ++ ankkaNotes
 
     val overrideProblems = (overrides, verified) match
       case (Left(ps), _) => ps
@@ -66,7 +78,8 @@ object Verify:
         )).distinct
       case _ => Vector.empty
 
-    val problems = loaded.problems ++ blueprintProblems ++ overrideProblems
+    val problems = loaded.problems ++ blueprintProblems ++ overrideProblems ++
+      declarations.collect { case Left(p) => p } ++ ankkaProblems
     (verified, overrides) match
       case (Some(v), Right(o)) if problems.isEmpty =>
         Right(

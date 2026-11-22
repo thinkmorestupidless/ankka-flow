@@ -272,6 +272,18 @@ object Rendering:
       Option.when(spec.onDelete.managedTopics == OnDelete.Delete)(Action.EnsureFinalizer).toVector
 
     val status = LifecycleRules.status(resource, hashes, topics, observed, now)
+    // A condition that begins to hold is recorded once as a Warning, with its message.
+    val began = status.conditions
+      .filter(c =>
+        c.`type` != com.thinkmorestupidless.ankka.flow.crd.Condition.Ready &&
+          c.status == com.thinkmorestupidless.ankka.flow.crd.Condition.True
+      )
+      .filterNot(c =>
+        Conditions
+          .previous(resource)
+          .exists(p => p.`type` == c.`type` && p.status == c.status && p.message == c.message)
+      )
+      .map(c => Action.RecordEvent(c.`type`, Events.Warning, c.message))
     Rendered(
       finalizer ++ topicActions ++
         Vector(
@@ -282,7 +294,7 @@ object Rendering:
         streamletActions.filterNot {
           case Action.ApplyFlinkDeployment(d) => discarded.contains(d.getMetadata.getName)
           case _                              => false
-        } ++ removed ++ reset :+ Action.SetStatus(status),
+        } ++ removed ++ reset ++ began :+ Action.SetStatus(status),
       topics,
       hashes
     )

@@ -103,3 +103,68 @@ class TopicResolutionSuite extends munit.FunSuite:
     assertEquals(c.map(_.partitions), Right(Some(3)))
     assert(KafkaCluster.fromData("x", Map.empty).isLeft)
   }
+
+  // ── An ankka machine's cluster ────────────────────────────────────────────────────────────
+
+  private val machineData =
+    Map("bootstrap.servers" -> "broker.ankka.svc:9092", "machine" -> "affiliates/network")
+
+  test("a cluster Secret with machine = organization/name is that machine's") {
+    val c = KafkaCluster.fromData("pipelines", machineData).toOption.get
+    assertEquals(c.machine, Some(Machine("affiliates", "network")))
+    assertEquals(c.machine.map(_.groupPrefix), Some("ankka.machine.affiliates.network."))
+    assertEquals(KafkaCluster.fromData("plain", machineData - "machine").toOption.get.machine, None)
+  }
+
+  test("a malformed machine refuses the cluster, naming its Secret") {
+    for bad <- Seq("network", "affiliates/", "a/b/c") do
+      assertEquals(
+        KafkaCluster.fromData("pipelines", machineData + ("machine" -> bad)),
+        Left(
+          s"Secret 'kafka-cluster-pipelines' has machine '$bad', which is not <organization>/<name>"
+        ),
+        bad
+      )
+  }
+
+  private val ankkaTopic = TopicSpec(
+    id = "checkouts",
+    name = "checkout.cart-checkouts",
+    managed = false,
+    ankka = Some(com.thinkmorestupidless.ankka.flow.crd.AnkkaRef("checkout", "cart-checkouts")),
+    cluster = Some("pipelines")
+  )
+
+  test("a topic on a machine's cluster carries the machine's group prefix; others none") {
+    val machine = KafkaCluster.fromData("pipelines", machineData).toOption.get
+    val t       = TopicResolution.resolve(ankkaTopic, Map("pipelines" -> machine)).toOption.get
+    assertEquals(t.groupPrefix, Some("ankka.machine.affiliates.network."))
+    assertEquals(
+      Names.group("carts", "cleaner", "in", t.groupPrefix),
+      "ankka.machine.affiliates.network.carts.cleaner.in"
+    )
+    val plain = TopicResolution
+      .resolve(
+        TopicSpec(id = "t", name = "p.t", cluster = Some("big")),
+        Map("big" -> KafkaCluster("big", "k:9092", partitions = Some(1), replicas = Some(1)))
+      )
+      .toOption
+      .get
+    assertEquals(plain.groupPrefix, None)
+  }
+
+  test("an ankka topic is never managed, even in a resource that says so") {
+    val machine = KafkaCluster.fromData("pipelines", machineData).toOption.get
+    val t = TopicResolution
+      .resolve(ankkaTopic.copy(managed = true), Map("pipelines" -> machine))
+      .toOption
+      .get
+    assertEquals(t.managed, false)
+    assertEquals((t.partitions, t.replicas), (None, None))
+  }
+
+  test("an ankka topic with no cluster is on the cluster named ankka") {
+    val machine = KafkaCluster.fromData("ankka", machineData).toOption.get
+    val t       = TopicResolution.resolve(ankkaTopic.copy(cluster = None), Map("ankka" -> machine))
+    assertEquals(t.map(_.bootstrapServers), Right("broker.ankka.svc:9092"))
+  }

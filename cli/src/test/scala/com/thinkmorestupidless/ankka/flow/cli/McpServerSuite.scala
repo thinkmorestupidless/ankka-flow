@@ -12,6 +12,7 @@ import com.thinkmorestupidless.ankka.flow.cli.mcp.JsonText.*
 import com.thinkmorestupidless.ankka.flow.crd.*
 import com.thinkmorestupidless.ankka.flow.descriptor.Json
 import io.fabric8.kubernetes.api.model.{
+  ContainerBuilder,
   EventBuilder,
   ObjectMetaBuilder,
   ObjectReferenceBuilder,
@@ -112,10 +113,19 @@ class McpServerSuite extends munit.FunSuite:
         phase = phase,
         detail = if phase == "Ready" then "" else "topic 't0' does not exist",
         streamlets = List(
-          StreamletStatus("router", "pekko-streams", routerReplicas, routerReplicas),
+          StreamletStatus(
+            "router",
+            "pekko-streams",
+            routerReplicas,
+            routerReplicas,
+            inlets = List(InletStatus("in", "cart.t0", s"$name.router.in", Some(42L)))
+          ),
           StreamletStatus("sink", "pekko-streams", 0, 0)
         ),
-        topics = List(TopicStatus("t0", phase == "Ready"))
+        topics = List(TopicStatus("t0", phase == "Ready")),
+        conditions = List(
+          Condition(Condition.Ready, if phase == "Ready" then "True" else "False", "Running", "")
+        )
       )
     )
     f
@@ -125,8 +135,13 @@ class McpServerSuite extends munit.FunSuite:
       .inNamespace("shop")
       .resource(flow)
       .createOr(_.update()): Unit
-  private def pod(pipeline: String, streamlet: String): String =
-    val name = s"flow-$pipeline-$streamlet-x"
+  private def pod(
+      pipeline: String,
+      streamlet: String,
+      suffix: String = "x",
+      containers: Seq[String] = Seq("streamlet")
+  ): String =
+    val name = s"flow-$pipeline-$streamlet-$suffix"
     client.pods
       .inNamespace("shop")
       .resource(
@@ -141,6 +156,13 @@ class McpServerSuite extends munit.FunSuite:
                   "flow.ankka.thinkmorestupidless.com/streamlet",
                   streamlet
                 )
+              )
+              .build()
+          )
+          .withSpec(
+            new io.fabric8.kubernetes.api.model.PodSpecBuilder()
+              .withContainers(
+                containers.map(c => new ContainerBuilder().withName(c).build()).asJava
               )
               .build()
           )
@@ -408,7 +430,9 @@ class McpServerSuite extends munit.FunSuite:
     assert(list.contains("audit  Degraded") && list.contains("cart  Ready"), list)
     val got = text(call(srv, "get_pipeline", """{"name":"cart"}"""))
     assert(
-      got.contains("phase: Ready") && got.contains("router: image ghcr.io/x/router:1") && got
+      got.contains("phase: Ready") && got.contains(
+        "router: engine pekko-streams, image ghcr.io/x/router:1"
+      ) && got
         .contains("TopicCreated"),
       got
     )
@@ -416,39 +440,66 @@ class McpServerSuite extends munit.FunSuite:
     assert(isError(missing) && text(missing).contains("no pipeline 'ghost'"), text(missing))
   }
 
-  test("pipeline_logs reads a streamlet's process container, or its sidecar") {
+  private def logAt(pod: String, container: String, lines: Int, body: String): Unit =
+    server
+      .expect()
+      .get()
+      .withPath(
+        s"/api/v1/namespaces/shop/pods/$pod/log?pretty=false&container=$container&tailLines=$lines"
+      )
+      .andReturn(200, body)
+      .always()
+
+  test("pipeline_logs reads every pod carrying the streamlet's labels, a Flink job's among them") {
     install(pipeline("cart", "Ready"))
-    val name = pod("cart", "router")
-    server
-      .expect()
-      .get()
-      .withPath(
-        s"/api/v1/namespaces/shop/pods/$name/log?pretty=false&container=process&tailLines=3"
-      )
-      .andReturn(200, "p1\np2\np3\n")
-      .always()
-    server
-      .expect()
-      .get()
-      .withPath(
-        s"/api/v1/namespaces/shop/pods/$name/log?pretty=false&container=sidecar&tailLines=3"
-      )
-      .andReturn(200, "s1\n")
-      .always()
+    val router = pod("cart", "router")
+    logAt(router, "streamlet", 3, "p1\np2\np3\n")
+    val jm = pod("cart", "sink", "jobmanager", Seq("flink-main-container"))
+    val tm = pod("cart", "sink", "taskmanager-1-1", Seq("flink-main-container"))
+    logAt(jm, "flink-main-container", 3, "jm1\n")
+    logAt(tm, "flink-main-container", 3, "tm1\n")
     val srv = server(Some(named))
-    val process =
+    val routed =
       text(call(srv, "pipeline_logs", """{"name":"cart","streamlet":"router","lines":3}"""))
-    assert(process.contains(s"--- $name [process]") && process.contains("p2"), process)
-    val sidecar = text(
-      call(
-        srv,
-        "pipeline_logs",
-        """{"name":"cart","streamlet":"router","container":"sidecar","lines":3}"""
-      )
+    assert(routed.contains(s"--- $router [streamlet]") && routed.contains("p2"), routed)
+    val flink = text(call(srv, "pipeline_logs", """{"name":"cart","streamlet":"sink","lines":3}"""))
+    assert(
+      flink.contains(s"--- $jm [flink-main-container]\njm1") &&
+        flink.contains(s"--- $tm [flink-main-container]\ntm1"),
+      flink
     )
-    assert(sidecar.contains("s1"), sidecar)
     val unknown = call(srv, "pipeline_logs", """{"name":"cart","streamlet":"nope"}""")
     assert(isError(unknown) && text(unknown).contains("no streamlet 'nope'"), text(unknown))
+  }
+
+  test("pipeline_logs has no container input") {
+    val tools = exchange(server(None), """{"jsonrpc":"2.0","id":9,"method":"tools/list"}""")
+      .head("result")
+      .flatMap(_("tools")) match
+      case Some(Json.Arr(xs)) => xs
+      case other              => fail(s"no tools: $other")
+    val logs = tools.find(_.string("name").contains("pipeline_logs")).get
+    assert(!logs.render.contains("\"container\""), logs.render)
+  }
+
+  test("pipeline_lag answers each streamlet's inlets from the status, unknown where it has none") {
+    install(pipeline("cart", "Ready"))
+    val lag = text(call(server(Some(named)), "pipeline_lag", """{"name":"cart"}"""))
+    assertEquals(
+      lag.linesIterator.toVector,
+      Vector(
+        "streamlet  engine  inlet  topic  group  lag",
+        "router  pekko-streams  in  cart.t0  cart.router.in  42",
+        "sink  pekko-streams  in  t1  -  unknown"
+      )
+    )
+  }
+
+  test("get_pipeline shows each streamlet's engine and the conditions") {
+    install(pipeline("cart", "Ready"))
+    val got = text(call(server(Some(named)), "get_pipeline", """{"name":"cart"}"""))
+    assert(got.contains("router: engine pekko-streams, image ghcr.io/x/router:1"), got)
+    assert(got.contains("conditions:\n    Ready: True"), got)
   }
 
   test(
