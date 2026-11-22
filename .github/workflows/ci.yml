@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name != 'pull_request' }}
-      sdk-python: ${{ steps.filter.outputs.sdk-python == 'true' || github.event_name != 'pull_request' }}
       features: ${{ steps.filter.outputs.features == 'true' || github.event_name != 'pull_request' }}
       cli-native: ${{ steps.filter.outputs.cli-native == 'true' || github.event_name != 'pull_request' }}
     steps:
@@ -29,21 +28,14 @@ jobs:
               - 'build.sbt'
               - 'project/**'
               - '.scalafmt.conf'
-              - 'protocol/**'
+              - 'descriptor/**'
               - 'blueprint/**'
               - 'crd/**'
-              - 'sidecar/**'
               - 'operator/**'
               - 'cli/**'
               - 'kustomization/**'
-              - 'sdks/scala/**'
-              - 'samples/cart-router-scala/**'
-              # flow init's template suite builds a Python project against this SDK, and the
-              # templates carry the plugin's skills.
-              - 'sdks/python/**'
-              - 'marketplace/plugins/ankka-flow/skills/**'
-              # The Scala sample runs the Python sample's blueprint and checks the fixture.
-              - 'samples/cart-router/blueprint.conf'
+              - 'sdks/**'
+              - 'samples/cart-pipeline/**'
             # The living features, the glossary their steps are written in, the specs that name
             # their scenarios, and the extension that checks them against each other.
             features:
@@ -59,21 +51,12 @@ jobs:
               - *workflow
               - 'build.sbt'
               - 'project/**'
-              - 'protocol/**'
+              - 'descriptor/**'
+              - 'sdks/**'
               - 'blueprint/**'
               - 'crd/**'
               - 'cli/**'
-              - 'samples/*/blueprint.conf'
-              - 'samples/*/flow/**'
-              - 'marketplace/plugins/ankka-flow/skills/**'
-            sdk-python:
-              - *workflow
-              - 'build.sbt'
-              - 'project/**'
-              - 'protocol/**'
-              - 'sidecar/**'
-              - 'sdks/python/**'
-              - 'samples/**'
+              - 'samples/cart-pipeline/**'
 
   # The living features, in the glossary's words, and the specs that name their scenarios, checked
   # against each other by speckit-bdd: an undefined word, a refused synonym, two scenarios that give
@@ -103,14 +86,10 @@ jobs:
           java-version: '21'
           cache: sbt
       - uses: sbt/setup-sbt@v1
-      # flow init's template suite builds a Python project with uv.
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: "3.12"
       - run: sbt -Dflow.cluster.tests=off scalafmtCheckAll scalafmtSbtCheck compile test
       - run: sbt mutationCheck
-      # The Scala sample: its committed descriptor is what it declares, and its image builds.
-      - run: sbt cartRouterScala/descriptorCheck cartRouterScala/docker:publishLocal
+      # The sample's committed descriptors are what its streamlets declare.
+      - run: sbt cartCleaner/descriptorCheck cartCounter/descriptorCheck
 
   # The CLI as a native binary, on one platform: the image built, the CLI's own suite run against
   # the binary instead of in process, and the smoke script with its byte-for-byte diff against the
@@ -132,56 +111,6 @@ jobs:
           github-token: ${{ github.token }}
       - uses: sbt/setup-sbt@v1
       - run: sbt cli/stage cli/GraalVMNativeImage/packageBin
-      # The template suite builds projects with sbt, uv and Docker; the smoke script checks the
-      # binary's init instead.
-      - run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow" -Dflow.template.tests=off
+      - run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow"
       - run: cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
 
-  sdk-python:
-    needs: changes
-    if: needs.changes.outputs.sdk-python == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      # FR-027: the SDK's copy of the protocol is the protocol, byte for byte.
-      - run: diff -r protocol/src/main/protobuf sdks/python/proto/src/main/protobuf
-      - run: diff -r protocol/fixtures sdks/python/proto/fixtures
-      - run: diff protocol/DESCRIPTOR.md sdks/python/proto/DESCRIPTOR.md
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: sbt
-      - uses: sbt/setup-sbt@v1
-      - uses: astral-sh/setup-uv@v7
-      - name: SDK
-        working-directory: sdks/python
-        run: |
-          uv sync
-          uv run python scripts/proto.py
-          git diff --exit-code proto/
-          uv build
-          python3 -m venv /tmp/wheel && /tmp/wheel/bin/pip install dist/*.whl && /tmp/wheel/bin/python -c "import ankka_flow; print(ankka_flow.PROTOCOL_VERSION)"
-          uv run mypy
-          uv run pytest -q
-          uv run conformance
-      - name: Sample
-        working-directory: samples/cart-router
-        run: |
-          uv sync
-          uv run descriptor --check
-          uv run pytest -q
-      - name: Sample beside ankka
-        working-directory: samples/checkout-feed
-        run: |
-          uv sync
-          uv run descriptor --check
-          uv run pytest -q
-      - name: Sample graph
-        working-directory: samples/checkout-graph
-        run: |
-          uv sync
-          uv run descriptor --check
-          uv run pytest -q

@@ -1,10 +1,10 @@
 name: release
 
 # A tag is a release. A tag with a hyphen (v0.5.0-rc.1) is a pre-release: it gets the release page and
-# the native `flow` binaries, and nothing else — no image reaches the registry, no wheel reaches PyPI,
-# no artifact reaches Maven Central, no plugin reaches the marketplace, and the Homebrew formula is not
-# touched, so what `brew install` gives a reader is always a release. `images`, `sdk-python`,
-# `sdk-scala`, `marketplace` and `homebrew` are gated on the tag's name below; `release-page` and
+# the native `flow` binaries, and nothing else — no image reaches the registry, no artifact reaches
+# Maven Central, no plugin reaches the marketplace, and the Homebrew formula is not touched, so what
+# `brew install` gives a reader is always a release. `images`, `sdks`, `marketplace` and `homebrew`
+# are gated on the tag's name below; `release-page` and
 # `cli-native` run on every tag, and the publishing jobs do not wait on them.
 
 on:
@@ -191,23 +191,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push the sidecar, the operator and the samples
+      - name: Build and push the operator and the sample's two images
         env:
           DOCKER_REPOSITORY: ghcr.io/thinkmorestupidless
         run: |
-          sbt -Dflow.cluster.tests=off sidecar/docker:publish operator/docker:publish cartRouterScala/docker:publish
+          sbt -Dflow.cluster.tests=off operator/docker:publish cartCleaner/docker:publish cartCounter/image
           version="${GITHUB_REF_NAME#v}"
-          docker build -f samples/cart-router/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-cart-router:${version}" .
-          docker push "ghcr.io/thinkmorestupidless/sample-cart-router:${version}"
-          docker build -f samples/checkout-feed/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}" .
-          docker push "ghcr.io/thinkmorestupidless/sample-checkout-feed:${version}"
-          docker build -f samples/checkout-graph/Dockerfile -t "ghcr.io/thinkmorestupidless/sample-checkout-graph:${version}" .
-          docker push "ghcr.io/thinkmorestupidless/sample-checkout-graph:${version}"
+          docker tag "sample-cart-counter:${version}" "ghcr.io/thinkmorestupidless/sample-cart-counter:${version}"
+          docker push "ghcr.io/thinkmorestupidless/sample-cart-counter:${version}"
 
-  sdk-scala:
-    # The Scala SDK to Maven Central: com.thinkmorestupidless:ankka-flow-sdk_3, with the protocol module
-    # it depends on, ankka-flow-protocol_3, at the release's version — published by `sbt ci-release`,
-    # as ankka's artifacts are, for Scala 3.3 LTS on Java 21. Every other module skips publishing.
+  sdks:
+    # The SDKs to Maven Central at the release's version, published by `sbt ci-release` as ankka's
+    # artifacts are: com.thinkmorestupidless:ankka-flow-descriptor_3 and ankka-flow-pekko-streams_3,
+    # for Scala 3.3 LTS on Java 21, and ankka-flow-flink and ankka-flow-flink-testkit, Java, for
+    # Flink's Java 17. Every other module skips publishing.
     #
     # Needs four secrets, the maintainer's to set, the same four ankka's release uses:
     #   PGP_SECRET          gpg --armor --export-secret-keys <id> | base64
@@ -216,9 +213,9 @@ jobs:
     #   SONATYPE_PASSWORD   the token's password
     # The namespace com.thinkmorestupidless is already claimed on the portal by ankka.
     #
-    # It waits for the images, as sdk-python does: an SDK whose sidecar image never reached the
-    # registry should not exist on Central either. Nothing on Central can be replaced, so a re-run
-    # asks repo1 first and uploads only a version it does not already hold.
+    # It waits for the images: a release whose sample images never reached the registry should not
+    # exist on Central either. Nothing on Central can be replaced, so a re-run asks repo1 first and
+    # uploads only a version it does not already hold.
     needs: images
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-24.04
@@ -251,7 +248,7 @@ jobs:
         id: central
         run: |
           version="${GITHUB_REF_NAME#v}"
-          url="https://repo1.maven.org/maven2/com/thinkmorestupidless/ankka-flow-sdk_3/$version/ankka-flow-sdk_3-$version.pom"
+          url="https://repo1.maven.org/maven2/com/thinkmorestupidless/ankka-flow-pekko-streams_3/$version/ankka-flow-pekko-streams_3-$version.pom"
           code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)
           echo "$url -> $code"
           if [ "$code" = "200" ]; then
@@ -281,7 +278,7 @@ jobs:
           if [ -z "$bundle" ]; then echo "::error::sonaBundle wrote no bundle.zip"; exit 1; fi
           ls -l "$bundle"
           # What the bundle holds, for the log. No `| head`: under pipefail a closed pipe fails the step.
-          unzip -l "$bundle" | grep -E 'ankka-flow-(sdk|protocol)_3/[^/]+/[^/]+\.(jar|pom)$' || true
+          unzip -l "$bundle" | grep -E 'ankka-flow-(descriptor_3|pekko-streams_3|flink|flink-testkit)/[^/]+/[^/]+\.(jar|pom)$' || true
           version="${GITHUB_REF_NAME#v}"
           token=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 | tr -d '\n')
           code=$(curl -sS -o upload.out -w '%{http_code}' \
@@ -291,85 +288,6 @@ jobs:
           echo "portal answered $code: $(cat upload.out)"
           [ "$code" = "201" ] || exit 1
           echo "::notice::$version uploaded as deployment $(cat upload.out); the portal publishes it and repo1 follows"
-
-  sdk-python:
-    # The Python SDK to PyPI, as the package `ankka-flow`: https://pypi.org/project/ankka-flow/. The
-    # version is `__version__` in sdks/python/src/ankka_flow/__init__.py — 0.0.0 in the tree, written
-    # here from the tag and read by hatchling as the package version — so the version the SDK reports
-    # to the sidecar in discovery, and the one a descriptor records, is the one on PyPI. The gRPC stubs
-    # are generated from this commit's `protocol/`, so the wheel speaks the protocol of the release it
-    # is named after.
-    #
-    # No token anywhere: PyPI trusts this workflow directly (trusted publishing, OIDC), as ankka's
-    # release does. It needs one thing outside this repository, once: on
-    # https://pypi.org/manage/account/publishing/ a publisher for project `ankka-flow`, owner
-    # `thinkmorestupidless`, repository `ankka-flow`, workflow `release.yml`, environment `pypi` — a
-    # "pending" publisher until the first upload creates the project.
-    #
-    # It waits for the images: the SDK's project template runs the sidecar image of the same version,
-    # so a release whose images never reached the registry should not exist on PyPI either. A version
-    # can never be re-uploaded to PyPI, only superseded, so the checks below are the last point at which
-    # a release can be withdrawn.
-    needs: images
-    # A release tag only: a pre-release (a tag with a hyphen) reaches no registry. `needs` alone
-    # would not do it: a skipped `images` skips this job today, but the gate is stated so that it
-    # survives a change to what this waits on.
-    if: ${{ !contains(github.ref_name, '-') }}
-    runs-on: ubuntu-24.04
-    environment:
-      name: pypi
-      url: https://pypi.org/project/ankka-flow/
-    permissions:
-      contents: read
-      id-token: write   # the OIDC token PyPI verifies
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: sbt
-      - uses: sbt/setup-sbt@v1
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: "3.12"
-      - name: The SDK, its fixtures and the conformance suite
-        working-directory: sdks/python
-        run: |
-          diff -r ../../protocol/src/main/protobuf proto/src/main/protobuf
-          diff -r ../../protocol/fixtures proto/fixtures
-          uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
-      - name: Write the version, build the wheel
-        working-directory: sdks/python
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          sed -i "s/^__version__ = \"0.0.0\"/__version__ = \"$version\"/" src/ankka_flow/__init__.py
-          grep -n "^__version__ = \"$version\"" src/ankka_flow/__init__.py
-          rm -rf dist
-          uv build
-          ls -l dist
-          test -f "dist/ankka_flow-$version-py3-none-any.whl" || { echo "::error::the wheel is not versioned as the tag"; exit 1; }
-      - name: The wheel installs on its own and is the release it claims to be
-        working-directory: sdks/python
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          # An isolated interpreter with only the wheel and its declared dependencies: no checkout on the
-          # path, so a stub the wheel does not carry or an undeclared dependency fails here rather than on
-          # a user's first `uv add ankka-flow`.
-          uv run --isolated --no-project --with "dist/ankka_flow-$version-py3-none-any.whl" python - "$version" <<'PY'
-          import sys
-          import ankka_flow, ankka_flow.testkit
-          from ankka_flow._proto.ankka.flow.v1 import streamlet_pb2
-          assert ankka_flow.__version__ == sys.argv[1], (ankka_flow.__version__, sys.argv[1])
-          print("ankka-flow", ankka_flow.__version__, "protocol", ankka_flow.PROTOCOL_VERSION, "from", ankka_flow.__file__)
-          PY
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: sdks/python/dist
 
   marketplace:
     # The Claude Code marketplace is thinkmorestupidless/ankka-marketplace, one plugin per project. This

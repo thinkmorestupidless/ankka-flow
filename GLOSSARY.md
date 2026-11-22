@@ -177,24 +177,8 @@ A record the sample pipeline reads, keyed by cart id, carrying a total and the t
 The first-streamlet tutorial's run: Kafka in a container, each streamlet a command on the
 host, records written and verified, with no cluster.
 
-### Maven Central
-The registry Scala and Java artifacts are published to and resolved from by version.
-
-### registry
-Where a release publishes images.
-
-### pre-release tag
-A tag with a hyphen in it, whose release publishes only the release page, the native
-binaries and the formula.
-
-### release tag
-A tag without a hyphen, whose release publishes everything.
-
 ### CI
 The checks that run on every change to the repository.
-
-### docs build
-The command that checks every documentation page and builds the site.
 
 ### coding agent
 A model writing code with the skills as its documentation.
@@ -243,11 +227,6 @@ touch.
 
 ### project file
 "flow.toml" in a project's root, naming the cluster the project's tools may touch.
-
-### connection file
-The file naming the server's command for a client: ".mcp.json" in a project, or the client's settings.
-
-Avoid: config
 
 ## Engines and ankka
 
