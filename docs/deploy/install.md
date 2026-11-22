@@ -72,6 +72,13 @@ stringData:
 | `flink-config` | optional; Flink configuration, one `key=value` per line, copied into every `FlinkDeployment` |
 | `env` | optional; environment variables, one `NAME=value` per line, given only to Flink's pods: the store's credentials go here, never in `flink-config` |
 
+The operator sets these keys itself, over any value `flink-config` gives them: the checkpoint
+interval (from a streamlet's `flink.checkpoint-interval`), `execution.checkpointing.mode` (`EXACTLY_ONCE`),
+`execution.checkpointing.dir`, `execution.checkpointing.savepoint-dir`, `high-availability.type`
+(`kubernetes`), `high-availability.storageDir`, `restart-strategy.type` (`exponential-delay`) and,
+when a Kafka cluster names token endpoints, `env.java.opts.taskmanager`. The directories are the
+streamlet's own in the store, so its state epochs and resets hold.
+
 A pipeline with a Flink streamlet applied before `flink-state` exists is refused with the condition
 `StateStoreMissing`. The operator never deletes anything in the store: files of a state epoch left
 behind by a reset stay until the store's own lifecycle rules remove them.

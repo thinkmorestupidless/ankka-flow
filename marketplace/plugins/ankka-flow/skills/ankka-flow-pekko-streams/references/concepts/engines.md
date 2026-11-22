@@ -28,7 +28,10 @@ Choose Pekko Streams when each record is handled on its own: dropped, cleaned, r
 one of several outlets, or enriched by a call to another service. It starts in seconds and runs as
 a plain Deployment with as many replicas as the load needs. It has no windows and no state beyond
 the record in hand; a stage that needs either is a Flink streamlet. A record whose results are not
-all written is read again, so a stage downstream may see a result more than once.
+all written is read again, so a stage downstream may see a result more than once. A record is
+committed once the next record of its partition is written, so a streamlet that has read everything
+shows a lag of up to one for each partition gone quiet; a Flink streamlet's lag trails by up to one
+checkpoint interval instead. See [Observe a pipeline](../deploy/observe.md#lag).
 
 ## An ankka consumer
 
