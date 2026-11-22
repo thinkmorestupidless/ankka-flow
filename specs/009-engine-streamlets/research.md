@@ -590,6 +590,27 @@ exited 0 ("45 clean cart events, each keyed by its cart": the five malformed dro
 with SIGTERM, the runner drained: `ready` removed, and `carts.cleaner.in` at lag 0 on all three
 partitions, the last record of each committed. The counter's row waits for T041.
 
+**Laptop walkthrough, Flink row** (T030, 2026-11-22): the blueprint gained the counter on
+`clean-carts` and the topic `cart-counts`; `flow local` wrote both streamlets' settings; the cleaner
+ran from its staged script and the counter as `java -cp <its Compile classpath> cart.counter.CartCounter`
+(what `sbt cartCounter/run` runs; two sbt runs do not share a build). The counter logged once
+"local=true: running on Flink's local environment; state is kept only while this process runs".
+`produce.sh localhost:9092 50` then `verify.sh localhost:9092 50` exited 0: 45 clean events, and
+36 counts on `carts.cart-counts`, one per cart (nine of them) and closed minute (four), each of one
+event; the fifth minute stays open, as no event passes its end. Stopped and run again: the group
+`carts.counter.in` had committed 45 of 45, and in 45 seconds the new run wrote nothing (it read
+from the committed offsets). `produce.sh` again with the same start wrote 36 more counts of 1:
+with its state the run would have dropped those events as late, so it started with none.
+Found on the way, and fixed in the sample and the SDK:
+- **A window's record timestamp is the window's time.** Counts for events of 2026-01-01 were
+  deleted by the broker's seven-day retention minutes after they were written, which looked like a
+  consumer that read nothing. `produce.sh` now starts at the current minute (a fixed start is its
+  third argument); the delivery page should say that a Flink outlet's timestamps are event time.
+- **The local environment checkpoints** every 10 s in memory (`FlinkStreamlets`), or a laptop run
+  never commits an offset and a restarted command reads its topic again from the beginning.
+- **`flink-clients` is provided** to the counter's `run` (the local executor), with an slf4j 1.7
+  binding at `warn`, so the notice is seen; neither reaches the image.
+
 ## Found during implementation
 
 **The Pekko Streams runner commits on the next offset** (2026-11-22, asked at T019). A stage's

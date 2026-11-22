@@ -50,6 +50,7 @@ class FlinkStreamletsTest {
     Settings local = Settings.parse(SettingsTest.EXAMPLE.replace("local=false", "local=true"));
     var env = FlinkStreamlets.environment(new Passthrough(), local);
     assertTrue(env instanceof LocalStreamEnvironment, env.getClass().getName());
+    assertEquals(10_000L, env.getCheckpointConfig().getCheckpointInterval(), "offsets are committed");
     String plan = env.getExecutionPlan();
     assertTrue(plan.contains("inlet-in") && plan.contains("outlet-out"), plan);
   }

@@ -358,8 +358,12 @@ lazy val cartCounter = project
   .settings(
     name           := "cart-counter",
     publish / skip := true,
-    // A logging binding for `sbt cartCounter/run` on a laptop; in an image, Flink's own logs.
-    libraryDependencies ++= flinkProvided :+ (flinkSlf4jSimple % Provided),
+    // For `sbt cartCounter/run` on a laptop, the local executor and a logging binding; an image
+    // has Flink's own.
+    libraryDependencies ++= flinkProvided ++ Seq(
+      flinkClients     % Provided,
+      flinkSlf4jSimple % Provided
+    ),
     // `sbt cartCounter/run` on a laptop: Flink's own modules are provided in an image, so the run
     // puts them back.
     Compile / run := Defaults

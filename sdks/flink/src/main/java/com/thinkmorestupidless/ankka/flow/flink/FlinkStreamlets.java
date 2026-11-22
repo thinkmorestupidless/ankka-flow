@@ -28,6 +28,8 @@ public final class FlinkStreamlets {
 
   private static final Logger log = LoggerFactory.getLogger(FlinkStreamlets.class);
 
+  static final java.time.Duration LOCAL_CHECKPOINT_INTERVAL = java.time.Duration.ofSeconds(10);
+
   static final String LOCAL_NOTICE =
       "local=true: running on Flink's local environment; state is kept only while this process runs";
 
@@ -58,6 +60,9 @@ public final class FlinkStreamlets {
     if (settings.local()) {
       log.warn(LOCAL_NOTICE);
       env = StreamExecutionEnvironment.createLocalEnvironment();
+      // Checkpoints in memory, only so that offsets are committed to the inlet's group and a
+      // stopped command starts again from them, with no state.
+      env.enableCheckpointing(LOCAL_CHECKPOINT_INTERVAL.toMillis());
     } else {
       env = StreamExecutionEnvironment.getExecutionEnvironment();
     }
