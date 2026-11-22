@@ -494,3 +494,14 @@ scenario or a verify-first item except T068 (the family brain, outside this repo
 - **V10** (T001): `sbt-jupiter-interface` 0.20.0, the current release, loads under sbt 1.13.1 and
   runs JUnit Jupiter 6.1.3 (the version its `jupiter-interface` is built against, so `V.junit` is
   that).
+- **V9** (T003): no BSL licence and no `com.typesafe.akka` on a Flink streamlet's path.
+  `sbt cartCounter/dependencyTree`, with a placeholder class using `StreamExecutionEnvironment` and
+  `KafkaSource`, resolves 55 modules; none is under `com.typesafe.akka`, and no jar's
+  `META-INF/LICENSE*` or `NOTICE*` names the Business Source License. The one module with "akka" in
+  its name, `flink-rpc-akka-loader:2.2.1`, embeds `flink-rpc-akka.jar`, whose 6,365 classes under
+  `org/apache/pekko/` are Apache Pekko **1.1.2** (`pekko-actor_2.12`, `-remote`, `-stream`, …,
+  Apache-2.0, as its NOTICE lists), and which holds no class under `akka/`. R1 said Pekko 1.4.0;
+  the embedded jar is 1.1.2, which changes nothing: it is Flink's own classloader's, never on a
+  streamlet's. In the image `flink:2.2.1-java17` (JDK 17.0.21), `grep -il "business source"` over
+  `/opt/flink/NOTICE` and `/opt/flink/licenses/` finds nothing; the NOTICE names Akka only as the
+  origin of Pekko's code.
