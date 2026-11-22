@@ -48,7 +48,7 @@ sdk-scala:
 sdk:
     cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
 
-# A single-node Kafka on localhost:9094 for repository development.
+# A single-node Kafka on localhost:9092, topics created on first use, for development and the laptop walkthrough.
 kafka-up:
     docker compose up -d kafka
 

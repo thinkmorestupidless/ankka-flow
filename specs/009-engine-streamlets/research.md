@@ -581,6 +581,15 @@ author's `.map(r => out(…))`, `.mapConcat(…)` to `Seq[Emit]` or `.map(…)` 
 needed. One thing for T020: an element `mapConcat` splits into several carries the same offset
 on each, so the runner must not commit that offset until the last of them is confirmed.
 
+**Laptop walkthrough, Pekko Streams row** (T025, 2026-11-22): `docker compose up -d kafka`
+(Kafka on `localhost:9092`, topics created on first use); `flow local samples/cart-pipeline/blueprint.conf
+--descriptors samples/cart-pipeline/flow --bootstrap-servers localhost:9092 -o /tmp/carts` wrote
+`/tmp/carts/cleaner/streamlet.properties`; `FLOW_CONFIG_DIR=/tmp/carts/cleaner sbt cartCleaner/run`
+had `/tmp/flow/ready` within seconds; `produce.sh localhost:9092 50` then `verify.sh localhost:9092 50`
+exited 0 ("45 clean cart events, each keyed by its cart": the five malformed dropped). Stopped
+with SIGTERM, the runner drained: `ready` removed, and `carts.cleaner.in` at lag 0 on all three
+partitions, the last record of each committed. The counter's row waits for T041.
+
 ## Found during implementation
 
 **The Pekko Streams runner commits on the next offset** (2026-11-22, asked at T019). A stage's
