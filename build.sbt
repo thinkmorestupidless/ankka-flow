@@ -317,6 +317,7 @@ lazy val flinkTestkit = project
 // The key is `descriptor`, as the module is: `sbt cartCleaner/descriptor` and `sbt descriptor/test`.
 lazy val writeDescriptor =
   TaskKey[Unit]("descriptor", "Writes a sample streamlet's descriptor from its declaration")
+lazy val image = taskKey[String]("Builds a sample Flink streamlet's image and returns its tag")
 lazy val descriptorCheck =
   taskKey[Unit]("Fails when a sample streamlet's committed descriptor differs from its declaration")
 
@@ -339,11 +340,11 @@ lazy val cartCleaner = project
     libraryDependencies ++= Seq(jsoniterMacros, logback),
     // The main's descriptor modes: `sbt cartCleaner/descriptor` and `cartCleaner/descriptorCheck`.
     writeDescriptor := Def.taskDyn {
-      val path = ((ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/cleaner.json")
+      val path = (ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/cleaner.json"
       (Compile / runMain).toTask(s" cart.cleaner.Main --descriptor ${path.getAbsolutePath}")
     }.value,
     descriptorCheck := Def.taskDyn {
-      val path = ((ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/cleaner.json")
+      val path = (ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/cleaner.json"
       (Compile / runMain).toTask(s" cart.cleaner.Main --descriptor-check ${path.getAbsolutePath}")
     }.value
   )
@@ -357,15 +358,64 @@ lazy val cartCounter = project
   .settings(
     name           := "cart-counter",
     publish / skip := true,
-    libraryDependencies ++= flinkProvided,
+    // A logging binding for `sbt cartCounter/run` on a laptop; in an image, Flink's own logs.
+    libraryDependencies ++= flinkProvided :+ (flinkSlf4jSimple % Provided),
     // `sbt cartCounter/run` on a laptop: Flink's own modules are provided in an image, so the run
     // puts them back.
     Compile / run := Defaults
       .runTask(Compile / fullClasspath, Compile / run / mainClass, Compile / run / runner)
       .evaluated,
+    Compile / runMain := Defaults
+      .runMainTask(Compile / fullClasspath, Compile / run / runner)
+      .evaluated,
     Compile / run / mainClass := Some("cart.counter.CartCounter"),
     run / fork                := true,
-    run / envVars ++= sys.env.get("FLOW_CONFIG_DIR").map("FLOW_CONFIG_DIR" -> _).toMap
+    run / envVars ++= sys.env.get("FLOW_CONFIG_DIR").map("FLOW_CONFIG_DIR" -> _).toMap,
+    run / javaOptions += "-Dorg.slf4j.simpleLogger.defaultLogLevel=warn",
+    // The main's descriptor modes: `sbt cartCounter/descriptor` and `cartCounter/descriptorCheck`.
+    writeDescriptor := Def.taskDyn {
+      val path = (ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/counter.json"
+      (Compile / runMain).toTask(s" cart.counter.CartCounter --descriptor ${path.getAbsolutePath}")
+    }.value,
+    descriptorCheck := Def.taskDyn {
+      val path = (ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/counter.json"
+      (Compile / runMain).toTask(
+        s" cart.counter.CartCounter --descriptor-check ${path.getAbsolutePath}"
+      )
+    }.value,
+    // `sbt cartCounter/image`: the jar as usrlib/streamlet.jar, every dependency Flink does not
+    // provide beside it (research V3), built FROM the image V.flinkImage names.
+    image := {
+      val log     = streams.value.log
+      val dir     = target.value / "image"
+      val usrlib  = dir / "usrlib"
+      val tag     = s"sample-cart-counter:${version.value.replace('+', '-')}"
+      val jars    = (Runtime / externalDependencyClasspath).value.map(_.data)
+      val sdkJars = Seq((flinkSdk / Compile / packageBin).value)
+      IO.delete(dir)
+      IO.copyFile((Compile / packageBin).value, usrlib / "streamlet.jar")
+      (sdkJars ++ jars)
+        .filter(_.getName.endsWith(".jar"))
+        .foreach(j => IO.copyFile(j, usrlib / j.getName))
+      IO.copyFile(baseDirectory.value / "Dockerfile", dir / "Dockerfile")
+      val code = scala.sys.process
+        .Process(
+          Seq(
+            "docker",
+            "build",
+            "-q",
+            "--build-arg",
+            s"FLINK_IMAGE=${V.flinkImage}",
+            "-t",
+            tag,
+            "."
+          ),
+          dir
+        )
+        .!(scala.sys.process.ProcessLogger(line => log.info(line), line => log.warn(line)))
+      if (code != 0) throw new MessageOnlyException(s"docker build of $tag failed ($code)")
+      tag
+    }
   )
 
 /** Blueprint verification, carried from cloudflow-blueprint. Pure: no Kafka, no cluster. */
