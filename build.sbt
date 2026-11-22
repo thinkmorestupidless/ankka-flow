@@ -433,7 +433,7 @@ lazy val operatorBuildInfo = Seq(
 /** The operator: renders AnkkaFlow resources into topics, Secrets and Deployments. */
 lazy val operator = project
   .in(file("operator"))
-  .dependsOn(crd, blueprint, protocol, sidecar % "test->compile")
+  .dependsOn(crd, blueprint, descriptor)
   .enablePlugins(JavaAppPackaging, DockerPlugin, BuildInfoPlugin)
   .settings(commonSettings)
   .settings(dockerSettings)

@@ -21,7 +21,7 @@ import java.util.Properties
 
 import scala.jdk.CollectionConverters.*
 
-import com.thinkmorestupidless.ankka.flow.crd.{BatchSpec, TopicSpec}
+import com.thinkmorestupidless.ankka.flow.crd.TopicSpec
 
 /** A Kafka cluster: a `kafka-cluster-<name>` Secret in the operator's clusters namespace (R12). */
 final case class KafkaCluster(
@@ -71,8 +71,7 @@ final case class ResolvedTopic(
     consumerConfig: Map[String, String],
     partitions: Option[Int],
     replicas: Option[Int],
-    topicConfig: Map[String, String],
-    batch: BatchSpec
+    topicConfig: Map[String, String]
 ):
   /** The key the Admin client cache uses: same brokers and credentials, same client. */
   def connectionKey: (String, Map[String, String]) = bootstrapServers -> connectionConfig
@@ -128,8 +127,7 @@ object TopicResolution:
                 c.fold(Map.empty[String, String])(_.consumerConfig) ++ topic.consumerConfig,
               partitions = if topic.managed then partitions else None,
               replicas = if topic.managed then replicas else None,
-              topicConfig = topic.topicConfig,
-              batch = topic.batch
+              topicConfig = topic.topicConfig
             )
           )
     }

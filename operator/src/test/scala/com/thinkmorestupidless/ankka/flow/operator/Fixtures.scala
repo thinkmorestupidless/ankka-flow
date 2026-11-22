@@ -7,7 +7,7 @@ import scala.concurrent.duration.*
 import com.fasterxml.jackson.databind.JsonNode
 import com.thinkmorestupidless.ankka.flow.crd.*
 
-/** The cart pipeline as a resource, built from the protocol's descriptor fixtures. */
+/** The cart pipeline as a resource, built from the descriptor module's fixtures. */
 object Fixtures:
 
   private val mapper = FlowSerialization.mapper()
@@ -15,7 +15,7 @@ object Fixtures:
 
   def descriptor(name: String): JsonNode =
     mapper
-      .readTree(Files.readString(root.resolve(s"protocol/fixtures/descriptors/$name.json")))
+      .readTree(Files.readString(root.resolve(s"descriptor/fixtures/descriptors/$name.json")))
       .get("streamlet")
 
   val settings: Settings = Settings(
@@ -42,25 +42,31 @@ object Fixtures:
   val observed: Observed =
     Observed(clusters = Map("default" -> defaultCluster, "shop" -> shopCluster))
 
+  /**
+   * A cleaner reading an unmanaged topic and writing a managed one, a sink reading that, and a
+   * managed topic no streamlet binds, left to the cluster's defaults.
+   */
   def cart(
-      threshold: Int = 100,
-      routerImage: String = "ghcr.io/example/cart-router:0.3.1",
-      routerReplicas: Int = 1,
+      maxTotal: Int = 10000,
+      cleanerImage: String = "ghcr.io/example/cart-cleaner:0.6.0",
+      cleanerReplicas: Int = 1,
       withSink: Boolean = true
   ): AnkkaFlow =
-    val router = StreamletSpec(
-      name = "router",
-      image = routerImage,
-      replicas = routerReplicas,
-      config = Map("review-threshold" -> mapper.readTree(threshold.toString)),
+    val cleaner = StreamletSpec(
+      name = "cleaner",
+      image = cleanerImage,
+      engine = "pekko-streams",
+      replicas = cleanerReplicas,
+      config = Map("max-total" -> mapper.readTree(maxTotal.toString)),
       inlets = Map("in" -> "cart-events"),
-      outlets = Map("valid" -> "valid-carts", "review" -> "review-carts"),
-      descriptor = descriptor("cart-router")
+      outlets = Map("out" -> "clean-carts"),
+      descriptor = descriptor("cart-cleaner")
     )
     val sink = StreamletSpec(
       name = "sink",
-      image = "ghcr.io/example/cart-sink:0.3.1",
-      inlets = Map("in" -> "valid-carts"),
+      image = "ghcr.io/example/cart-sink:0.6.0",
+      engine = "pekko-streams",
+      inlets = Map("in" -> "clean-carts"),
       descriptor = descriptor("sink")
     )
     val resource = AnkkaFlow(
@@ -68,9 +74,9 @@ object Fixtures:
       "cart",
       AnkkaFlowSpec(
         pipeline = "cart",
-        version = "0.3.1",
-        protocolVersion = "1.0",
-        streamlets = if withSink then List(router, sink) else List(router),
+        version = "0.6.0",
+        descriptorVersion = "2.0",
+        streamlets = if withSink then List(cleaner, sink) else List(cleaner),
         topics = List(
           TopicSpec(
             id = "cart-events",
@@ -80,80 +86,16 @@ object Fixtures:
             consumerConfig = Map("auto.offset.reset" -> "earliest")
           ),
           TopicSpec(
-            id = "valid-carts",
-            name = "cart.valid-carts",
+            id = "clean-carts",
+            name = "cart.clean-carts",
             partitions = Some(6),
             replicas = Some(1),
             topicConfig = Map("retention.ms" -> "86400000")
           ),
-          TopicSpec(id = "review-carts", name = "cart.review-carts")
+          TopicSpec(id = "cart-counts", name = "cart.cart-counts")
         )
       )
     )
     resource.getMetadata.setUid("uid-1")
-    resource.getMetadata.setGeneration(1L)
-    resource
-
-  private def streamletOf(path: String): JsonNode =
-    mapper.readTree(Files.readString(root.resolve(path))).get("streamlet")
-
-  /** The Neo4j merge sink's descriptor, from its committed canonical JSON. */
-  val neo4jMergeSink: JsonNode = streamletOf("protocol/fixtures/builtin/neo4j-merge-sink.json")
-
-  val neo4jSecret: SecretState =
-    SecretState("41", Set("uri", "username", "password", "database"))
-
-  /** What a reconcile of the graph pipeline sees when its sink's Secret exists. */
-  val graphObserved: Observed = observed.copy(secrets = Map("neo4j-shop" -> neo4jSecret))
-
-  /** A mapper in front of the built-in Neo4j merge sink (feature 002). */
-  def graph(
-      sinkImage: String = "",
-      sinkConfig: Map[String, JsonNode] = Map(
-        "secret"              -> mapper.readTree("\"neo4j-shop\""),
-        "transaction-timeout" -> mapper.readTree("\"30s\"")
-      ),
-      sinkDescriptor: JsonNode = neo4jMergeSink
-  ): AnkkaFlow =
-    val mapperStreamlet = StreamletSpec(
-      name = "mapper",
-      image = "ghcr.io/example/checkout-graph:0.1.0",
-      inlets = Map("in" -> "cart-checkouts"),
-      outlets = Map("deltas" -> "graph-deltas"),
-      descriptor = streamletOf("cli/src/test/resources/blueprints/graph/descriptors/mapper.json")
-    )
-    val sink = StreamletSpec(
-      name = "graph",
-      image = sinkImage,
-      config = sinkConfig,
-      inlets = Map("in" -> "graph-deltas"),
-      descriptor = sinkDescriptor,
-      builtin = true
-    )
-    val resource = AnkkaFlow(
-      "shop",
-      "checkouts",
-      AnkkaFlowSpec(
-        pipeline = "checkouts",
-        version = "0.1.0",
-        protocolVersion = "1.0",
-        streamlets = List(mapperStreamlet, sink),
-        topics = List(
-          TopicSpec(
-            id = "cart-checkouts",
-            name = "cart-checkouts",
-            managed = false,
-            cluster = Some("default")
-          ),
-          TopicSpec(
-            id = "graph-deltas",
-            name = "checkouts.graph-deltas",
-            partitions = Some(3),
-            replicas = Some(1)
-          )
-        )
-      )
-    )
-    resource.getMetadata.setUid("uid-2")
     resource.getMetadata.setGeneration(1L)
     resource

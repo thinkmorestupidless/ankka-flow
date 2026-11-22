@@ -32,7 +32,7 @@ class TopicResolutionSuite extends munit.FunSuite:
     val r = Rendering.render(cart(), settings, observed, "t")
     assertEquals(
       r.actions.collect { case Action.EnsureTopic(t) => t.name }.toSet,
-      Set("cart.valid-carts", "cart.review-carts")
+      Set("cart.clean-carts", "cart.cart-counts")
     )
   }
 

@@ -30,7 +30,7 @@ object LifecycleRules:
         if !settled then "rolling out"
         else if ready < s.replicas then s"$ready of ${s.replicas} ready"
         else ""
-      StreamletStatus(s.name, s.replicas, ready, detail) -> settled
+      StreamletStatus(s.name, s.engine, s.replicas, ready, detail) -> settled
     }
     val topicStatuses = topics.toList.map { t =>
       observed.topics.get(t.name) match

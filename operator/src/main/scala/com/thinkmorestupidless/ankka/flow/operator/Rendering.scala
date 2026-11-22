@@ -2,9 +2,8 @@ package com.thinkmorestupidless.ankka.flow.operator
 
 import scala.jdk.CollectionConverters.*
 
-import com.thinkmorestupidless.ankka.flow.blueprint.DeltaTopics
 import com.thinkmorestupidless.ankka.flow.crd.*
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, DescriptorValidation, Json}
+import com.thinkmorestupidless.ankka.flow.descriptor.{DescriptorJson, DescriptorValidation, Json}
 import io.fabric8.kubernetes.api.model.*
 import io.fabric8.kubernetes.api.model.apps.{Deployment, DeploymentBuilder}
 import io.fabric8.kubernetes.api.model.apps.{
@@ -64,8 +63,7 @@ object Rendering:
       )(_ => Vector.empty) ++
         topicsResolved.collect { case (_, Left(e)) => e } ++
         spec.topics.flatMap(t => t.cluster.flatMap(observed.clusterProblems.get)).distinct ++
-        spec.streamlets.flatMap(s => descriptorProblems(s)) ++
-        spec.streamlets.flatMap(s => BuiltinStages.problems(s, namespace, observed))
+        spec.streamlets.flatMap(s => descriptorProblems(s))
     if refusals.nonEmpty then
       val reason = if settings.sidecarImage.isEmpty then "SidecarImageMissing" else "Refused"
       return Rendered(
@@ -100,24 +98,8 @@ object Rendering:
               s"topic '${t.name}' exists with $partitions partitions and replication $replication; the resource declares ${t.partitions.get} and ${t.replicas.get}. Left as it is."
             )
           )
-          // A topic that was to be compacted and is not: said on its own, with what it means, and
-          // then not repeated among the settings that were not applied.
-          val notCompacted =
-            for
-              wanted <- t.topicConfig.get(DeltaTopics.CleanupPolicy) if DeltaTopics.compacts(wanted)
-              actual <- configs.get(DeltaTopics.CleanupPolicy) if !DeltaTopics.compacts(actual)
-            yield Action.RecordEvent(
-              "TopicNotCompacted",
-              Events.Warning,
-              s"topic '${t.name}' exists and is not compacted (${DeltaTopics.CleanupPolicy} = $actual); the resource asks for $wanted. Left as it is: it will not hold the whole graph. To compact it, alter or recreate the topic."
-            )
           val changed = t.topicConfig
-            .collect {
-              case (k, v)
-                  if configs.get(k).exists(_ != v) &&
-                    !(k == DeltaTopics.CleanupPolicy && notCompacted.isDefined) =>
-                k
-            }
+            .collect { case (k, v) if configs.get(k).exists(_ != v) => k }
             .toVector
             .sorted
           val ignored = Option.when(changed.nonEmpty)(
@@ -127,7 +109,7 @@ object Rendering:
               s"topic '${t.name}' exists; changed settings ${changed.mkString(", ")} were not applied"
             )
           )
-          differs.toVector ++ notCompacted ++ ignored
+          differs.toVector ++ ignored
         case (false, Some(TopicState.Missing)) =>
           Vector(
             Action.RecordEvent(
@@ -181,13 +163,8 @@ object Rendering:
       .build()
 
     // ── 4. Per streamlet: the Secret with its two files, and the Deployment ───────────────────
-    def secretVersion(s: StreamletSpec) =
-      Option
-        .when(s.builtin)(BuiltinStages.secretName(s).flatMap(observed.secrets.get))
-        .flatten
-        .map(_.resourceVersion)
     val files = spec.streamlets
-      .map(s => s.name -> StreamletFiles.render(pipeline, s, byId, secretVersion(s)))
+      .map(s => s.name -> StreamletFiles.render(pipeline, s, byId))
       .toMap
     val fileProblems = files.values.collect { case Left(e) => e }.toVector
     if fileProblems.nonEmpty then
@@ -253,10 +230,18 @@ object Rendering:
       case None => Vector(s"streamlet '${s.name}' has no descriptor")
       case Some(node) =>
         Json.parse(node.toString).flatMap(DescriptorJson.streamletFromJson) match
+          // A descriptor naming no engine, or one flow does not know, says so as it is.
+          case Left(e) if e == DescriptorJson.NoEngine || e.startsWith("engine '") =>
+            Vector(s"streamlet '${s.name}': $e")
           case Left(e) => Vector(s"streamlet '${s.name}': its descriptor does not parse: $e")
           case Right(d) =>
             val own =
-              DescriptorValidation.validateStreamlet(d).map(p => s"streamlet '${s.name}': $p")
+              DescriptorValidation.validateStreamlet(d).map(p => s"streamlet '${s.name}': $p") ++
+                Option
+                  .when(s.engine != d.engine.id)(
+                    s"streamlet '${s.name}': the resource says engine '${s.engine}' and its descriptor '${d.engine.id}'"
+                  )
+                  .toVector
             // Every inlet is bound exactly; an outlet may be left unbound (connected to nothing is
             // allowed, S2.2); binding a port the descriptor does not declare never is.
             val inlets  = d.inlets.map(_.name).toSet
@@ -325,28 +310,23 @@ object Rendering:
         )
         .build()
     def exec(command: String*) = new ExecActionBuilder().withCommand(command*).build()
-    // A built-in streamlet's stage reads its connection from this Secret, in the pod's namespace.
-    val stageSecret = Option.when(s.builtin)(BuiltinStages.secretName(s)).flatten
-
     val sidecar = new ContainerBuilder()
       .withName("sidecar")
       .withImage(sidecarImage)
       .withImagePullPolicy("IfNotPresent")
       .withEnv(
-        (Option.unless(s.builtin)(env("FLOW_PROCESS_ADDRESS", s"127.0.0.1:$ProcessPort")).toSeq ++
-          Seq(
-            env("FLOW_CONFIG_DIR", ConfigDir),
-            env("FLOW_STATE_DIR", StateDir),
-            env("FLOW_METRICS_PORT", MetricsPort.toString),
-            fieldEnv("FLOW_POD_NAME", "metadata.name"),
-            fieldEnv("FLOW_POD_NAMESPACE", "metadata.namespace")
-          ))*
+        env("FLOW_PROCESS_ADDRESS", s"127.0.0.1:$ProcessPort"),
+        env("FLOW_CONFIG_DIR", ConfigDir),
+        env("FLOW_STATE_DIR", StateDir),
+        env("FLOW_METRICS_PORT", MetricsPort.toString),
+        fieldEnv("FLOW_POD_NAME", "metadata.name"),
+        fieldEnv("FLOW_POD_NAMESPACE", "metadata.namespace")
       )
       .withPorts(
         new ContainerPortBuilder().withName("metrics").withContainerPort(MetricsPort).build()
       )
       .withVolumeMounts(
-        (Seq(
+        Seq(
           new VolumeMountBuilder()
             .withName("config")
             .withMountPath(ConfigDir)
@@ -357,13 +337,7 @@ object Rendering:
             .withMountPath(TokenDir)
             .withReadOnly(true)
             .build()
-        ) ++ stageSecret.map(_ =>
-          new VolumeMountBuilder()
-            .withName("neo4j")
-            .withMountPath(BuiltinStages.CredentialsDir)
-            .withReadOnly(true)
-            .build()
-        ))*
+        )*
       )
       .withReadinessProbe(
         new ProbeBuilder()
@@ -448,20 +422,6 @@ object Rendering:
       )
       .build()
 
-    // 0440: the sidecar image runs as uid 1001 in group 0, and the kubelet writes Secret files as
-    // root:root, so group-readable is what lets the sidecar read them and no one else.
-    val stageVolume = stageSecret.map(name =>
-      new VolumeBuilder()
-        .withName("neo4j")
-        .withSecret(
-          new SecretVolumeSourceBuilder()
-            .withSecretName(name)
-            .withDefaultMode(SecretFileMode)
-            .build()
-        )
-        .build()
-    )
-
     val template = new PodTemplateSpecBuilder()
       .withMetadata(
         new ObjectMetaBuilder()
@@ -480,9 +440,8 @@ object Rendering:
           .withServiceAccountName(Names.serviceAccount(pipeline))
           .withAutomountServiceAccountToken(false)
           .withTerminationGracePeriodSeconds(30L)
-          // A built-in streamlet has no process: the sidecar runs its stage.
-          .withContainers((if s.builtin then Seq(sidecar) else Seq(sidecar, process))*)
-          .withVolumes((Seq(config, token) ++ stageVolume)*)
+          .withContainers(sidecar, process)
+          .withVolumes(config, token)
           .build()
       )
       .build()

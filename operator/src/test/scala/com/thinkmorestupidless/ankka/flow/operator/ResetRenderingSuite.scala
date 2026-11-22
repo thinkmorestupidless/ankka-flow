@@ -16,7 +16,7 @@ class ResetRenderingSuite extends munit.FunSuite:
     done.foreach(id => f.getMetadata.getAnnotations.put(ResetRequest.DoneAnnotation, id))
     f
 
-  private def stopped = cart(routerReplicas = 0).tap(f =>
+  private def stopped = cart(cleanerReplicas = 0).tap(f =>
     f.setSpec(f.getSpec.copy(streamlets = f.getSpec.streamlets.map(_.copy(replicas = 0))))
   )
 
@@ -30,9 +30,9 @@ class ResetRenderingSuite extends munit.FunSuite:
   ) {
     val actions = render(requested(stopped, ResetRequest.Request("r1")))
     val resets  = actions.collect { case Action.ResetGroup(t) => t }
-    assertEquals(resets.map(_.groupId).toSet, Set("cart.router.in", "cart.sink.in"))
+    assertEquals(resets.map(_.groupId).toSet, Set("cart.cleaner.in", "cart.sink.in"))
     assertEquals(
-      resets.find(_.groupId == "cart.router.in").get.topic.bootstrapServers,
+      resets.find(_.groupId == "cart.cleaner.in").get.topic.bootstrapServers,
       "shop-kafka:9092"
     )
     assert(
@@ -43,10 +43,10 @@ class ResetRenderingSuite extends munit.FunSuite:
   }
 
   test("a named streamlet only") {
-    val resets = render(requested(stopped, ResetRequest.Request("r1", List("router")))).collect {
+    val resets = render(requested(stopped, ResetRequest.Request("r1", List("cleaner")))).collect {
       case Action.ResetGroup(t) => t.groupId
     }
-    assertEquals(resets, Vector("cart.router.in"))
+    assertEquals(resets, Vector("cart.cleaner.in"))
   }
 
   test("a streamlet still running refuses the reset and leaves it pending (S4.2)") {
@@ -62,7 +62,7 @@ class ResetRenderingSuite extends munit.FunSuite:
     )
     val pods = render(
       requested(stopped, ResetRequest.Request("r1")),
-      observed.copy(pods = Map("router" -> 1))
+      observed.copy(pods = Map("cleaner" -> 1))
     )
     assert(pods.exists {
       case Action.RecordEvent("ResetRefused", _, note) => note.contains("still has 1 pod");

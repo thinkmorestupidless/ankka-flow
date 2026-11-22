@@ -4,28 +4,20 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
 
 import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, StreamletSpec}
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json}
+import com.thinkmorestupidless.ankka.flow.descriptor.{Descriptor, DescriptorJson, Json}
 
 /**
  * The two files the sidecar reads (contracts/sidecar.md): the deployed descriptor, and
  * `streamlet.conf` with every port's topic, group, client id and resolved connection. Their hash is
  * the pod template's config-hash annotation, so a change to either rolls the streamlet and nothing
- * else does (FR-024a). For a built-in streamlet the hash also covers the version of the Secret its
- * stage reads, so a rotated credential rolls it; the Secret's values are never in either file.
+ * else does (FR-024a).
  */
-final case class StreamletFiles(
-    descriptorJson: String,
-    streamletConf: String,
-    secretVersion: Option[String] = None
-):
+final case class StreamletFiles(descriptorJson: String, streamletConf: String):
   def hash: String =
     MessageDigest
       .getInstance("SHA-256")
       .digest(
-        (descriptorJson + "\n---\n" + streamletConf + secretVersion.fold("")(v =>
-          s"\n---\nsecret:$v"
-        ))
-          .getBytes(UTF_8)
+        (descriptorJson + "\n---\n" + streamletConf).getBytes(UTF_8)
       )
       .map(b => f"$b%02x")
       .mkString
@@ -35,8 +27,7 @@ object StreamletFiles:
   def render(
       pipeline: String,
       s: StreamletSpec,
-      topics: Map[String, ResolvedTopic],
-      secretVersion: Option[String] = None
+      topics: Map[String, ResolvedTopic]
   ): Either[String, StreamletFiles] =
     for
       streamlet <- Json
@@ -44,12 +35,7 @@ object StreamletFiles:
         .flatMap(DescriptorJson.streamletFromJson)
         .left
         .map(e => s"streamlet '${s.name}': its descriptor does not parse: $e")
-      spec = ankka.flow.v1.discovery.Spec(
-        protocolVersion =
-          com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion.Current.toString,
-        sdk = None,
-        streamlet = Some(streamlet)
-      )
+      descriptor = Descriptor(Descriptor.Version, None, streamlet)
       inlets  <- ports(s.name, s.inlets, topics)
       outlets <- ports(s.name, s.outlets, topics)
     yield
@@ -69,7 +55,6 @@ object StreamletFiles:
            |      bootstrap.servers = ${q(t.bootstrapServers)}
            |      connection-config ${block(t.connectionConfig)}
            |      consumer-config ${block(t.consumerConfig)}
-           |      batch { max-records = ${t.batch.maxRecords}, max-bytes = ${t.batch.maxBytes} }
            |    }""".stripMargin
       }
       val out = outlets.map { (port, t) =>
@@ -81,14 +66,6 @@ object StreamletFiles:
            |      producer-config ${block(t.producerConfig)}
            |    }""".stripMargin
       }
-      // A built-in streamlet's stage reads its credentials from the mounted Secret, never from here.
-      val stage =
-        if !s.builtin then ""
-        else s"""
-             |  stage {
-             |    name = ${q(streamlet.name)}
-             |    neo4j { credentials-dir = ${q(BuiltinStages.CredentialsDir)} }
-             |  }""".stripMargin
       val conf =
         s"""# Rendered by the ankka-flow operator for ${q(s.name)} of pipeline ${q(
             pipeline
@@ -96,7 +73,7 @@ object StreamletFiles:
            |flow {
            |  pipeline = ${q(pipeline)}
            |  streamlet = ${q(s.name)}
-           |  config = $config$stage
+           |  config = $config
            |  inlets {
            |${in.mkString("\n")}
            |  }
@@ -105,7 +82,7 @@ object StreamletFiles:
            |  }
            |}
            |""".stripMargin
-      StreamletFiles(DescriptorJson.write(spec), conf, secretVersion)
+      StreamletFiles(DescriptorJson.write(descriptor), conf)
 
   private def ports(
       streamlet: String,
