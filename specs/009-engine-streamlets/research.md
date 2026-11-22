@@ -505,3 +505,13 @@ scenario or a verify-first item except T068 (the family brain, outside this repo
   streamlet's. In the image `flink:2.2.1-java17` (JDK 17.0.21), `grep -il "business source"` over
   `/opt/flink/NOTICE` and `/opt/flink/licenses/` finds nothing; the NOTICE names Akka only as the
   origin of Pekko's code.
+- **V1, V3** (T004): a ten-line job (`KafkaSource` → `map` → `KafkaSink`, at least once) compiled
+  with `--release 17` against the Flink SDK module's compile classpath, put in an image
+  `FROM flink:2.2.1-java17` as `/opt/flink/usrlib/streamlet.jar` beside the twelve jars of
+  `cartCounter`'s runtime classpath (Flink's own modules being provided: the connector
+  `5.0.0-2.2`, `kafka-clients-4.2.0`, Jackson, zstd, lz4, snappy, slf4j-api, commons-lang3), run
+  as `standalone-job --job-classname v1.Copy` with one task manager against `apache/kafka:3.9.1`,
+  read `a b c` from `in` and wrote `A B C` to `out`. No fat jar: every jar in `usrlib` is on the
+  job's classpath. `flink-connector-base`, which the connector declares provided, is inside
+  `flink-dist-2.2.1.jar` (108 classes under `org/apache/flink/connector/base/`), so the SDK keeps
+  it `Provided`. No fallback to sbt-assembly is needed.
