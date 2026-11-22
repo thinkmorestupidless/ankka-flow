@@ -60,7 +60,7 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
               .flatMap(a => Option(a.get(Labels.ConfigHash)))
               .getOrElse(""),
             image = template.getSpec.getContainers.asScala
-              .find(_.getName == "process")
+              .find(_.getName == "streamlet")
               .fold("")(_.getImage),
             replicas = Option(d.getSpec.getReplicas).fold(1)(_.intValue),
             readyReplicas = status.flatMap(s => Option(s.getReadyReplicas)).fold(0)(_.intValue),

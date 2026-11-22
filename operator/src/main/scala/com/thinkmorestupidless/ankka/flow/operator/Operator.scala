@@ -45,11 +45,7 @@ final class Operator(client: KubernetesClient, settings: Settings, reconciler: R
       .inform(handler[Deployment](refOf), resync)
     informers = Vector(flows, deployments)
     queue.start()
-    log.info(
-      "ankka-flow operator {} watching pipelines in every namespace; sidecar image {}",
-      BuildInfo.version,
-      settings.sidecarImage.getOrElse("(not configured: every pipeline will be refused)")
-    )
+    log.info("ankka-flow operator {} watching pipelines in every namespace", BuildInfo.version)
 
   def awaitTermination(): Unit =
     try Thread.currentThread().join()

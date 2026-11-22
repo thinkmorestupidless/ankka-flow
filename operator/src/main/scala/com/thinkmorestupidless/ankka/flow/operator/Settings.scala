@@ -7,7 +7,6 @@ import scala.concurrent.duration.*
  * environment variable, then default, as ankka's.
  */
 final case class Settings(
-    sidecarImage: Option[String],
     clustersNamespace: String,
     resyncInterval: FiniteDuration,
     retryMinBackoff: FiniteDuration,
@@ -35,7 +34,6 @@ object Settings:
     def seconds(key: String, default: Int) =
       get(key).flatMap(_.toIntOption).getOrElse(default).seconds
     Settings(
-      sidecarImage = get("FLOW_SIDECAR_IMAGE"),
       clustersNamespace = get("FLOW_KAFKA_CLUSTERS_NAMESPACE")
         .orElse(env.get("FLOW_OPERATOR_NAMESPACE"))
         .getOrElse("ankka-flow"),

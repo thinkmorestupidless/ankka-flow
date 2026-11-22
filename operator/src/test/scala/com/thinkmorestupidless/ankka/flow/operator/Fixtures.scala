@@ -19,7 +19,6 @@ object Fixtures:
       .get("streamlet")
 
   val settings: Settings = Settings(
-    sidecarImage = Some("ankka-flow-sidecar:test"),
     clustersNamespace = "ankka-flow",
     resyncInterval = 5.minutes,
     retryMinBackoff = 1.second,

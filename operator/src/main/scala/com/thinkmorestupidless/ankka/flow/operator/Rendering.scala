@@ -25,14 +25,14 @@ import io.fabric8.kubernetes.api.model.rbac.{
  */
 object Rendering:
 
-  /** Mode of the stage Secret's files: 0440, readable by the sidecar's group (0) only. */
+  /** Mode of the settings Secret's files: 0440, readable by the pod's group only. */
   val SecretFileMode: Int = Integer.parseInt("440", 8)
 
-  val ProcessPort = 9010
-  val MetricsPort = 2050
-  val ConfigDir   = "/etc/flow/config"
-  val StateDir    = "/tmp/flow"
-  val TokenDir    = "/var/run/secrets/kubernetes.io/serviceaccount"
+  val ConfigDir = "/etc/flow/config"
+  val StateDir  = "/tmp/flow"
+
+  /** The engines this operator runs. */
+  private val Runs = Set("pekko-streams")
 
   final case class Rendered(
       actions: Vector[Action],
@@ -40,7 +40,12 @@ object Rendering:
       hashes: Map[String, String]
   )
 
-  def render(resource: AnkkaFlow, settings: Settings, observed: Observed, now: String): Rendered =
+  def render(
+      resource: AnkkaFlow,
+      @scala.annotation.unused settings: Settings,
+      observed: Observed,
+      now: String
+  ): Rendered =
     val spec      = resource.getSpec
     val pipeline  = spec.pipeline
     val namespace = resource.getMetadata.getNamespace
@@ -58,23 +63,18 @@ object Rendering:
     // ── 1. Refusals: nothing is applied when any of these is true ────────────────────────────
     val topicsResolved = spec.topics.map(t => t.id -> TopicResolution.resolve(t, observed.clusters))
     val refusals: Vector[String] =
-      settings.sidecarImage.fold(
-        Vector("no sidecar image is configured: set FLOW_SIDECAR_IMAGE on the operator")
-      )(_ => Vector.empty) ++
-        topicsResolved.collect { case (_, Left(e)) => e } ++
+      topicsResolved.toVector.collect { case (_, Left(e)) => e } ++
         spec.topics.flatMap(t => t.cluster.flatMap(observed.clusterProblems.get)).distinct ++
         spec.streamlets.flatMap(s => descriptorProblems(s))
     if refusals.nonEmpty then
-      val reason = if settings.sidecarImage.isEmpty then "SidecarImageMissing" else "Refused"
       return Rendered(
-        refusals.map(p => Action.RecordEvent(reason, Events.Warning, p)) :+
+        refusals.map(p => Action.RecordEvent("Refused", Events.Warning, p)) :+
           Action.SetStatus(LifecycleRules.failed(resource, refusals, now)),
         Vector.empty,
         Map.empty
       )
-    val sidecarImage = settings.sidecarImage.get
-    val topics       = topicsResolved.collect { case (_, Right(t)) => t }.toVector
-    val byId         = topics.map(t => t.id -> t).toMap
+    val topics = topicsResolved.collect { case (_, Right(t)) => t }.toVector
+    val byId   = topics.map(t => t.id -> t).toMap
 
     // ── 2. Topics ─────────────────────────────────────────────────────────────────────────────
     val topicActions = topics.flatMap { t =>
@@ -121,7 +121,7 @@ object Rendering:
         case _ => Vector.empty
     }
 
-    // ── 3. Per pipeline: the identity the sidecars post their stall warnings with ────────────
+    // ── 3. Per pipeline: its identity ────────────────────────────────────────────────────────
     val owner = ownerReference(resource)
     def meta(name: String) =
       new ObjectMetaBuilder()
@@ -162,9 +162,9 @@ object Rendering:
       )
       .build()
 
-    // ── 4. Per streamlet: the Secret with its two files, and the Deployment ───────────────────
+    // ── 4. Per streamlet: the Secret with its settings, and the Deployment ────────────────────
     val files = spec.streamlets
-      .map(s => s.name -> StreamletFiles.render(pipeline, s, byId))
+      .map(s => s.name -> StreamletFiles.render(pipeline, namespace, s, byId))
       .toMap
     val fileProblems = files.values.collect { case Left(e) => e }.toVector
     if fileProblems.nonEmpty then
@@ -179,7 +179,7 @@ object Rendering:
     val streamletActions = spec.streamlets.toVector.flatMap { s =>
       val f          = files(s.name).toOption.get
       val secret     = secretFor(resource, s, f, owner)
-      val deployment = deploymentFor(resource, s, f.hash, sidecarImage, owner)
+      val deployment = deploymentFor(resource, s, f.hash, owner)
       val rolled = observed.deployments
         .get(s.name)
         .filter(d => d.configHash != f.hash || d.image != s.image)
@@ -238,6 +238,11 @@ object Rendering:
             val own =
               DescriptorValidation.validateStreamlet(d).map(p => s"streamlet '${s.name}': $p") ++
                 Option
+                  .when(s.engine == d.engine.id && !Runs.contains(s.engine))(
+                    s"streamlet '${s.name}': engine ${s.engine} is not yet run by this operator"
+                  )
+                  .toVector ++
+                Option
                   .when(s.engine != d.engine.id)(
                     s"streamlet '${s.name}': the resource says engine '${s.engine}' and its descriptor '${d.engine.id}'"
                   )
@@ -284,60 +289,34 @@ object Rendering:
           .build()
       )
       .withType("Opaque")
-      .withStringData(
-        Map("descriptor.json" -> f.descriptorJson, "streamlet.conf" -> f.streamletConf).asJava
-      )
+      .withStringData(Map(StreamletFiles.Key -> f.properties).asJava)
       .build()
 
+  /**
+   * A Pekko Streams streamlet's Deployment: one container `streamlet`, its image, its settings
+   * mounted read-only where `FLOW_CONFIG_DIR` names, the runner's two file probes, and no service
+   * account token.
+   */
   def deploymentFor(
       resource: AnkkaFlow,
       s: StreamletSpec,
       hash: String,
-      sidecarImage: String,
       owner: OwnerReference
   ): Deployment =
-    val pipeline = resource.getSpec.pipeline
-    val labels   = Labels.streamlet(pipeline, s.name)
-    def env(name: String, value: String) =
-      new EnvVarBuilder().withName(name).withValue(value).build()
-    def fieldEnv(name: String, path: String) =
-      new EnvVarBuilder()
-        .withName(name)
-        .withValueFrom(
-          new EnvVarSourceBuilder()
-            .withFieldRef(new ObjectFieldSelectorBuilder().withFieldPath(path).build())
-            .build()
-        )
-        .build()
+    val pipeline               = resource.getSpec.pipeline
+    val labels                 = Labels.streamlet(pipeline, s.name)
     def exec(command: String*) = new ExecActionBuilder().withCommand(command*).build()
-    val sidecar = new ContainerBuilder()
-      .withName("sidecar")
-      .withImage(sidecarImage)
+    val streamlet = new ContainerBuilder()
+      .withName("streamlet")
+      .withImage(s.image)
       .withImagePullPolicy("IfNotPresent")
-      .withEnv(
-        env("FLOW_PROCESS_ADDRESS", s"127.0.0.1:$ProcessPort"),
-        env("FLOW_CONFIG_DIR", ConfigDir),
-        env("FLOW_STATE_DIR", StateDir),
-        env("FLOW_METRICS_PORT", MetricsPort.toString),
-        fieldEnv("FLOW_POD_NAME", "metadata.name"),
-        fieldEnv("FLOW_POD_NAMESPACE", "metadata.namespace")
-      )
-      .withPorts(
-        new ContainerPortBuilder().withName("metrics").withContainerPort(MetricsPort).build()
-      )
+      .withEnv(new EnvVarBuilder().withName("FLOW_CONFIG_DIR").withValue(ConfigDir).build())
       .withVolumeMounts(
-        Seq(
-          new VolumeMountBuilder()
-            .withName("config")
-            .withMountPath(ConfigDir)
-            .withReadOnly(true)
-            .build(),
-          new VolumeMountBuilder()
-            .withName("api-token")
-            .withMountPath(TokenDir)
-            .withReadOnly(true)
-            .build()
-        )*
+        new VolumeMountBuilder()
+          .withName("config")
+          .withMountPath(ConfigDir)
+          .withReadOnly(true)
+          .build()
       )
       .withReadinessProbe(
         new ProbeBuilder()
@@ -365,60 +344,13 @@ object Rendering:
       )
       .build()
 
-    // The developer's container: its port, and nothing else. No probes, no mounts, no secrets,
-    // no API token (FR-021): its liveness is the sidecar's opinion.
-    val process = new ContainerBuilder()
-      .withName("process")
-      .withImage(s.image)
-      .withImagePullPolicy("IfNotPresent")
-      .withEnv(env("FLOW_PROCESS_PORT", ProcessPort.toString))
-      .build()
-
-    // The pod's token is not automounted, because that would mount it into every container; the
-    // sidecar alone gets a projected token for posting its stall warnings.
-    val token = new VolumeBuilder()
-      .withName("api-token")
-      .withProjected(
-        new ProjectedVolumeSourceBuilder()
-          .withSources(
-            new VolumeProjectionBuilder()
-              .withServiceAccountToken(
-                new ServiceAccountTokenProjectionBuilder()
-                  .withPath("token")
-                  .withExpirationSeconds(3607L)
-                  .build()
-              )
-              .build(),
-            new VolumeProjectionBuilder()
-              .withConfigMap(
-                new ConfigMapProjectionBuilder()
-                  .withName("kube-root-ca.crt")
-                  .withItems(new KeyToPathBuilder().withKey("ca.crt").withPath("ca.crt").build())
-                  .build()
-              )
-              .build(),
-            new VolumeProjectionBuilder()
-              .withDownwardAPI(
-                new DownwardAPIProjectionBuilder()
-                  .withItems(
-                    new DownwardAPIVolumeFileBuilder()
-                      .withPath("namespace")
-                      .withFieldRef(
-                        new ObjectFieldSelectorBuilder().withFieldPath("metadata.namespace").build()
-                      )
-                      .build()
-                  )
-                  .build()
-              )
-              .build()
-          )
-          .build()
-      )
-      .build()
     val config = new VolumeBuilder()
       .withName("config")
       .withSecret(
-        new SecretVolumeSourceBuilder().withSecretName(Names.secret(pipeline, s.name)).build()
+        new SecretVolumeSourceBuilder()
+          .withSecretName(Names.secret(pipeline, s.name))
+          .withDefaultMode(SecretFileMode)
+          .build()
       )
       .build()
 
@@ -426,13 +358,7 @@ object Rendering:
       .withMetadata(
         new ObjectMetaBuilder()
           .withLabels(labels.asJava)
-          .withAnnotations(
-            Map(
-              Labels.ConfigHash      -> hash,
-              "prometheus.io/scrape" -> "true",
-              "prometheus.io/port"   -> MetricsPort.toString
-            ).asJava
-          )
+          .withAnnotations(Map(Labels.ConfigHash -> hash).asJava)
           .build()
       )
       .withSpec(
@@ -440,8 +366,8 @@ object Rendering:
           .withServiceAccountName(Names.serviceAccount(pipeline))
           .withAutomountServiceAccountToken(false)
           .withTerminationGracePeriodSeconds(30L)
-          .withContainers(sidecar, process)
-          .withVolumes(config, token)
+          .withContainers(streamlet)
+          .withVolumes(config)
           .build()
       )
       .build()

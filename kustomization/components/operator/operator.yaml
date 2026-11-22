@@ -36,8 +36,8 @@ rules:
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [roles, rolebindings]
     verbs: [get, list, watch, create, update, patch, delete]
-  # Its own events on pipelines, and the permission it grants the sidecars (RBAC forbids granting
-  # what the grantor does not hold).
+  # Its own events on pipelines, and the permission it grants each pipeline's service account
+  # (RBAC forbids granting what the grantor does not hold).
   - apiGroups: [events.k8s.io]
     resources: [events]
     verbs: [create, patch]
@@ -81,8 +81,6 @@ spec:
           image: ankka-flow-operator:latest
           imagePullPolicy: IfNotPresent
           env:
-            - name: FLOW_SIDECAR_IMAGE
-              value: ankka-flow-sidecar:latest
             - name: FLOW_KAFKA_CLUSTERS_NAMESPACE
               value: ankka-flow
           resources:

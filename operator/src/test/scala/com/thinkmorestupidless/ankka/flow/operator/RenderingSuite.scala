@@ -23,48 +23,58 @@ class RenderingSuite extends munit.FunSuite:
   private def cleaner(r: Rendering.Rendered): Deployment =
     deployments(r).find(_.getMetadata.getName == "flow-cart-cleaner").get
 
-  test(
-    "two containers: the sidecar with env, config mount, token, metrics port and exec probes (S3.2)"
-  ) {
-    val pod     = cleaner(render()).getSpec.getTemplate.getSpec
-    val sidecar = pod.getContainers.asScala.find(_.getName == "sidecar").get
-    assertEquals(sidecar.getImage, "ankka-flow-sidecar:test")
-    val env = sidecar.getEnv.asScala.map(e => e.getName -> Option(e.getValue)).toMap
-    assertEquals(env("FLOW_PROCESS_ADDRESS"), Some("127.0.0.1:9010"))
-    assertEquals(env("FLOW_CONFIG_DIR"), Some("/etc/flow/config"))
-    assert(env.contains("FLOW_POD_NAME") && env.contains("FLOW_POD_NAMESPACE"))
+  test("one container, the streamlet's image, its settings mounted 0440, file probes, no token") {
+    val pod = cleaner(render()).getSpec.getTemplate.getSpec
+    assertEquals(pod.getContainers.asScala.map(_.getName).toList, List("streamlet"))
+    val c = pod.getContainers.get(0)
+    assertEquals(c.getImage, "ghcr.io/example/cart-cleaner:0.6.0")
     assertEquals(
-      sidecar.getPorts.asScala.map(p => p.getName -> p.getContainerPort.intValue).toList,
-      List("metrics" -> 2050)
+      c.getEnv.asScala.map(e => e.getName -> e.getValue).toList,
+      List("FLOW_CONFIG_DIR" -> "/etc/flow/config")
     )
-    assertEquals(sidecar.getVolumeMounts.asScala.map(_.getName).toSet, Set("config", "api-token"))
-    assert(sidecar.getVolumeMounts.asScala.forall(_.getReadOnly))
     assertEquals(
-      sidecar.getReadinessProbe.getExec.getCommand.asScala.toList,
+      c.getVolumeMounts.asScala
+        .map(m => (m.getName, m.getMountPath, m.getReadOnly.booleanValue))
+        .toList,
+      List(("config", "/etc/flow/config", true))
+    )
+    val volume = pod.getVolumes.asScala.find(_.getName == "config").get.getSecret
+    assertEquals(volume.getSecretName, "flow-cart-cleaner")
+    assertEquals(volume.getDefaultMode.intValue, Rendering.SecretFileMode)
+    assertEquals(pod.getVolumes.size, 1, "no token volume")
+    assertEquals(
+      c.getReadinessProbe.getExec.getCommand.asScala.toList,
       List("test", "-f", "/tmp/flow/ready")
     )
-    assert(sidecar.getLivenessProbe.getExec.getCommand.asScala.last.contains("/tmp/flow/alive"))
-  }
-
-  test(
-    "the process container has its port variable and nothing else: no ports, probes, mounts or secrets (S3.2, FR-021)"
-  ) {
-    val pod     = cleaner(render()).getSpec.getTemplate.getSpec
-    val process = pod.getContainers.asScala.find(_.getName == "process").get
-    assertEquals(process.getImage, "ghcr.io/example/cart-cleaner:0.6.0")
-    assertEquals(
-      process.getEnv.asScala.map(e => e.getName -> e.getValue).toList,
-      List("FLOW_PROCESS_PORT" -> "9010")
-    )
-    assert(
-      process.getPorts.isEmpty && process.getReadinessProbe == null && process.getLivenessProbe == null
-    )
-    assert(process.getVolumeMounts.isEmpty && process.getEnvFrom.isEmpty)
+    assert(c.getLivenessProbe.getExec.getCommand.asScala.last.contains("/tmp/flow/alive"))
+    assert(c.getPorts.isEmpty && c.getEnvFrom.isEmpty)
     assertEquals(
       pod.getAutomountServiceAccountToken,
       java.lang.Boolean.FALSE,
-      "the token would be mounted into every container"
+      "a Pekko Streams pod gets no service account token"
     )
+  }
+
+  test("a Flink streamlet is refused until the operator runs that engine") {
+    val counter = StreamletSpec(
+      name = "counter",
+      image = "ghcr.io/example/cart-counter:0.6.0",
+      engine = "flink",
+      inlets = Map("in" -> "clean-carts"),
+      outlets = Map("out" -> "cart-counts"),
+      descriptor = descriptor("cart-counter")
+    )
+    val r = cart()
+    r.setSpec(r.getSpec.copy(streamlets = r.getSpec.streamlets :+ counter))
+    val rendered = render(r)
+    assertEquals(deployments(rendered), Vector.empty)
+    assert(
+      events(rendered).exists(
+        _.note == "streamlet 'counter': engine flink is not yet run by this operator"
+      ),
+      events(rendered)
+    )
+    assertEquals(status(rendered).phase, AnkkaFlowStatus.Failed)
   }
 
   test(
@@ -79,26 +89,7 @@ class RenderingSuite extends munit.FunSuite:
       d.getSpec.getSelector.getMatchLabels.asScala.toMap,
       Map(Labels.PipelineKey -> "cart", Labels.StreamletKey -> "cleaner")
     )
-    assertEquals(d.getSpec.getTemplate.getMetadata.getAnnotations.get("prometheus.io/port"), "2050")
-  }
-
-  test("nothing about the sidecar image comes from the resource (FR-020)") {
-    val other = render(s = settings.copy(sidecarImage = Some("registry/sidecar:9")))
-    assert(
-      deployments(other).forall(
-        _.getSpec.getTemplate.getSpec.getContainers.asScala
-          .find(_.getName == "sidecar")
-          .get
-          .getImage == "registry/sidecar:9"
-      )
-    )
-  }
-
-  test("no sidecar image: refused with that reason, one event, nothing created (S3.6, FR-024)") {
-    val r = render(s = settings.copy(sidecarImage = None))
-    assertEquals(r.actions.size, 2)
-    assertEquals(events(r).map(_.reason), Vector("SidecarImageMissing"))
-    assertEquals(status(r).phase, AnkkaFlowStatus.Failed)
+    assert(!d.getSpec.getTemplate.getMetadata.getAnnotations.containsKey("prometheus.io/port"))
   }
 
   test(
@@ -236,18 +227,18 @@ class RenderingSuite extends munit.FunSuite:
     )
   }
 
-  test("the Secret holds the descriptor and streamlet.conf, owned by the resource") {
+  test("the Secret holds only streamlet.properties, owned by the resource") {
     val secret = render().actions.collect {
       case Action.EnsureSecret(s) if s.getMetadata.getName == "flow-cart-cleaner" => s
     }.head
     assertEquals(
       secret.getStringData.keySet.asScala.toSet,
-      Set("descriptor.json", "streamlet.conf")
+      Set("streamlet.properties")
     )
     assertEquals(secret.getMetadata.getOwnerReferences.asScala.head.getName, "cart")
   }
 
-  test("the sidecars' service account may create events, and nothing else") {
+  test("the pipeline's service account may create events, and nothing else") {
     val role = render().actions.collect { case Action.EnsureRole(r) => r }.head
     assertEquals(
       role.getRules.asScala

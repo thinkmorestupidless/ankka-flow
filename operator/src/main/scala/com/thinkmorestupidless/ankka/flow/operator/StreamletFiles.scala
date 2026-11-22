@@ -4,28 +4,38 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
 
 import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, StreamletSpec}
-import com.thinkmorestupidless.ankka.flow.descriptor.{Descriptor, DescriptorJson, Json}
+import com.thinkmorestupidless.ankka.flow.descriptor.{
+  Delivery,
+  Descriptor,
+  DescriptorJson,
+  InletSettings,
+  Json,
+  OutletSettings,
+  Settings as FlowSettings
+}
 
 /**
- * The two files the sidecar reads (contracts/sidecar.md): the deployed descriptor, and
- * `streamlet.conf` with every port's topic, group, client id and resolved connection. Their hash is
- * the pod template's config-hash annotation, so a change to either rolls the streamlet and nothing
- * else does (FR-024a).
+ * A streamlet's `streamlet.properties` (contracts/streamlet-settings.md): its parameters, and the
+ * topic, group, client id and resolved connection of each of its own ports, and no other's (R6).
+ * The hash covers the file and the descriptor, and is the pod template's config-hash annotation, so
+ * a change to either rolls the streamlet and nothing else does.
  */
-final case class StreamletFiles(descriptorJson: String, streamletConf: String):
+final case class StreamletFiles(properties: String, descriptorJson: String):
   def hash: String =
     MessageDigest
       .getInstance("SHA-256")
-      .digest(
-        (descriptorJson + "\n---\n" + streamletConf).getBytes(UTF_8)
-      )
+      .digest((descriptorJson + "\n---\n" + properties).getBytes(UTF_8))
       .map(b => f"$b%02x")
       .mkString
 
 object StreamletFiles:
 
+  /** The key of the file in the streamlet's Secret. */
+  val Key: String = FlowSettings.FileName
+
   def render(
       pipeline: String,
+      namespace: String,
       s: StreamletSpec,
       topics: Map[String, ResolvedTopic]
   ): Either[String, StreamletFiles] =
@@ -35,74 +45,69 @@ object StreamletFiles:
         .flatMap(DescriptorJson.streamletFromJson)
         .left
         .map(e => s"streamlet '${s.name}': its descriptor does not parse: $e")
-      descriptor = Descriptor(Descriptor.Version, None, streamlet)
+      parameters <- sequence(streamlet.parameters.map { p =>
+        s.config
+          .get(p.key)
+          .map(text)
+          .orElse(p.default)
+          .map(p.key -> _)
+          .toRight(s"streamlet '${s.name}': parameter '${p.key}' has no default and no value")
+      })
       inlets  <- ports(s.name, s.inlets, topics)
       outlets <- ports(s.name, s.outlets, topics)
     yield
-      val config = Json.compact(
-        Json.Obj(
-          s.config.toVector
-            .sortBy(_._1)
-            .map((k, v) => k -> Json.parse(v.toString).getOrElse(Json.Str(v.asText)))
-        )
+      val settings = FlowSettings(
+        pipeline = pipeline,
+        streamlet = s.name,
+        namespace = namespace,
+        local = false,
+        parameters = parameters.toMap,
+        inlets = inlets.map { (port, t) =>
+          // Records a transaction aborted are never read: a managed topic may have a Flink writer.
+          val committed =
+            if t.managed then Map("isolation.level" -> "read_committed") else Map.empty
+          InletSettings(
+            port,
+            t.name,
+            Names.group(pipeline, s.name, port),
+            Names.clientId(pipeline, s.name, port),
+            t.connectionConfig ++ t.consumerConfig ++
+              Map("bootstrap.servers" -> t.bootstrapServers) ++ committed
+          )
+        },
+        outlets = outlets.map { (port, t) =>
+          OutletSettings(
+            port,
+            t.name,
+            Names.clientId(pipeline, s.name, port),
+            Delivery.AtLeastOnce,
+            None,
+            t.connectionConfig ++ t.producerConfig ++ Map("bootstrap.servers" -> t.bootstrapServers)
+          )
+        }
       )
-      val in = inlets.map { (port, t) =>
-        val id = Names.clientId(pipeline, s.name, port)
-        s"""    ${q(port)} {
-           |      topic = ${q(t.name)}
-           |      group = ${q(Names.group(pipeline, s.name, port))}
-           |      client-id = ${q(id)}
-           |      bootstrap.servers = ${q(t.bootstrapServers)}
-           |      connection-config ${block(t.connectionConfig)}
-           |      consumer-config ${block(t.consumerConfig)}
-           |    }""".stripMargin
-      }
-      val out = outlets.map { (port, t) =>
-        s"""    ${q(port)} {
-           |      topic = ${q(t.name)}
-           |      client-id = ${q(Names.clientId(pipeline, s.name, port))}
-           |      bootstrap.servers = ${q(t.bootstrapServers)}
-           |      connection-config ${block(t.connectionConfig)}
-           |      producer-config ${block(t.producerConfig)}
-           |    }""".stripMargin
-      }
-      val conf =
-        s"""# Rendered by the ankka-flow operator for ${q(s.name)} of pipeline ${q(
-            pipeline
-          )}. Do not edit.
-           |flow {
-           |  pipeline = ${q(pipeline)}
-           |  streamlet = ${q(s.name)}
-           |  config = $config
-           |  inlets {
-           |${in.mkString("\n")}
-           |  }
-           |  outlets {
-           |${out.mkString("\n")}
-           |  }
-           |}
-           |""".stripMargin
-      StreamletFiles(DescriptorJson.write(descriptor), conf)
+      StreamletFiles(
+        FlowSettings.write(settings),
+        DescriptorJson.write(Descriptor(Descriptor.Version, None, streamlet))
+      )
+
+  /** A parameter's value as the file carries it: the text of its type. */
+  private def text(v: com.fasterxml.jackson.databind.JsonNode): String =
+    if v.isTextual then v.asText else v.toString
+
+  private def sequence[A](es: Vector[Either[String, A]]): Either[String, Vector[A]] =
+    es.collectFirst { case Left(e) => e }.toLeft(es.collect { case Right(a) => a })
 
   private def ports(
       streamlet: String,
       bindings: Map[String, String],
       topics: Map[String, ResolvedTopic]
   ): Either[String, Vector[(String, ResolvedTopic)]] =
-    val resolved = bindings.toVector.sortBy(_._1).map { (port, id) =>
+    sequence(bindings.toVector.sortBy(_._1).map { (port, id) =>
       topics
         .get(id)
         .map(port -> _)
         .toRight(
           s"streamlet '$streamlet': port '$port' names topic '$id', which the resource does not declare"
         )
-    }
-    resolved.collectFirst { case Left(e) => e }.toLeft(resolved.collect { case Right(p) => p })
-
-  /** A string as a HOCON-safe quoted value (JSON string syntax is valid HOCON). */
-  private def q(s: String): String = Json.compact(Json.Str(s))
-
-  /** Kafka properties as a HOCON block of quoted keys, so dots stay part of the key. */
-  private def block(m: Map[String, String]): String =
-    if m.isEmpty then "{}"
-    else m.toVector.sortBy(_._1).map((k, v) => s"${q(k)} = ${q(v)}").mkString("{ ", ", ", " }")
+    })
