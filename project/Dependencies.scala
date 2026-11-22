@@ -55,6 +55,21 @@ object Dependencies {
     /** The Flink Kubernetes Operator a cluster runs Flink streamlets with (research R10). */
     val flinkOperator = "1.16.1"
 
+    /**
+     * The operator's image, as the chart at `flinkOperator` names it (a commit tag): what the
+     * cluster suite imports into k3s for `operator/src/test/resources/flink-operator.yaml`.
+     */
+    val flinkOperatorImage = "ghcr.io/apache/flink-kubernetes-operator:1c895a3"
+
+    /**
+     * The state store of the cluster suite and the local overlay. MinIO's own images are no longer
+     * published; Chainguard's build, pinned by digest (research V4), with its client for the bucket.
+     */
+    val minioImage =
+      "cgr.dev/chainguard/minio@sha256:548147b5fc95a67e3e45285dff7e0e50326c3eb1977c6218039461771156c5e7"
+    val minioClientImage =
+      "cgr.dev/chainguard/minio-client@sha256:328ad584835c07ff4b28418aa54d9d9a83893b86bc543436c910359cca76ce19"
+
     /** The image a Flink streamlet's image is built `FROM`, and the cluster suite runs. */
     val flinkImage = "flink:2.2.1-java17"
 

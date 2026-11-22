@@ -539,3 +539,35 @@ scenario or a verify-first item except T068 (the family brain, outside this repo
     `FlinkDeployment`'s `flinkConfiguration` when one of the streamlet's topics is on a cluster whose
     connection settings name a token endpoint (T032). The operator's own `Admin` is on 3.9.2 and
     needs nothing.
+- **V4, V5, V7** (T006), on a scratch kind cluster (kind 0.x, Kubernetes on arm64; the suite's k3s
+  runs the same manifest):
+  - **V4**: the operator's chart 1.16.1 (from `archive.apache.org/dist/flink/`) renders with
+    `--set webhook.create=false --set watchNamespaces={shop} --include-crds` into 14 objects: four
+    CRDs, the operator's Deployment, ConfigMap, two ServiceAccounts, three Roles and three
+    RoleBindings. Its image is `ghcr.io/apache/flink-kubernetes-operator:1c895a3` (the chart names a
+    commit tag, recorded as `V.flinkOperatorImage`). Applied with two Namespaces in front, it rolls
+    out with no cert-manager. The job service account it makes in the watched namespace is
+    **`flink`**, so `FLOW_FLINK_SERVICE_ACCOUNT` defaults to that. The manifest is committed at
+    `operator/src/test/resources/flink-operator.yaml`; `just flink-operator-manifest` runs
+    `kustomization/flink-operator-manifest.sh`, which regenerates it.
+  - **V5**: Flink's `StateMachineExample` as a `FlinkDeployment` on `flink:2.2.1-java17`,
+    `flinkVersion: v2_2`, `upgradeMode: last-state`, Kubernetes high availability, the checkpoint,
+    savepoint and HA directories under `s3://flow-state/…`, `s3.endpoint` and
+    `s3.path-style-access: "true"` in `flinkConfiguration`, and `AWS_ACCESS_KEY_ID`,
+    `AWS_SECRET_ACCESS_KEY` and `ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-presto-2.2.1.jar` given to
+    `flink-main-container` as `envFrom` a Secret: `STABLE`/`RUNNING`/`READY` in about 40 s, and
+    checkpoints completed into MinIO (`checkpoints/<job>/chk-35`, `ha/…` listed by the client).
+    The environment works, so R11's `env` stands and no key goes into `flink-config`.
+  - **V7**: suspended (`job.state: suspended`), the deployment is `SUSPENDED` with the job
+    `FINISHED`, and its HA ConfigMaps (`ha-cluster-config-map`, `ha-<job>-config-map`) stay, which
+    is what lets `last-state` resume. Deleting the `FlinkDeployment` then removes every ConfigMap it
+    made: only `kube-root-ca.crt` is left. A deployment recreated at a new epoch finds no HA
+    metadata.
+  - **MinIO's images**: `minio/minio` on Docker Hub and `quay.io/minio/minio` no longer answer
+    anonymously. The suite and the local overlay use Chainguard's build of MinIO
+    (`cgr.dev/chainguard/minio`, RELEASE.2026-11-16) and its client `cgr.dev/chainguard/minio-client`
+    for the bucket Job, both pinned by digest in `V.minioImage` and `V.minioClientImage`. Chainguard
+    publishes only `latest` anonymously; a digest it stops serving is a bump of those two values.
+  - **kind and Docker's containerd store**: `kind load docker-image` fails with `ctr: content digest
+    … not found` for multi-platform images; `docker save --platform linux/<arch> <image> | kind load
+    image-archive` loads them. `deploy-local.sh` loads that way.

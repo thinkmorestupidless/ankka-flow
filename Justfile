@@ -76,6 +76,10 @@ up:
 down:
     just cluster-delete
 
+# Render the Flink Kubernetes Operator's chart into operator/src/test/resources/flink-operator.yaml.
+flink-operator-manifest:
+    ./kustomization/flink-operator-manifest.sh
+
 render overlay="local":
     kubectl kustomize kustomization/overlays/{{overlay}}
 
