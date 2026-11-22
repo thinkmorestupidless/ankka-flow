@@ -50,7 +50,9 @@ final case class FlinkState(
     lifecycleState: Option[String] = None,
     jobState: Option[String] = None,
     jobManagerStatus: Option[String] = None,
-    error: Option[String] = None
+    error: Option[String] = None,
+    /** The image of `status.reconciliationStatus.lastStableSpec`: what last ran healthy. */
+    lastStableImage: Option[String] = None
 )
 
 /** A topic as Kafka describes it. `configs` holds only the keys the resource sets. */
