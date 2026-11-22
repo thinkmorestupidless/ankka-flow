@@ -110,7 +110,7 @@ fingerprint, the fingerprints are equal.
 |---|---|---|
 | `minimal` | `pekko-streams` | one inlet, one outlet, no parameters, no description |
 | `sink` | `pekko-streams` | inlets only, no outlets |
-| `every-type` | `pekko-streams` | one parameter of every type, one required (no default), unicode in a description |
+| `every-type` | `flink` | one parameter of every type, one required (no default), unicode in a description |
 | `many-ports` | `pekko-streams` | five inlets and five outlets declared out of order, to prove sorting |
 | `cart-cleaner` | `pekko-streams` | the sample pipeline's cleaner, with a fingerprinted inlet |
 | `cart-counter` | `flink` | the sample pipeline's counter, above |
