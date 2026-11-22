@@ -47,3 +47,20 @@ class AnkkaDeclarationsSuite extends munit.FunSuite:
       AnkkaDeclarations.load(s"checkout=$notAList").toString
     )
   }
+
+  test("a contract flow cannot read is refused, naming the topic; a null contract is none") {
+    def load(json: String) =
+      val f = Files.createTempFile("topics", ".json")
+      Files.writeString(f, json)
+      AnkkaDeclarations.load(s"checkout=$f")
+    for bad <- Seq("""{"fingerprint": "sha256:00"}""", """{"name": 7}""", "\"cart-events.v1\"") do
+      val got = load(s"""[{"name": "cart-events", "contract": $bad}]""")
+      assert(
+        got.left.exists(_.endsWith(": topic 'cart-events': a contract must have a name")),
+        s"$bad: $got"
+      )
+    assertEquals(
+      load("""[{"name": "notices", "contract": null}]""").map(_.topics),
+      Right(Map("notices" -> None))
+    )
+  }

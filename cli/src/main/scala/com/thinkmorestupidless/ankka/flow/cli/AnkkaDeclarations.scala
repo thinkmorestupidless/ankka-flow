@@ -38,13 +38,20 @@ object AnkkaDeclarations:
             acc.flatMap { m =>
               item.field("name") match
                 case Some(Json.Str(name)) =>
-                  val contract =
-                    item.field("contract").collect { case c: Json.Obj => c }.flatMap { c =>
-                      c.field("name").collect { case Json.Str(n) => n }.map { n =>
-                        Contract(n, c.field("fingerprint").collect { case Json.Str(f) => f })
-                      }
-                    }
-                  Right(m + (name -> contract))
+                  // No contract, or null, is a topic that declares none; anything else must be one.
+                  val contract: Either[String, Option[Contract]] = item.field("contract") match
+                    case None | Some(Json.Null) => Right(None)
+                    case Some(c: Json.Obj) =>
+                      c.field("name") match
+                        case Some(Json.Str(n)) =>
+                          Right(
+                            Some(
+                              Contract(n, c.field("fingerprint").collect { case Json.Str(f) => f })
+                            )
+                          )
+                        case _ => Left(s"topic '$name': a contract must have a name")
+                    case Some(_) => Left(s"topic '$name': a contract must have a name")
+                  contract.map(c => m + (name -> c))
                 case _ => Left("every topic must have a name")
             }
         }
