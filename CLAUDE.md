@@ -5,56 +5,60 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 ## What this is
 
 `ankka-flow` runs streaming pipelines beside [ankka](https://github.com/thinkmorestupidless/ankka).
-A pipeline is a set of **streamlets** with typed inlets and outlets, wired by a **blueprint** over
-Kafka topics. A streamlet's logic is written in any language and shipped as an image containing only
-that code. A **sidecar** the platform injects into every pod owns everything Kafka and talks to the
-process over a protobuf protocol on loopback.
+A pipeline is a set of **streamlets** with typed inlets and outlets, wired by a **blueprint** over Kafka
+topics. A streamlet is written against one **engine**'s own API and run by that engine: **Pekko
+Streams** (Scala, `sdks/pekko-streams`) for a stage that needs neither windows nor state, **Apache
+Flink** (Java, `sdks/flink`, tested with `sdks/flink-testkit`) for one that does. Its SDK writes a
+**descriptor** naming the engine; `flow` checks blueprints against descriptors; the operator runs a
+Pekko Streams streamlet as a Deployment and a Flink streamlet as a FlinkDeployment that the Apache
+Flink Kubernetes Operator runs, with its checkpoints in a state store. A blueprint reads and writes an
+ankka project's topics by `ankka = "<project>/<name>"`, as a registered machine.
 
 It descends from Lightbend's Cloudflow by way of the thinkmorestupidless fork. Neither is a
-dependency. Six pieces were carried over with their tests (see `NOTICE`). It follows ankka's
-conventions so people move between the two without relearning: the operator's render/execute split,
-the protocol directory SDKs copy, the conformance suite, the Python SDK's tooling.
+dependency; the carried pieces are listed in `NOTICE`. It follows ankka's conventions so people move
+between the two without relearning: the operator's render/execute split, the conformance of SDKs to
+shared fixtures, the docs tool and the marketplace plugin.
 
-Start with `specs/001-version-one/spec.md` (behaviour), `specs/001-version-one/plan.md` and
-`research.md` (decisions and why), and `specs/001-version-one/contracts/` (every interface).
+Start with `specs/009-engine-streamlets/spec.md` (behaviour), `plan.md` and `research.md` (decisions
+and why), `contracts/` (every interface), and the living features under `features/`.
 
 ## Commands
 
 Docker is required: the Kafka suites start their own broker, and one suite starts k3s.
 
 ```bash
-sbt test                                    # everything, including the k3s suite and the sample image it needs
+sbt test                                    # everything, including the k3s suite and the images it needs
 sbt -Dflow.cluster.tests=off test           # everything but k3s, in a few minutes
-sbt protocol/test blueprint/test crd/test   # the pure modules, seconds
-sbt sidecar/test                            # the conversation, the Kafka graph, the carried Kafka suites, conformance
-sbt operator/test                           # rendering, topic resolution, reset, and FlowClusterSuite (k3s)
-sbt cli/test
-sbt sdk/test                                # the Scala SDK: the descriptor fixtures, the server, the harness
-sbt sdkConformance                          # the conformance suite against the Scala SDK, in process
-sbt 'sidecar/testOnly *ConformanceSuite' -Dflow.conformance.target=127.0.0.1:9010    # a process on a port
-sbt 'sdk/runMain com.thinkmorestupidless.ankka.flow.sdk.conformance.ConformanceMain 9010'   # the Scala SDK's reference, on a port
-sbt mutationCheck                           # SC-006: the commit-after-write suite must FAIL with the commit moved first
-sbt docker:publishLocal sampleImage         # ankka-flow-sidecar, ankka-flow-operator, sample-cart-router
+sbt descriptor/test blueprint/test crd/test # the pure modules, seconds
+sbt pekkoSdk/test flinkSdk/test flinkTestkit/test   # the SDKs (`just sdks` adds mutationCheck)
+sbt mutationCheck                           # the commit-after-write suite must FAIL with the commit moved first
+sbt cartCleaner/test cartCounter/test       # the sample's own tests, which the docs include
+sbt cartCleaner/descriptorCheck cartCounter/descriptorCheck   # the committed descriptors are what the code declares
+sbt operator/test                           # rendering, topics, lag, grants, reset, and FlowClusterSuite (k3s)
+sbt operator/test -Dflow.flink.tests=off    # the cluster suite without its Flink cases
+sbt operator/test -Dflow.cluster.soak=on    # ten minutes of pod kills under load
+sbt cli/test                                # verify, generate, local, reset, the ankka topics, mcp
 sbt cli/stage                               # cli/target/universal/stage/bin/flow (the JVM build)
-sbt 'cli/testOnly *InitSuite'               # flow init: tokens, rendering, every refusal
-sbt 'cli/testOnly *TemplateSuite'           # flow init's projects built against this repo's SDKs; -Dflow.template.tests=scala,python|off
-sbt 'cli/testOnly *McpServerSuite *McpInstallSuite'   # flow mcp over its protocol against a mock API server; mcp install's merges
 just cli-native                             # the native flow: GraalVM 25 (GRAALVM_HOME), cli/target/graalvm-native-image/flow
 sbt cli/test -Dflow.cli.binary=$PWD/cli/target/graalvm-native-image/flow   # the same suite, driven through the binary
 cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow   # what an image silently loses, byte-compared
 sbt -java-home $GRAALVM_HOME cli/test -Dflow.cli.agent=on   # regenerate the image's reachability metadata (then prune; see its README)
-sbt -Dflow.fixtures.regenerate=on 'protocol/testOnly *DescriptorFixturesSuite'   # rewrite protocol/fixtures/descriptors
-cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
+sbt -Dflow.fixtures.regenerate=on 'descriptor/testOnly *DescriptorFixturesSuite'   # rewrite descriptor/fixtures/descriptors
+just images                                 # ankka-flow-operator, sample-cart-cleaner, sample-cart-counter
+just up                                     # kind, the CRD, both operators, Kafka, MinIO and flink-state
+just flink-operator-manifest                # render the Flink operator's chart into operator/src/test/resources
 sbt scalafmtAll scalafmtSbt                 # format; `just hooks` installs the pre-commit check
+just features                               # the living features against the glossary and the specs
 just docs                                   # check every page and build the docs site (uv)
-just docs-sync                              # refresh included samples, the protocol table, the skills
+just docs-sync                              # refresh included samples and the skills
 ```
 
 `just` wraps these (`just --list`). Recipes stay one command each; logic lives in
 `kustomization/deploy-local.sh`.
 
 **Tests are serialised deliberately** (`Tags.limit(Tags.Test, 1)`, `Test / parallelExecution :=
-false`). Suites that start containers contend when they overlap. Do not undo it.
+false`). Suites that start containers contend when they overlap. Do not undo it, and never run two
+sbt builds at once.
 
 **Test switches must be forwarded** to the forked test JVM. `forwardedTestSwitches` in `build.sbt`
 lists them; a new `-Dflow.*` switch that is not listed there silently does nothing.
@@ -66,23 +70,24 @@ counting, and the failure looks like the platform's.
 
 | Rule | What it means here |
 |---|---|
-| Module direction | `protocol` depends on nothing of ours. `sdk` → `protocol`. `blueprint` → `protocol`. `crd` → fabric8 only. `sidecar` → `protocol`, and `sdk` in tests only (the conformance suite serves the SDK's reference streamlet). `cartRouterScala` → `sdk`. `operator` → `crd`, `blueprint`, `protocol`. `cli` → `blueprint`, `crd`, `protocol`. Nothing depends on `sidecar` or `operator` except the operator's tests reading `StreamletConfig`. |
-| The sidecar never decodes for a process | A record's value is bytes from Kafka to the process and back. A contract is a format and a fingerprint, never a type the sidecar understands. A built-in stage decodes its own contract and nothing else. |
-| Commit after the write | Offsets are committed only once every emit for the batch is confirmed by the broker. `CommitAfterWrite` and its Kafka suite are the guard; `mutationCheck` proves the suite would catch a regression. |
-| Never skip | A failed batch is redelivered from the last commit, indefinitely. Skipping a record is the process's decision: acknowledge without emitting. |
-| Explicit registration | A streamlet is declared; its SDK writes the descriptor. The sidecar compares discovery with the deployed file and refuses a difference. No classpath scanning, ever. |
+| Module direction | `descriptor` depends on nothing of ours. `pekkoSdk` → `descriptor`. `flinkSdk` depends on nothing of ours (Java; it writes the same descriptor bytes, proven by the fixtures). `flinkTestkit` → `flinkSdk`. `blueprint` → `descriptor`. `crd` → fabric8 only. `operator` → `crd`, `blueprint`, `descriptor`. `cli` → `blueprint`, `crd`, `descriptor`. `cartCleaner` → `pekkoSdk`; `cartCounter` → `flinkSdk`, and `flinkTestkit` in tests. |
+| A streamlet holds the credentials of its own topics only | The operator resolves each port's Kafka settings from the cluster Secrets and writes them into that streamlet's Secret, `streamlet.properties`; nothing else reaches the pod. A blueprint and a resource never hold credentials. |
+| Commit after the write | In the Pekko Streams SDK, an offset is committed only once every record produced from it is confirmed by the broker. `CommitAfterWrite` and its Kafka suite are the guard; `mutationCheck` proves the suite would catch a regression. |
+| Never skip | A record that fails is retried from the last commit or checkpoint, indefinitely. Dropping a record is the streamlet's decision. |
+| Explicit registration | A streamlet declares its ports and parameters; its SDK writes the descriptor. No classpath scanning, ever. |
+| One descriptor, byte for byte | `descriptor/fixtures/descriptors` is what each declaration in `descriptor/fixtures/declarations` must write. Both SDKs reproduce it; a change to the format changes the fixtures and both SDKs together. |
+| The Java modules | `flinkSdk`, `flinkTestkit` and `cartCounter` are Java, compiled `--release 17` for Flink's images; Flink itself is `Provided`. Scala on them is not supported. |
 | Pure rendering, one place for I/O | `Rendering.render` returns actions; `Fabric8Executor` and `KafkaExecutor` perform them. |
-| The resource says what runs | Deploy-time overrides are merged by the CLI into the resource. The operator adds only what only it can know: the sidecar image (its own setting) and Kafka cluster secrets. |
-| Kafka credentials reach only the sidecar | Mounted from a Secret into the sidecar container. The process container has no ports, probes, mounts or secrets. |
-| No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image` and Neo4j's from `-Dflow.neo4j.image`; built images use `BuildInfo.version` with `+` → `-`. |
-| Two Scala versions | `protocol`, `sdk` and the Scala sample compile with `V.scalaLts` (the Scala 3 LTS line, `ltsSettings`), so any Scala 3.3+ project can depend on what is published; every other module stays on `V.scala`. A published module never depends on a 3.9-only one. |
-| Warning-free compile | `-Wunused:all` is on. Generated ScalaPB sources are silenced by `-Wconf` on `src_managed` only. |
-| Built-in stages are declared values | A stage the sidecar runs with no process has its descriptor in `protocol/.../Builtins.scala`, its canonical JSON in `protocol/fixtures/builtin/`, and a blueprint names it `builtin/<name>`. The sidecar refuses a deployed descriptor that is not its own built-in. |
+| The resource says what runs | Deploy-time overrides are merged by the CLI into the resource. The operator adds only what only it can know: the Kafka cluster settings and the state store. |
+| The Flink operator manifest is rendered and committed | `operator/src/test/resources/flink-operator.yaml` comes from the Flink Kubernetes Operator's chart by `just flink-operator-manifest`; the cluster suite and `just up` apply it. Re-render it on a Flink operator upgrade, never edit it by hand. |
+| No literal image tags in tests | The Kafka image comes from `-Dflow.kafka.image`; built images use `BuildInfo.version` with `+` → `-`. |
+| Two Scala versions | `descriptor`, `pekkoSdk` and `cartCleaner` compile with `V.scalaLts` (`ltsSettings`), so any Scala 3.3+ project can depend on what is published; every other Scala module stays on `V.scala`. A published module never depends on a 3.9-only one. |
+| Warning-free compile | `-Wunused:all` is on. |
+| No built-ins, no templates | Every streamlet is the author's code in the author's image. A streamlet starts from `samples/cart-pipeline`, not from a generated project. |
 | One `flow`, two drivers | `cli/test` is one suite; `-Dflow.cli.binary=<path>` runs every case through that executable instead of in process. No case is skipped or conditional on the driver. The release runs it against each platform's binary and byte-compares the smoke outputs with the JVM build. |
 | The native image's metadata is generated, then pruned | `cli/src/main/resources/META-INF/native-image/…/reachability-metadata.json` comes from the tracing agent (`-Dflow.cli.agent=on`, GraalVM as the JVM) and is cut down to what `flow` uses; its README says how. Regenerate on a fabric8 or Jackson upgrade, a new command, or a binary failing on a class or resource it cannot find. |
 | The tap is shared | `thinkmorestupidless/homebrew-tap` holds ankka's formula and ours. The `homebrew` job clones it, writes `Formula/ankka-flow.rb` and pushes an ordinary commit; never a subtree split or a force push, which would erase the other. A pre-release tag (with a hyphen) publishes the release page and the binaries only, and touches no formula, so the tap always installs a release. |
 | No logback in the CLI | `flow` logs nothing: `slf4j-nop`, so no classpath logging configuration has to survive the native image. fabric8 runs over `kubernetes-httpclient-jdk` there, with the Vert.x client excluded (Netty cannot be built as it comes). |
-| `flow init`'s templates are plain files | `cli/src/main/templates/{common,scala,python}` are indexed into the CLI jar with the plugin's skills (copied verbatim, never rendered) and registered in the native image. Rendering is exact `{{token}}` replacement; the descriptor in each template is proven by the template suite running the project's own check. A template change runs the template suite and is a docs change. |
 | `flow mcp` touches one cluster | The MCP server's cluster tools act only on the context and namespace `flow.toml` names in the directory it starts in, never the kubeconfig's current context; without the file every cluster tool refuses. Stdout carries only the protocol; anything for a person goes to stderr. The docs it serves are the pages built into that `flow` (`ankka-flow/docs/`), and apply and reset carry the destructive hint. |
 | Not in this build | pekko-http, pekko-grpc, Avro, spray-json, ScalaTest. If a change needs one, it is a design change: update `research.md` first. |
 
@@ -100,15 +105,15 @@ The ones that bite:
 
 - **A page stands alone and tells no history.** No positional phrases, no FR/SC/T numbers, no `specs/`
   paths; `docs check` refuses both. `specs/` and `notes/` are records, not pages.
-- **Samples are included from tested code** between `# docs:start name` and `# docs:end name`
-  markers, named by `<!-- include: path#name -->` before the block (no `#name` includes the whole
-  file); `just docs-sync` copies them and `docs check` fails on drift. Markers live in the three
-  samples (`cart-router`, `checkout-feed`, `checkout-graph`), never in `protocol/` (the SDKs copy it
-  byte for byte). `README.md` includes the same way, refreshed by `just readme-sync` and checked by
-  the docs workflow, since the docs tool reads only the pages.
-- **The RPC table on `reference/protocol.md` is generated** from `protocol/src/main/protobuf`.
+- **Samples are included from tested code** between `// docs:start name` and `// docs:end name`
+  markers (`#` in conf, yaml and shell), named by `<!-- include: path#name -->` before the block (no
+  `#name` includes the whole file); `just docs-sync` copies them and `docs check` fails on drift.
+  Markers live in the two sample modules, `samples/cart-pipeline/cleaner` and
+  `samples/cart-pipeline/counter`, and the sample's blueprints and manifests. `README.md` includes
+  the same way, refreshed by `just readme-sync` and checked by the docs workflow, since the docs tool
+  reads only the pages.
 - **A new page goes in `mkdocs.yml`'s `nav` and in a skill's `pages:` list**, or `docs check` fails.
-- **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and protocol
+- **A behaviour change is a docs change.** The pages restate CLI flags, events, env vars and descriptor
   rules; change them in the same commit.
 
 ## Living features
@@ -129,8 +134,7 @@ The checker runs through `uvx`, so `uv` must be on `PATH`. Glossary terms follow
 ## Carried code
 
 A file derived from Cloudflow keeps Lightbend's header verbatim and arrives with its test, rewritten
-as munit with every assertion kept. Add the file to `NOTICE`. The source path in the fork is named in
-the task that carried it (`specs/001-version-one/tasks.md`).
+as munit with every assertion kept. Add the file to `NOTICE`.
 
 ## Kubernetes manifests
 
@@ -143,6 +147,6 @@ Domain for labels, annotations and the CRD group: `flow.ankka.thinkmorestupidles
 
 ## Environment variables
 
-Everything the platform sets is `FLOW_*`. The process gets `FLOW_PROCESS_PORT` (9010) and nothing
-else. The sidecar's variables are in `specs/001-version-one/contracts/sidecar.md`; the operator's in
-`contracts/resource-and-operator.md`.
+Everything the platform sets is `FLOW_*`. A streamlet's container gets `FLOW_CONFIG_DIR`, the
+directory holding its `streamlet.properties` (`contracts/streamlet-settings.md`), and nothing else.
+The operator's settings are in `contracts/resource-and-operator.md` and `docs/reference/operator.md`.
