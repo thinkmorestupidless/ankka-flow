@@ -10,8 +10,8 @@ people who build on ankka-flow, the term here means the same.
 A set of streamlets wired by a blueprint over topics, deployed to a cluster as one resource.
 
 ### streamlet
-One stage of a pipeline: a process with typed inlets and outlets, or a stage built into the
-sidecar.
+One stage of a pipeline, with typed inlets and outlets: logic written against one engine's own
+API and run by that engine.
 
 ### blueprint
 The file that names a pipeline's streamlets and wires their inlets and outlets over topics.
@@ -297,7 +297,7 @@ Avoid: walkthrough
 The Model Context Protocol server "flow mcp" runs, serving the documentation and flow's abilities to
 one coding agent over standard input and output.
 
-Avoid: daemon, service
+Avoid: daemon
 
 ### tool
 One operation the server offers a coding agent, with a description, an input schema and whether it
@@ -324,6 +324,106 @@ touch.
 The file naming the server's command for a client: ".mcp.json" in a project, or the client's settings.
 
 Avoid: config
+
+## Engines and ankka
+
+### engine
+*Proposed.* What runs a streamlet's logic: Flink or Pekko Streams. A descriptor names its
+streamlet's engine.
+
+Avoid: runtime, runner, backend
+
+### Flink streamlet
+*Proposed.* A streamlet written against Flink's own API and run as a Flink job; the engine for a
+stage that needs windows or state.
+
+### Pekko Streams streamlet
+*Proposed.* A streamlet written as a Pekko Streams flow; the engine for a stage that needs
+neither windows nor state.
+
+### Pekko Streams SDK
+*Proposed.* The SDK for Pekko Streams streamlets.
+
+### stage
+*Proposed.* One step of a pipeline's work as a person thinks of it, before it is a streamlet or
+an ankka consumer.
+
+### state
+*Proposed.* What a Flink streamlet remembers between records, kept by Flink in the cluster's
+state store.
+
+Avoid: checkpoint, savepoint
+
+### state store
+*Proposed.* The durable storage a cluster gives Flink streamlets for their state.
+
+### window
+*Proposed.* A span of time into which a Flink streamlet groups records, by the time each record
+carries.
+
+### Flink operator
+*Proposed.* The Flink Kubernetes Operator, which a cluster must have before it runs a Flink
+streamlet. Not ankka-flow's own operator.
+
+### condition
+*Proposed.* A line of a pipeline's status saying one thing that is true of it, such as what it
+lacks.
+
+### Ready
+*Proposed.* The phase of a deployed pipeline whose every streamlet is running and reading.
+
+### lag
+*Proposed.* How far a streamlet's reading of a topic is behind what has been written to it.
+
+### contract
+*Proposed.* What a topic carries: a name and, where given, the fingerprint of a schema document.
+An inlet, an outlet and an ankka topic each declare one, and the sides of a topic must declare
+the same.
+
+Avoid: message shape
+
+### managed
+*Proposed.* Of a topic: created by the pipeline that names it.
+
+### ankka project
+*Proposed.* A project in ankka: the unit that declares topics. (A `project`
+without the word ankka is the directory flow init writes.)
+
+Avoid: ankka application
+
+### ankka topic
+*Proposed.* A topic an ankka project declares, which a blueprint names by the project and the
+declared name, such as "checkout/cart-checkouts". A pipeline reads or writes it and never creates
+it.
+
+Avoid: ankka stream, service topic
+
+### ankka consumer
+*Proposed.* A component of a service in an ankka project that reads one topic; what a stage is
+when it is one service reacting to one topic and not a pipeline.
+
+### declarations
+*Proposed.* An ankka project's topics and their contracts, as a file a person exports from ankka
+and gives to flow.
+
+### machine
+*Proposed.* The identity a pipeline has to ankka: a registered machine of an ankka organization,
+named by the pipeline's deploy-time configuration.
+
+Avoid: service account
+
+### grant
+*Proposed.* An ankka project's permission for a machine to read or write one topic. Made in
+ankka, never by flow.
+
+### right
+*Proposed.* What a grant permits: reading or writing.
+
+### engines page
+*Proposed.* The documentation page that says which engine to choose for a stage.
+
+### limitations page
+*Proposed.* The documentation page that says what ankka-flow does not do.
 
 ## Everyday words
 
@@ -356,3 +456,5 @@ wires, wired, routed, affect, round, trip, manual, fresh, project, naming, compi
 uploaded, upload, rest, equivalent, coordinates, named, looks, pass, change, build, drift,
 lines, line, written, writes, write, reads, read, shows, shown, show, learn, kept, sends, sent,
 once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON, starting, digit, may, id, client, initializes, initialized, session, newest, offered, schema, answers, answer, among, Markdown, continues, reached, phase, conditions, recent, container, asked, consumer, lag, created, updated, sent, draws, marked, read-only, settings, entry, dry, run, Claude, Code, touch, Protocol, Model, Context, abilities, kubectl, apply, applied, verified, verifies, calls, namespace, searches, title, exist, result, logs, lines, Desktop, connects, connected, speaks, description, generate, verify, reset, images, list, get, sets, up, kind,
+never, made, makes, registered, lacks, binds, method, carried, carries, delivery, between, pod, pods, knows, new, discarded,
+whatever,

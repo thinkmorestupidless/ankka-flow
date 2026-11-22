@@ -119,8 +119,9 @@ installed under `.specify/`: `/speckit-specify` writes a spec whose acceptance s
 scenarios, the `after_specify` hook runs `/speckit-bdd-features` to write them as Gherkin under
 `features/<area>/` with every word they use in the root `GLOSSARY.md`, and the `before_clarify` hook
 runs `/speckit-bdd-check`, which turns undefined words, refused synonyms, contradictions and untraced
-requirements into clarification questions. `specs-from: "004"` in
-`.specify/extensions/bdd/bdd-config.yml` leaves specs 001–003 as they were written. `just features`
+requirements into clarification questions. `specs-from: "009"` in
+`.specify/extensions/bdd/bdd-config.yml` leaves specs 001–008 as they were written: 004–007 name
+scenarios of version one, which feature 009 removed. `just features`
 (and CI's `features` job) runs the same checker from the same config, and fails when it read nothing.
 The checker runs through `uvx`, so `uv` must be on `PATH`. Glossary terms follow
 `docs/reference/glossary.md` where the docs already define a word.

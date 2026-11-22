@@ -31,8 +31,8 @@ Feature: Releasing the native binary
     When a platform's leg builds the native binary
     Then the leg refuses, before anything is attached
 
-  Scenario: the images, the Python SDK and the plugin are published whatever the native binaries do
+  Scenario: the images and the plugin are published whatever the native binaries do
     Given a tag is pushed
     When a platform's leg fails
-    Then the images, the Python SDK and the plugin are published as before
+    Then the images and the plugin are published as before
     And only the formula waits on the native binaries
