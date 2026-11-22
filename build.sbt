@@ -336,7 +336,16 @@ lazy val cartCleaner = project
     Compile / mainClass  := Some("cart.cleaner.Main"),
     run / fork           := true,
     run / envVars ++= sys.env.get("FLOW_CONFIG_DIR").map("FLOW_CONFIG_DIR" -> _).toMap,
-    libraryDependencies ++= Seq(jsoniterMacros, logback)
+    libraryDependencies ++= Seq(jsoniterMacros, logback),
+    // The main's descriptor modes: `sbt cartCleaner/descriptor` and `cartCleaner/descriptorCheck`.
+    writeDescriptor := Def.taskDyn {
+      val path = ((ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/cleaner.json")
+      (Compile / runMain).toTask(s" cart.cleaner.Main --descriptor ${path.getAbsolutePath}")
+    }.value,
+    descriptorCheck := Def.taskDyn {
+      val path = ((ThisBuild / baseDirectory).value / "samples/cart-pipeline/flow/cleaner.json")
+      (Compile / runMain).toTask(s" cart.cleaner.Main --descriptor-check ${path.getAbsolutePath}")
+    }.value
   )
 
 /** The sample pipeline's Flink streamlet, in Java (feature 009, research R19). */
