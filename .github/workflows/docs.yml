@@ -11,9 +11,8 @@ on:
       - 'mkdocs.yml'
       - 'marketplace/**'
       - 'README.md'
-      # Included samples and the generated protocol table are read from these.
+      # Included samples are read from these.
       - 'samples/**'
-      - 'protocol/**'
   push:
     branches: [main]
   workflow_dispatch:

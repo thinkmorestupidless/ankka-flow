@@ -32,18 +32,6 @@ object Dependencies {
     /** The Kafka image every Kafka test, the compose files and the k3s suite run. */
     val kafkaImage = "apache/kafka:3.9.1"
 
-    /** The Prometheus JMX exporter agent baked into the sidecar image (research R7). */
-    val jmxExporter = "1.0.1"
-
-    /** The Neo4j Java driver the graph merge sink writes with (feature 002, research R7). */
-    val neo4jDriver = "5.28.5"
-
-    /**
-     * The Neo4j the graph merge sink is tested against: 5.26 LTS, the first with dynamic labels in
-     * MERGE, which the sink's statements need.
-     */
-    val neo4jImage = "neo4j:5.26-community"
-
     /**
      * Flink streamlets (feature 009, research R1): Flink 2.2, the newest line with a Kafka
      * connector, on Java 17 by `--release`. The connector brings kafka-clients 4.2.0, on a
@@ -110,14 +98,12 @@ object Dependencies {
   val logback = "ch.qos.logback" % "logback-classic" % V.logback
   // The CLI's logging: none. It prints its own messages; what fabric8 would log through slf4j is
   // noise beside them, and a logging framework is one more thing a native image must be told about.
-  val slf4jNop            = "org.slf4j"          % "slf4j-nop"         % V.slf4j
-  val slf4jApi            = "org.slf4j"          % "slf4j-api"         % V.slf4j
-  val slf4jSimple         = "org.slf4j"          % "slf4j-simple"      % V.slf4j
-  val munit               = "org.scalameta"     %% "munit"             % V.munit
-  val testcontainersKafka = "org.testcontainers" % "kafka"             % V.testcontainers
-  val testcontainersK3s   = "org.testcontainers" % "k3s"               % V.testcontainers
-  val testcontainersNeo4j = "org.testcontainers" % "neo4j"             % V.testcontainers
-  val neo4jDriver         = "org.neo4j.driver"   % "neo4j-java-driver" % V.neo4jDriver
+  val slf4jNop            = "org.slf4j"          % "slf4j-nop"    % V.slf4j
+  val slf4jApi            = "org.slf4j"          % "slf4j-api"    % V.slf4j
+  val slf4jSimple         = "org.slf4j"          % "slf4j-simple" % V.slf4j
+  val munit               = "org.scalameta"     %% "munit"        % V.munit
+  val testcontainersKafka = "org.testcontainers" % "kafka"        % V.testcontainers
+  val testcontainersK3s   = "org.testcontainers" % "k3s"          % V.testcontainers
 
   val fabric8 = "io.fabric8" % "kubernetes-client" % V.fabric8
   // The CLI's fabric8 over the JDK's own HTTP client instead of the default Vert.x one: Netty is
@@ -129,16 +115,6 @@ object Dependencies {
   val decline           = "com.monovore"                 %% "decline"                   % V.decline
   val jacksonScala      = "com.fasterxml.jackson.module" %% "jackson-module-scala"      % V.jackson
   val jacksonYaml = "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % V.jackson
-
-  // grpc-java with ScalaPB, not pekko-grpc (research R1): versions come from the compiler plugin
-  // so generated code and runtime can never disagree.
-  val scalapbRuntime: ModuleID =
-    "com.thesamet.scalapb" %% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion
-  val scalapbRuntimeGrpc: ModuleID =
-    "com.thesamet.scalapb" %% "scalapb-runtime-grpc" % scalapb.compiler.Version.scalapbVersion
-  val grpcNettyShaded: ModuleID =
-    "io.grpc" % "grpc-netty-shaded" % scalapb.compiler.Version.grpcJavaVersion
-  val grpcStub: ModuleID = "io.grpc" % "grpc-stub" % scalapb.compiler.Version.grpcJavaVersion
 
   // Flink (feature 009). Provided: the image's distribution supplies them; the connector is not
   // in the distribution and goes into the image's usrlib beside the streamlet's jar.

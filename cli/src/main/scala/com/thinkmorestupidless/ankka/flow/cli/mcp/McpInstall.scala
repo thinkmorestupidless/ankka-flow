@@ -9,11 +9,11 @@ import JsonText.*
 /**
  * `flow mcp install`: tells an MCP client how to start `flow mcp`. Three targets, because a
  * client's configuration lives in three places: Claude Code for this user (through
- * `claude mcp add`, Claude Code's own command), a project's `.mcp.json` (the file `flow init`
- * writes; it names the command `flow`, since it is committed and read on other machines), and
- * Claude Desktop's `claude_desktop_config.json` (an absolute path, and `JAVA_HOME` for the JVM
- * build, because Desktop is started from the Dock, not a shell). Every write merges: other servers
- * are kept, and an existing `ankka-flow` entry is left alone unless `--force`. Ported from ankka's.
+ * `claude mcp add`, Claude Code's own command), a project's `.mcp.json` (it names the command
+ * `flow`, since it is committed and read on other machines), and Claude Desktop's
+ * `claude_desktop_config.json` (an absolute path, and `JAVA_HOME` for the JVM build, because
+ * Desktop is started from the Dock, not a shell). Every write merges: other servers are kept, and
+ * an existing `ankka-flow` entry is left alone unless `--force`. Ported from ankka's.
  */
 private[cli] object McpInstall:
 

@@ -8,8 +8,8 @@ final case class NamedCluster(context: String, namespace: String)
 
 /**
  * `flow.toml`: two keys, `context` and `namespace`, as `key = "value"` lines; `#` comments, blank
- * lines and a `[cluster]` table header are ignored, as is any other key. Written by `flow init`,
- * read by `flow mcp`, never written by it.
+ * lines and a `[cluster]` table header are ignored, as is any other key. Written by a person, read
+ * by `flow mcp`, never written by it.
  */
 private[cli] object ProjectFile:
 

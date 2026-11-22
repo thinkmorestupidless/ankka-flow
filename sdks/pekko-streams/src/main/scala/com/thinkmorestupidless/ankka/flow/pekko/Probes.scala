@@ -9,7 +9,7 @@ import scala.util.Try
 /**
  * Readiness and liveness as files the container's exec probes read: `ready` exists only while every
  * inlet has had its partitions assigned (none, when the group is balanced without this member);
- * `alive` is touched while the runner runs. Ported from version one's sidecar.
+ * `alive` is touched while the runner runs. Ported from version one.
  */
 final class Probes(dir: Path):
 

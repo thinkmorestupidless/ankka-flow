@@ -23,15 +23,16 @@ needed it:
 - `-H:+AddAllCharsets` in `native-image.properties`: every `CliResetSuite` case failed against the
   binary with `UnsupportedCharsetException: UTF-32BE` from snakeyaml-engine's `YamlUnicodeReader`
   while fabric8 read the kubeconfig. A charset is not reflection, so the agent cannot record it.
-- `ankka-flow/templates/**` in the resources: `flow init`'s templates, read by name from each
-  language's `index.txt`. The agent records them only for the languages a case renders, and a
-  template file no case reads would be silently missing from the binary; the glob takes them all.
+- The resource's model types, `com.thinkmorestupidless.ankka.flow.crd.*` and their companions, are
+  registered whole, each class and its `.class` resource, so a field added to the resource cannot
+  be missing from the binary because no case serialised it. `FlinkSpec`, `Resources`, `AnkkaRef`,
+  `Condition` and `InletStatus` were added this way, without an agent run.
 - `ankka-flow/docs/**` in the resources: the documentation pages `flow mcp` serves, read by name
   from `index.txt`; the glob takes every page, whichever a case happened to read.
 - Twelve reflection entries from the agent run with `flow mcp`'s suite (the events model —
   `ObjectReference`, `EventSource`, `EventSeries`, `MicroTimeSerDes` — the resource list type, and
   the `Throwable`/`StackTraceElement` shapes a tool's error result reaches); the tracing run that
-  added them was `sbt -java-home $GRAALVM_HOME cli/test -Dflow.cli.agent=on -Dflow.template.tests=off`.
+  added them was `sbt -java-home $GRAALVM_HOME cli/test -Dflow.cli.agent=on`.
   `pipeline_lag`'s port-forward is not in the suite (no double serves it); it is proven on kind with
   the native binary.
 - The kubeconfig model (`io.fabric8.kubernetes.api.model.Cluster`, `Context`, `AuthInfo`, their

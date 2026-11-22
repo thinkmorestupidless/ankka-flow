@@ -14,7 +14,7 @@ fmt:
 hooks:
     git config core.hooksPath .githooks
 
-# Everything except the k3s suite and the sample image it needs.
+# Everything except the k3s suite and the images it needs.
 test:
     sbt -Dflow.cluster.tests=off test
 
@@ -36,17 +36,13 @@ cli:
 cli-native:
     sbt cli/stage cli/GraalVMNativeImage/packageBin 'cli/test' -Dflow.cli.binary={{justfile_directory()}}/cli/target/graalvm-native-image/flow && cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
 
-# The sidecar and operator images, and the samples' (the Python cart router's and the Scala one's).
+# The operator's image and the sample's two.
 images:
-    sbt docker:publishLocal sampleImage
+    sbt operator/docker:publishLocal cartCleaner/docker:publishLocal cartCounter/image
 
-# The Scala SDK, end to end: its suites, the conformance suite against it, and its sample.
-sdk-scala:
-    sbt sdk/test sdkConformance cartRouterScala/test cartRouterScala/descriptorCheck
-
-# The Python SDK, end to end.
-sdk:
-    cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
+# Both engines' SDKs, end to end: their suites, the Flink testkit, and the commit-after-write mutation.
+sdks:
+    sbt pekkoSdk/test flinkSdk/test flinkTestkit/test mutationCheck
 
 # A single-node Kafka on localhost:9092, topics created on first use, for development and the laptop walkthrough.
 kafka-up:
@@ -83,19 +79,11 @@ flink-operator-manifest:
 render overlay="local":
     kubectl kustomize kustomization/overlays/{{overlay}}
 
-# A development Neo4j and the Secret `neo4j-local` in `shop`, for a pipeline with a Neo4j merge sink.
-neo4j-up:
-    kubectl --context kind-{{cluster}} apply -k kustomization/overlays/neo4j && kubectl --context kind-{{cluster}} -n neo4j rollout status statefulset/neo4j --timeout=180s
-
-# Removes Neo4j and its Secret, never the `shop` namespace the overlay also creates.
-neo4j-down:
-    kubectl --context kind-{{cluster}} delete namespace neo4j --ignore-not-found && kubectl --context kind-{{cluster}} -n shop delete secret neo4j-local --ignore-not-found
-
 # Check every page, then build the site, llms.txt, llms-full.txt, docs-index.json and the skills.
 docs:
     uv run --project tools/docs docs build
 
-# Refresh included samples, the generated protocol table and the rendered skills from their sources.
+# Refresh included samples and the rendered skills from their sources.
 docs-sync:
     uv run --project tools/docs docs sync
 

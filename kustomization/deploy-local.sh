@@ -16,15 +16,13 @@ if [[ "${current}" != "${context}" ]]; then
 fi
 
 cd "${root}"
-sbt -batch "sidecar/docker:publishLocal" "operator/docker:publishLocal" sampleImage \
-  "cartCleaner/docker:publishLocal" "cartCounter/image"
+sbt -batch "operator/docker:publishLocal" "cartCleaner/docker:publishLocal" "cartCounter/image"
 version="$(sbt -batch -Dsbt.supershell=false -error 'print cartCounter/version' | tail -1 | tr '+' '-')"
 docker tag "sample-cart-counter:${version}" sample-cart-counter:latest
 # A multi-platform image fails `kind load docker-image` on Docker's containerd store; one platform
 # saved and loaded as an archive does not.
 arch="$(docker version --format '{{.Server.Arch}}')"
-for image in ankka-flow-operator:latest ankka-flow-sidecar:latest sample-cart-router:latest \
-  sample-cart-cleaner:latest sample-cart-counter:latest; do
+for image in ankka-flow-operator:latest sample-cart-cleaner:latest sample-cart-counter:latest; do
   docker save --platform "linux/${arch}" "${image}" | kind load image-archive --name "${cluster}" /dev/stdin
 done
 

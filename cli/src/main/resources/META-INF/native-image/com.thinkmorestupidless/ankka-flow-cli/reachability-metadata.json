@@ -302,13 +302,61 @@
       "allDeclaredFields": true
     },
     {
-      "type": "com.thinkmorestupidless.ankka.flow.crd.BatchSpec",
+      "type": "com.thinkmorestupidless.ankka.flow.crd.AnkkaRef",
       "allDeclaredConstructors": true,
       "allDeclaredMethods": true,
       "allDeclaredFields": true
     },
     {
-      "type": "com.thinkmorestupidless.ankka.flow.crd.BatchSpec$",
+      "type": "com.thinkmorestupidless.ankka.flow.crd.AnkkaRef$",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.Condition",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.Condition$",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.FlinkSpec",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.FlinkSpec$",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.InletStatus",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.InletStatus$",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.Resources",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.thinkmorestupidless.ankka.flow.crd.Resources$",
       "allDeclaredConstructors": true,
       "allDeclaredMethods": true,
       "allDeclaredFields": true
@@ -4388,7 +4436,19 @@
       "glob": "com/thinkmorestupidless/ankka/flow/crd/AnkkaFlowStatus.class"
     },
     {
-      "glob": "com/thinkmorestupidless/ankka/flow/crd/BatchSpec.class"
+      "glob": "com/thinkmorestupidless/ankka/flow/crd/AnkkaRef.class"
+    },
+    {
+      "glob": "com/thinkmorestupidless/ankka/flow/crd/Condition.class"
+    },
+    {
+      "glob": "com/thinkmorestupidless/ankka/flow/crd/FlinkSpec.class"
+    },
+    {
+      "glob": "com/thinkmorestupidless/ankka/flow/crd/InletStatus.class"
+    },
+    {
+      "glob": "com/thinkmorestupidless/ankka/flow/crd/Resources.class"
     },
     {
       "glob": "com/thinkmorestupidless/ankka/flow/crd/OnDelete.class"
@@ -4474,9 +4534,6 @@
     },
     {
       "bundle": "sun.util.logging.resources.logging"
-    },
-    {
-      "glob": "ankka-flow/templates/**"
     },
     {
       "glob": "ankka-flow/docs/**"
