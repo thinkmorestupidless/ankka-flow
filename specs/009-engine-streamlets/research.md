@@ -592,3 +592,12 @@ holds as written. The cost, accepted: on a partition gone quiet its last record 
 (lag 1 in the status) and is read again after a restart, which at least once allows. Rejected: a
 stream per record (the author's `mapAsync` loses its concurrency across records), and committing
 on the first write (breaks the `mapConcat` promise, a contract change).
+
+How it is built (T020): not with `CommitWhen.NextOffsetObserved`, whose committer flow left a
+drained stop's last offset uncommitted in `RunnerKafkaSuite`, but in
+`CommitAfterWrite.flowCommittingAfter`: after the ordered write, a `statefulMap` holds each
+partition's latest confirmed offset, releases it when a later one of that partition is confirmed,
+and releases every held offset when the stream completes (never on failure). The committer then
+commits what it is handed (`OffsetFirstObserved`). The consumer's stop timeout is zero, so a failed
+run leaves its group at once and its restart is assigned promptly; a stop is
+`drainAndShutdown`.

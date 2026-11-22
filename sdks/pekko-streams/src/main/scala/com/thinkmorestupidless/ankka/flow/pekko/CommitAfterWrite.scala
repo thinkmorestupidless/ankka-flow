@@ -22,7 +22,12 @@ import scala.concurrent.duration.*
 
 import org.apache.pekko.{Done, NotUsed}
 import org.apache.pekko.kafka.{CommitWhen, CommitterSettings}
-import org.apache.pekko.kafka.ConsumerMessage.{Committable, CommittableOffsetBatch}
+import org.apache.pekko.kafka.ConsumerMessage.{
+  Committable,
+  CommittableOffset,
+  CommittableOffsetBatch,
+  GroupTopicPartition
+}
 import org.apache.pekko.kafka.scaladsl.Committer
 import org.apache.pekko.stream.scaladsl.{Flow, Keep, Sink}
 
@@ -86,3 +91,38 @@ object CommitAfterWrite:
         else write(batch.map(_._1)).map(_ => ((), offsets))
       }
       .toMat(Committer.sinkWithOffsetContext[Unit](committerSettings))(Keep.right)
+
+  /**
+   * The runner's form: each element is written on its own, up to `parallelism` writes in flight and
+   * their results kept in the order the elements were read. An offset is handed to the committer
+   * once its element's write has succeeded and a later offset of its partition has been confirmed
+   * too, or when the stream completes: several elements carrying one offset (one record made into
+   * several) are all confirmed before it is committed. A failed write fails the stream with nothing
+   * from it onwards committed, and what was held back is not committed either.
+   */
+  def flowCommittingAfter[T](
+      write: T => Future[Any],
+      committerSettings: CommitterSettings,
+      parallelism: Int
+  )(using ExecutionContext): Flow[(T, CommittableOffset), Done, NotUsed] =
+    type Held = Map[GroupTopicPartition, CommittableOffset]
+    Flow[(T, CommittableOffset)]
+      .mapAsync(parallelism) { (element, offset) =>
+        if commitFirst then
+          write(element): Unit
+          Future.successful(offset)
+        else write(element).map(_ => offset)
+      }
+      .statefulMap(() => Map.empty: Held)(
+        (held, offset) =>
+          val key = offset.partitionOffset.key
+          val released =
+            held.get(key).filter(_.partitionOffset.offset < offset.partitionOffset.offset)
+          // Under the mutation the offset goes straight to the committer, as it was handed over.
+          if commitFirst then (held, CommittableOffsetBatch(offset))
+          else (held.updated(key, offset), CommittableOffsetBatch(released.toSeq))
+        ,
+        held => Option.when(held.nonEmpty)(CommittableOffsetBatch(held.values.toSeq))
+      )
+      .filter(_.batchSize > 0)
+      .via(Committer.flow(committerSettings))
