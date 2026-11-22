@@ -462,8 +462,7 @@ lazy val operator = project
       else
         Def.task {
           (Docker / publishLocal).value
-          (sidecar / Docker / publishLocal).value
-          (LocalRootProject / sampleImage).value
+          (cartCleaner / Docker / publishLocal).value
           ()
         }
     }.value,

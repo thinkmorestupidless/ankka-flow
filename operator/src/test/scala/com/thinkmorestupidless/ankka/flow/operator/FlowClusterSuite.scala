@@ -11,7 +11,7 @@ import scala.util.Try
 
 import com.thinkmorestupidless.ankka.flow.crd.*
 import io.fabric8.kubernetes.client.{Config, KubernetesClient, KubernetesClientBuilder}
-import org.apache.kafka.clients.admin.{Admin, AdminClientConfig, NewTopic}
+import org.apache.kafka.clients.admin.{Admin, AdminClientConfig}
 import org.apache.kafka.clients.consumer.{ConsumerConfig, ConsumerRecord, KafkaConsumer}
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
 import org.apache.kafka.common.serialization.{ByteArrayDeserializer, ByteArraySerializer}
@@ -19,9 +19,9 @@ import org.testcontainers.k3s.K3sContainer
 import org.testcontainers.utility.DockerImageName
 
 /**
- * The real thing on k3s (US3, US4): the operator and a Kafka running in the cluster, the cart
- * pipeline applied, and the pipeline's promises checked from outside through Kafka's external
- * listener. Skipped with `-Dflow.cluster.tests=off`.
+ * The real thing on k3s: the operator and a Kafka running in the cluster, the sample cleaner
+ * applied between two managed topics, and the pipeline's promises checked from outside through
+ * Kafka's external listener. Skipped with `-Dflow.cluster.tests=off`.
  */
 class FlowClusterSuite extends munit.FunSuite:
 
@@ -32,8 +32,7 @@ class FlowClusterSuite extends munit.FunSuite:
   private val KafkaImage    = sys.props.getOrElse("flow.kafka.image", "apache/kafka:3.9.1")
   private val tag           = sys.props.getOrElse("flow.image.tag", "latest")
   private val operatorImage = s"ankka-flow-operator:$tag"
-  private val sidecarImage  = s"ankka-flow-sidecar:$tag"
-  private val sampleImage   = s"sample-cart-router:$tag"
+  private val cleanerImage  = s"sample-cart-cleaner:$tag"
   private val NodePort      = 30094
   private val Namespace     = "shop"
 
@@ -118,43 +117,46 @@ class FlowClusterSuite extends munit.FunSuite:
 
   private val mapper = FlowSerialization.mapper()
 
-  private def streamlet(name: String, threshold: Int, replicas: Int, outletPrefix: String) =
-    StreamletSpec(
-      name = name,
-      image = sampleImage,
-      replicas = replicas,
-      config = Map("review-threshold" -> mapper.readTree(threshold.toString)),
-      inlets = Map("in" -> "cart-events"),
-      outlets = Map("valid" -> s"$outletPrefix-valid", "review" -> s"$outletPrefix-review"),
-      descriptor = Fixtures.descriptor("cart-router")
-    )
+  private val Events = "cart.cart-events"
+  private val Clean  = "cart.clean-carts"
+  private val Group  = "cart.cleaner.in"
 
-  private def spec(
-      routerThreshold: Int = 100,
-      routerReplicas: Int = 1,
-      auditReplicas: Int = 1
-  ): AnkkaFlowSpec =
+  private def spec(maxTotal: Int = 150, replicas: Int = 1): AnkkaFlowSpec =
     AnkkaFlowSpec(
       pipeline = "cart",
       version = "test",
       descriptorVersion = "2.0",
       streamlets = List(
-        streamlet("router", routerThreshold, routerReplicas, "router"),
-        streamlet("audit", 1000, auditReplicas, "audit")
+        StreamletSpec(
+          name = "cleaner",
+          image = cleanerImage,
+          engine = "pekko-streams",
+          replicas = replicas,
+          config = Map("max-total" -> mapper.readTree(maxTotal.toString)),
+          inlets = Map("in" -> "cart-events"),
+          outlets = Map("out" -> "clean-carts"),
+          descriptor = Fixtures.descriptor("cart-cleaner")
+        )
       ),
       topics = List(
-        TopicSpec(
-          id = "cart-events",
-          name = "shop.cart-events.v1",
-          managed = false,
-          bootstrapServers = Some("kafka.kafka.svc:9092")
-        ),
-        TopicSpec(id = "router-valid", name = "cart.valid-carts", partitions = Some(6)),
-        TopicSpec(id = "router-review", name = "cart.review-carts"),
-        TopicSpec(id = "audit-valid", name = "cart.audit-valid"),
-        TopicSpec(id = "audit-review", name = "cart.audit-review")
+        TopicSpec(id = "cart-events", name = Events, partitions = Some(3)),
+        TopicSpec(id = "clean-carts", name = Clean, partitions = Some(3))
       )
     )
+
+  /** Fifty cart events, every tenth malformed; totals 0 to 196. */
+  private val inputs: Vector[(String, String)] = (0 until 50).toVector.map { i =>
+    val cart = s"cart-${i % 10}"
+    cart -> (if i % 10 == 9 then s"not an event $i"
+             else s"""{"cartId":"$cart","seq":${i + 1},"total":${(i * 37) % 200},"at":$i}""")
+  }
+
+  /** The seq of every event the cleaner keeps under a maximum. */
+  private def kept(max: Int): Set[Int] =
+    (0 until 50).filter(i => i % 10 != 9 && (i * 37) % 200 <= max).map(_ + 1).toSet
+
+  private def seqs(records: Vector[ConsumerRecord[Array[Byte], Array[Byte]]]): Vector[Int] =
+    records.map(r => """"seq":(\d+)""".r.findFirstMatchIn(new String(r.value)).get.group(1).toInt)
 
   private def apply(s: AnkkaFlowSpec): Unit =
     val r = AnkkaFlow(Namespace, "cart", s)
@@ -233,7 +235,7 @@ class FlowClusterSuite extends munit.FunSuite:
       k3s.addExposedPort(NodePort)
       k3s.start()
       external = s"localhost:${k3s.getMappedPort(NodePort)}"
-      Seq(KafkaImage, operatorImage, sidecarImage, sampleImage).foreach(
+      Seq(KafkaImage, operatorImage, cleanerImage).foreach(
         ClusterImages.importInto(k3s, _)
       )
       client = new KubernetesClientBuilder()
@@ -258,7 +260,6 @@ class FlowClusterSuite extends munit.FunSuite:
         .fromInputStream(getClass.getResourceAsStream("/ankka-flow/install/operator.yaml"))
         .mkString
         .replace("ankka-flow-operator:latest", operatorImage)
-        .replace("ankka-flow-sidecar:latest", sidecarImage)
       load(operatorYaml)
       load(
         """apiVersion: v1
@@ -289,115 +290,96 @@ class FlowClusterSuite extends munit.FunSuite:
     Option(client).foreach(_.close())
     Option(k3s).foreach(_.stop())
 
-  // ── US3 ──────────────────────────────────────────────────────────────────────────────────
+  // ── A Pekko Streams streamlet on a cluster ───────────────────────────────────────────────
 
   test(
-    "S3.1-S3.3: managed topics created, the unmanaged one untouched, two-container pods, the pipeline Ready, records flowing"
+    "a Pekko Streams streamlet reads its inlet and writes its outlet: Ready, one container, cleaned"
   ) {
-    admin(
-      _.createTopics(java.util.List.of(new NewTopic("shop.cart-events.v1", 3, 1.toShort)))
-        .all()
-        .get()
-    )
-    // A managed topic that already exists with other partitions is kept and reported.
-    admin(
-      _.createTopics(java.util.List.of(new NewTopic("cart.audit-review", 5, 1.toShort))).all().get()
-    )
     apply(spec())
-
     eventually(2.minutes, "the managed topics") {
-      assertEquals(partitionsOf("cart.valid-carts"), Some(6))
-      assertEquals(partitionsOf("cart.review-carts"), Some(3), "sized by the default cluster")
+      assertEquals(partitionsOf(Events), Some(3))
+      assertEquals(partitionsOf(Clean), Some(3))
     }
-    assertEquals(partitionsOf("shop.cart-events.v1"), Some(3), "the unmanaged topic is as it was")
-    assertEquals(
-      partitionsOf("cart.audit-review"),
-      Some(5),
-      "an existing managed topic is left as it is"
-    )
-    eventually(1.minute, "the TopicDiffers event")(
-      assert(events("TopicDiffers").exists(_.contains("cart.audit-review")))
-    )
-
     eventually(6.minutes, s"the pipeline to be Ready (status: $status)")(
       assertEquals(status.map(_.phase), Some(AnkkaFlowStatus.Ready))
     )
     val pod = client.pods
       .inNamespace(Namespace)
-      .withLabel(Labels.StreamletKey, "router")
+      .withLabel(Labels.StreamletKey, "cleaner")
       .list()
       .getItems
       .asScala
       .head
+    assertEquals(pod.getSpec.getContainers.asScala.map(_.getName).toList, List("streamlet"))
     assertEquals(
-      pod.getSpec.getContainers.asScala.map(_.getName).toList,
-      List("sidecar", "process")
+      client.secrets
+        .inNamespace(Namespace)
+        .withName("flow-cart-cleaner")
+        .get()
+        .getData
+        .keySet
+        .asScala
+        .toSet,
+      Set("streamlet.properties")
     )
-    val process = pod.getSpec.getContainers.asScala.find(_.getName == "process").get
-    assert(
-      process.getPorts.isEmpty && process.getReadinessProbe == null && process.getVolumeMounts.isEmpty
-    )
-    assert(events("TopicCreated").nonEmpty)
 
-    produce(
-      "shop.cart-events.v1",
-      (0 until 50).map(i => s"cart-${i % 10}" -> s"""{"id":$i,"total":${(i * 37) % 200}}""")
-    )
-    val routed = consume(Seq("cart.valid-carts", "cart.review-carts"), 50)
-    val ids = routed
-      .map(r => """"id":(\d+)""".r.findFirstMatchIn(new String(r.value)).get.group(1).toInt)
-      .toSet
-    assertEquals(ids, (0 until 50).toSet)
-    routed.foreach { r =>
-      val total = """"total":(\d+)""".r.findFirstMatchIn(new String(r.value)).get.group(1).toInt
-      assertEquals(r.topic, if total > 100 then "cart.review-carts" else "cart.valid-carts")
+    produce(Events, inputs)
+    val cleaned = consume(Seq(Clean), kept(150).size)
+    assertEquals(seqs(cleaned).toSet, kept(150))
+    cleaned.foreach { r =>
+      val cart = """"cartId":"([^"]+)"""".r.findFirstMatchIn(new String(r.value)).get.group(1)
+      assertEquals(new String(r.key), cart, "keyed by its cart")
     }
   }
 
-  test("S3.5: three replicas share one consumer group") {
-    apply(spec(routerReplicas = 3))
-    eventually(5.minutes, "three ready router pods")(assertEquals(readyPods("router"), 3))
-    eventually(2.minutes, "three members in cart.router.in") {
+  test("three replicas share one consumer group") {
+    apply(spec(replicas = 3))
+    eventually(5.minutes, "three ready cleaner pods")(assertEquals(readyPods("cleaner"), 3))
+    eventually(2.minutes, s"three members in $Group") {
       val group = admin(
-        _.describeConsumerGroups(java.util.List.of("cart.router.in"))
-          .all()
-          .get()
-          .get("cart.router.in")
+        _.describeConsumerGroups(java.util.List.of(Group)).all().get().get(Group)
       )
       assertEquals(group.members.size, 3)
     }
   }
 
-  test("S3.7: a changed parameter rolls only that streamlet") {
-    def generation(name: String) = client.apps.deployments
+  test("a changed parameter rolls that streamlet") {
+    def generation = client.apps.deployments
       .inNamespace(Namespace)
-      .withName(s"flow-cart-$name")
+      .withName("flow-cart-cleaner")
       .get()
       .getMetadata
       .getGeneration
       .longValue
-    val routerBefore = generation("router")
-    val auditBefore  = generation("audit")
-    apply(spec(routerThreshold = 250, routerReplicas = 3))
-    eventually(2.minutes, "the router's Deployment to change")(
-      assert(generation("router") > routerBefore)
-    )
+    val before = generation
+    apply(spec(maxTotal = 250, replicas = 3))
+    eventually(2.minutes, "the cleaner's Deployment to change")(assert(generation > before))
     eventually(1.minute, "the StreamletRolled event")(
-      assert(events("StreamletRolled").exists(_.contains("'router'")))
+      assert(events("StreamletRolled").exists(_.contains("'cleaner'")))
     )
     eventually(6.minutes, "the pipeline to be Ready again")(
       assertEquals(status.map(_.phase), Some(AnkkaFlowStatus.Ready))
     )
-    assertEquals(generation("audit"), auditBefore, "the audit streamlet was not touched")
+    val props = new String(
+      java.util.Base64.getDecoder.decode(
+        client.secrets
+          .inNamespace(Namespace)
+          .withName("flow-cart-cleaner")
+          .get()
+          .getData
+          .get("streamlet.properties")
+      )
+    )
+    assert(props.contains("parameter.max-total=250\n"), props)
   }
 
-  // ── US4 ──────────────────────────────────────────────────────────────────────────────────
+  // ── Reset ────────────────────────────────────────────────────────────────────────────────
 
   private def requestReset(id: String): Unit =
     flows
       .withName("cart")
       .edit((f: AnkkaFlow) =>
-        ResetRequest.withRequest(f, ResetRequest.Request(id, List("router")))
+        ResetRequest.withRequest(f, ResetRequest.Request(id, List("cleaner")))
       ): Unit
 
   private def done: Option[String] = ResetRequest.done(flows.withName("cart").get())
@@ -413,48 +395,41 @@ class FlowClusterSuite extends munit.FunSuite:
         .sum
     )
 
-  test("S4.2: a reset requested while the router runs is refused and stays pending") {
+  test("a reset requested while the cleaner runs is refused and stays pending") {
     requestReset("r-1")
     eventually(1.minute, "the ResetRefused event")(
-      assert(events("ResetRefused").exists(n => n.contains("r-1") && n.contains("router")))
+      assert(events("ResetRefused").exists(n => n.contains("r-1") && n.contains("cleaner")))
     )
     assertNotEquals(done, Some("r-1"))
   }
 
-  test(
-    "S4.1: scaled to zero, the pending reset runs: one event per group, the done marker, offsets at the start"
-  ) {
-    assertEquals(committed("cart.router.in"), 50L)
-    apply(spec(routerThreshold = 250, routerReplicas = 0))
+  test("a Pekko Streams streamlet is reset to read its topics again from the start") {
+    // Stopped, it drains: every record it read is committed, the last of each partition too.
+    apply(spec(maxTotal = 250, replicas = 0))
     eventually(3.minutes, "the reset to be carried out")(assertEquals(done, Some("r-1")))
-    assert(
-      events("ResetOffsets").exists(_.startsWith("cart.router.in:")),
-      events("ResetOffsets").toString
-    )
-    assert(
-      !events("ResetOffsets").exists(_.startsWith("cart.audit.in:")),
-      "only the named streamlet"
-    )
-    assertEquals(committed("cart.router.in"), 0L)
+    assert(events("ResetOffsets").exists(_.startsWith(s"$Group:")), events("ResetOffsets").toString)
+    assertEquals(committed(Group), 0L)
+
+    apply(spec(maxTotal = 250, replicas = 1))
+    // Every event under the old maximum before the reset, and every one under the new after it.
+    // At least once: a record whose partition moved in a rebalance may be there more often.
+    eventually(4.minutes, "every event read again") {
+      val counts = seqs(consume(Seq(Clean), kept(150).size + kept(250).size, 20.seconds))
+        .groupBy(identity)
+        .view
+        .mapValues(_.size)
+        .toMap
+      assertEquals(counts.keySet, kept(250))
+      kept(250).foreach { n =>
+        val least = if kept(150).contains(n) then 2 else 1
+        assert(counts(n) >= least, s"seq $n is there ${counts(n)} times, fewer than $least")
+      }
+    }
   }
 
-  test("S4.1: scaled back up, every input is delivered again (SC-004)") {
-    apply(spec(routerThreshold = 250, routerReplicas = 1))
-    eventually(4.minutes, "the router to reread its input")(
-      assertEquals(committed("cart.router.in"), 50L)
-    )
-    val routed = consume(Seq("cart.valid-carts", "cart.review-carts"), 100)
-    val ids =
-      routed.map(r => """"id":(\d+)""".r.findFirstMatchIn(new String(r.value)).get.group(1).toInt)
-    assertEquals(
-      ids.groupBy(identity).values.map(_.size).min,
-      2,
-      "every event twice: once before the reset, once after"
-    )
-  }
-
-  test("S4.3: an operator restart does not repeat a reset") {
-    val before = events("ResetOffsets").size
+  test("an operator restart does not repeat a reset") {
+    val before   = events("ResetOffsets").size
+    val position = committed(Group)
     client.pods
       .inNamespace("ankka-flow")
       .withLabel("app.kubernetes.io/name", "ankka-flow-operator")
@@ -475,36 +450,47 @@ class FlowClusterSuite extends munit.FunSuite:
     Thread.sleep(15000)
     assertEquals(done, Some("r-1"))
     assertEquals(events("ResetOffsets").size, before)
-    assertEquals(committed("cart.router.in"), 50L)
+    assert(committed(Group) >= position, s"${committed(Group)} after $position")
   }
 
-  test("S4.4: the router's lag is exported under its client id") {
-    val pod = eventually(3.minutes, "a ready router pod") {
-      client.pods
-        .inNamespace(Namespace)
-        .withLabel(Labels.StreamletKey, "router")
-        .list()
-        .getItems
-        .asScala
-        .find(p =>
-          Option(p.getStatus.getConditions)
-            .exists(_.asScala.exists(c => c.getType == "Ready" && c.getStatus == "True"))
-        )
-        .get
-    }
-    val forward =
-      client.pods.inNamespace(Namespace).withName(pod.getMetadata.getName).portForward(2050)
-    try
-      val metrics = eventually(1.minute, "the metrics endpoint") {
-        val body =
-          scala.io.Source.fromURL(s"http://localhost:${forward.getLocalPort}/metrics").mkString
-        assert(body.contains("""client_id="cart.router.in""""), body.take(500))
-        body
-      }
-      assert(
-        metrics.contains("kafka_consumer_consumer_fetch_manager_metrics_records_lag{"),
-        "no lag series"
-      )
-      assert(metrics.contains("ankka_flow_sidecar_stalled_seconds"), "no sidecar stall series")
-    finally forward.close()
+  // ── Version one ──────────────────────────────────────────────────────────────────────────
+
+  test("a version one resource is refused, saying a descriptor must name an engine") {
+    load(
+      s"""apiVersion: ${AnkkaFlowDefinition.apiVersion}
+         |kind: AnkkaFlow
+         |metadata: { name: legacy, namespace: $Namespace }
+         |spec:
+         |  pipeline: legacy
+         |  version: "0.5.0"
+         |  streamlets:
+         |    - name: router
+         |      image: sample-cart-router:0.5.0
+         |      replicas: 1
+         |      inlets: { in: legacy-in }
+         |      descriptor:
+         |        name: cart-router
+         |        description: Routes cart events to the valid or review outlet.
+         |        inlets:
+         |          - name: in
+         |            contract: { format: json, schema_name: cart-events.v1 }
+         |        outlets: []
+         |        config_parameters: []
+         |  topics:
+         |    - { id: legacy-in, name: legacy.in }
+         |""".stripMargin
+    )
+    def legacy = Option(flows.withName("legacy").get()).flatMap(r => Option(r.getStatus))
+    eventually(2.minutes, s"the legacy pipeline to fail (status: $legacy)")(
+      assertEquals(legacy.map(_.phase), Some(AnkkaFlowStatus.Failed))
+    )
+    assert(
+      events("Refused").exists(
+        _.contains(com.thinkmorestupidless.ankka.flow.descriptor.DescriptorJson.NoEngine)
+      ),
+      events("Refused").toString
+    )
+    assert(
+      client.apps.deployments.inNamespace(Namespace).withName("flow-legacy-router").get() == null
+    )
   }
