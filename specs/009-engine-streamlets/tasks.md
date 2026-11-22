@@ -176,7 +176,7 @@ Every task ends green on what it names. A task that finds a contract must change
 
 - [ ] T065 `sbt test` whole, with the cluster suite and the Flink cases; then `sbt operator/test -Dflow.cluster.soak=on` for SC-003 (ten minutes of pod kills under load: the cleaner loses nothing; the counter between managed topics neither loses nor repeats). Record durations and results under `## Verified`.
 - [ ] T066 [P] SC-001 by hand in a scratch worktree: the cleaner rewritten as a Flink streamlet; `git diff --stat` touches only `samples/cart-pipeline/cleaner` (and its image line in `images.conf`); record the stat under `## Verified`; discard the worktree.
-- [ ] T067 Quickstart tier 3 by hand beside ankka's local platform, when a kind cluster with `broker-external` is to hand: record the outcome under `## Tier 3` in `research.md`. If none is available, say so there and leave the ankka scenarios proven by T046 and T047; do not block the pull request on it.
+- [X] T067 Quickstart tier 3 by hand beside ankka's local platform, when a kind cluster with `broker-external` is to hand: record the outcome under `## Tier 3` in `research.md`. If none is available, say so there and leave the ankka scenarios proven by T046 and T047; do not block the pull request on it.
 - [X] T068 [P] ankka-brain, in its own checkout and its own commit, not this branch: `repos/ankka-flow.md`, its row in `repos/README.md`, `family.md`'s role and pin lines (the docs tool at tag `v0.18.0`; Pekko 1.7.1; sbt 1.13.1), and decision 0013's consequences list checked off. Ask before committing there.
 
 ---

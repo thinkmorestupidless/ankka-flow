@@ -662,3 +662,13 @@ could not restore its state stayed `rolling out` while its `JobException` event 
 restart (twenty times in twelve minutes on k3s). The unit fixture had the bare shape and passed;
 it now has the operator's. The Flink operator keeps that event as one core event, its `count` and
 `lastTimestamp` moving on each restart; `eventTime` and `series` stay empty.
+
+## Tier 3
+
+Not run (2026-11-22, T067). No kind cluster with `broker-external` was to hand: the `ankka` kind
+cluster's API server refused connections and no cluster served a `broker-external` Service. The
+ankka scenarios stand on what the build proves without ankka's platform: `AnkkaClusterKafkaSuite`
+(T046) on a Kafka with the standard authorizer and SASL users standing in for machines, and the
+two cluster cases of T047 (the cleaner as a machine on an ACL-enabled Kafka in k3s, and a topic it
+holds no grant for reported by name and cleared once granted). Quickstart tier 3 is the first
+thing to run beside ankka's local platform.
