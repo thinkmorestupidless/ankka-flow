@@ -2,14 +2,16 @@ package com.thinkmorestupidless.ankka.flow.blueprint
 
 import java.util.concurrent.atomic.AtomicInteger
 
-import ankka.flow.v1.discovery.{
-  ConfigParameter,
-  ConfigType,
+import com.thinkmorestupidless.ankka.flow.descriptor.{
   Contract,
+  Descriptor,
+  Engine,
+  Parameter,
+  ParameterType,
   Port,
-  StreamletDescriptor as Proto
+  SdkInfo,
+  StreamletDescriptor as Declared
 }
-import com.thinkmorestupidless.ankka.flow.protocol.Fingerprint
 import com.typesafe.config.ConfigFactory
 
 /**
@@ -21,21 +23,33 @@ object Builders:
 
   private val counter = new AtomicInteger(0)
 
-  def json(schemaName: String): Contract =
-    Contract(Fingerprint.Format, schemaName, Fingerprint.fingerprint(schemaName))
+  /** A contract by name alone. */
+  def json(name: String): Contract = Contract(name, None)
+
+  /** A contract with a fingerprint: 64 hex digits made from `seed`. */
+  def fingerprinted(name: String, seed: Char): Contract =
+    Contract(name, Some("sha256:" + seed.toString * 64))
 
   def descriptor(
       name: String = s"streamlet-${counter.incrementAndGet()}",
       inlets: Seq[(String, Contract)] = Nil,
       outlets: Seq[(String, Contract)] = Nil,
-      parameters: Seq[ConfigParameter] = Nil
+      parameters: Seq[Parameter] = Nil,
+      engine: Engine = Engine.PekkoStreams
   ): StreamletDescriptor =
     StreamletDescriptor(
-      Proto(
-        name = name,
-        inlets = inlets.map((n, c) => Port(n, Some(c))),
-        outlets = outlets.map((n, c) => Port(n, Some(c))),
-        configParameters = parameters
+      Descriptor(
+        Descriptor.Version,
+        Some(SdkInfo("test", "0.0.0")),
+        Declared(
+          name,
+          "",
+          engine,
+          inlets.map((n, c) => Port(n, c)).toVector,
+          outlets.map((n, c) => Port(n, c)).toVector,
+          parameters.toVector,
+          None
+        )
       )
     )
 
@@ -50,8 +64,8 @@ object Builders:
       outlets = Seq("out" -> json(out))
     )
 
-  def param(key: String, t: ConfigType = ConfigType.STRING, default: String = "") =
-    ConfigParameter(key, "", t, default)
+  def param(key: String, t: ParameterType = ParameterType.String, default: String = "") =
+    Parameter(key, "", t, Option.when(default.nonEmpty)(default))
 
   /** A blueprint under construction: `define`, `use`, `connect`, then `problems` or `verified`. */
   final case class Draft(

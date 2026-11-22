@@ -110,7 +110,7 @@ class BlueprintSuite extends munit.FunSuite:
   }
 
   test(
-    "not fail verification with UnconnectedInlets for already reported IncompatibleSchema problems"
+    "not fail verification with UnconnectedInlets for already reported IncompatibleContract problems"
   ) {
     val i = ingress("foo.v1")
     val p = processor("foo.v1", "bar.v1")
@@ -134,7 +134,7 @@ class BlueprintSuite extends munit.FunSuite:
       case _                           => true
     }
     assertEquals(incompatible.size, 1)
-    val IncompatibleSchema(a, other, _, _) = incompatible.head: @unchecked
+    val IncompatibleContract(a, other, _, _) = incompatible.head: @unchecked
     assertEquals(Set(a.toString, other.toString), Set("ingress.out", "e2.in"))
   }
 

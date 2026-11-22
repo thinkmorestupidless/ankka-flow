@@ -1,7 +1,6 @@
 package com.thinkmorestupidless.ankka.flow.blueprint
 
-import ankka.flow.v1.discovery.ConfigType
-import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.descriptor.{Json, ParameterType}
 
 import Builders.*
 
@@ -11,7 +10,7 @@ class OverridesSuite extends munit.FunSuite:
     name = "cart-router",
     inlets = Seq("in" -> json("cart.v1")),
     outlets = Seq("valid" -> json("cart.v1")),
-    parameters = Seq(param("review-threshold", ConfigType.INTEGER, "100"), param("label"))
+    parameters = Seq(param("review-threshold", ParameterType.Integer, "100"), param("label"))
   )
 
   private val verified = Blueprint

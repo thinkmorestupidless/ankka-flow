@@ -16,6 +16,7 @@
 
 package com.thinkmorestupidless.ankka.flow.blueprint
 
+import com.thinkmorestupidless.ankka.flow.descriptor.Contract
 import com.typesafe.config.Config
 
 /** Carried from Cloudflow's `cloudflow.blueprint.VerifiedBlueprint` (core/cloudflow-blueprint). */
@@ -66,7 +67,7 @@ final case class VerifiedTopic(
 sealed trait VerifiedPort:
   def streamlet: VerifiedStreamlet
   def portName: String
-  def schemaDescriptor: SchemaDescriptor
+  def contract: Contract
   def portPath: VerifiedPortPath
   def isOutlet: Boolean
 
@@ -85,8 +86,8 @@ object VerifiedPort:
           .find(port => port.name == verifiedPortPath.portName)
           .map { portDescriptor =>
             if portDescriptor.isOutlet then
-              VerifiedOutlet(verifiedStreamlet, portDescriptor.name, portDescriptor.schema)
-            else VerifiedInlet(verifiedStreamlet, portDescriptor.name, portDescriptor.schema)
+              VerifiedOutlet(verifiedStreamlet, portDescriptor.name, portDescriptor.contract)
+            else VerifiedInlet(verifiedStreamlet, portDescriptor.name, portDescriptor.contract)
           }
           .toRight(
             PortPathNotFound(
@@ -107,7 +108,7 @@ object VerifiedPort:
 final case class VerifiedInlet(
     streamlet: VerifiedStreamlet,
     portName: String,
-    schemaDescriptor: SchemaDescriptor
+    contract: Contract
 ) extends VerifiedPort:
   def portPath = VerifiedPortPath(streamlet.name, portName)
   def isOutlet = false
@@ -115,7 +116,7 @@ final case class VerifiedInlet(
 final case class VerifiedOutlet(
     streamlet: VerifiedStreamlet,
     portName: String,
-    schemaDescriptor: SchemaDescriptor
+    contract: Contract
 ) extends VerifiedPort:
   def portPath = VerifiedPortPath(streamlet.name, portName)
   def isOutlet = true

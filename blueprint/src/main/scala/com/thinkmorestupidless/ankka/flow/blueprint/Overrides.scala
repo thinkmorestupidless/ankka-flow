@@ -3,7 +3,7 @@ package com.thinkmorestupidless.ankka.flow.blueprint
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorValidation, Json}
+import com.thinkmorestupidless.ankka.flow.descriptor.{DescriptorValidation, Json}
 import com.typesafe.config.{Config, ConfigFactory}
 
 /**
@@ -59,22 +59,22 @@ final case class Overrides(config: Config):
   def parameters(streamlet: VerifiedStreamlet): Either[Vector[String], Vector[(String, Json)]] =
     val supplied =
       streamlets.get(streamlet.name).filter(_.hasPath("config")).map(_.getConfig("config"))
-    val declared = streamlet.descriptor.proto.configParameters
+    val declared = streamlet.descriptor.descriptor.streamlet.parameters
     val unknown = supplied.toVector
       .flatMap(_.root.keySet.asScala.toVector.sorted)
       .filterNot(k => declared.exists(_.key == k))
       .map(k => s"streamlet '${streamlet.name}': parameter '$k' is not declared")
     val resolved = declared.map { p =>
       val value = supplied.filter(_.hasPath(p.key)).map(_.getValue(p.key).unwrapped.toString)
-      value.orElse(Option.when(p.defaultValue.nonEmpty)(p.defaultValue)) match
+      value.orElse(p.default) match
         case None =>
           Left(s"streamlet '${streamlet.name}': parameter '${p.key}' has no default and no value")
         case Some(v) =>
           DescriptorValidation
-            .parseValue(p.`type`, v)
+            .parseValue(p.kind, v)
             .left
             .map(_ =>
-              s"streamlet '${streamlet.name}': parameter '${p.key}' = $v is not a ${DescriptorValidation.typeName(p.`type`)}"
+              s"streamlet '${streamlet.name}': parameter '${p.key}' = $v is not a ${DescriptorValidation.typeName(p.kind)}"
             )
             .map(p.key -> _)
     }

@@ -357,7 +357,7 @@ lazy val cartCounter = project
 /** Blueprint verification, carried from cloudflow-blueprint. Pure: no Kafka, no cluster. */
 lazy val blueprint = project
   .in(file("blueprint"))
-  .dependsOn(protocol)
+  .dependsOn(descriptor)
   .settings(commonSettings)
   .settings(
     name           := "ankka-flow-blueprint",

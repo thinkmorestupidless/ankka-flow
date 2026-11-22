@@ -1,31 +1,23 @@
 package com.thinkmorestupidless.ankka.flow.blueprint
 
-import ankka.flow.v1.discovery.StreamletDescriptor as Proto
-import com.thinkmorestupidless.ankka.flow.protocol.Builtins
+import com.thinkmorestupidless.ankka.flow.descriptor.{Contract, Descriptor, Engine}
 
-/** A port's contract as verification sees it (research R4). */
-final case class SchemaDescriptor(name: String, fingerprint: String, format: String):
-  override def toString: String = s"$format $name"
+final case class PortDescriptor(name: String, contract: Contract, isOutlet: Boolean)
 
-final case class PortDescriptor(name: String, schema: SchemaDescriptor, isOutlet: Boolean)
+object PortDescriptor:
+
+  /** A contract as a message names it: its name, and its fingerprint when it states one. */
+  def show(c: Contract): String = c.fingerprint.fold(c.name)(f => s"${c.name} $f")
 
 /**
- * A streamlet descriptor as the carried verification reads it: the protocol's descriptor (written
- * by an SDK, or shipped by the platform when `builtin`) viewed through the shape Cloudflow's
- * verification was written against.
+ * A streamlet descriptor as the carried verification reads it: the descriptor an SDK wrote, viewed
+ * through the shape Cloudflow's verification was written against.
  */
-final case class StreamletDescriptor(proto: Proto, builtin: Boolean = false):
-  def name: String = proto.name
+final case class StreamletDescriptor(descriptor: Descriptor):
+  def name: String   = descriptor.streamlet.name
+  def engine: Engine = descriptor.streamlet.engine
 
-  /**
-   * What a blueprint writes to name this descriptor: `builtin/<name>` for a built-in, the bare name
-   * otherwise, so neither kind can shadow the other.
-   */
-  def ref: String = if builtin then Builtins.Prefix + name else name
-
-  val inlets: Vector[PortDescriptor]  = proto.inlets.toVector.map(port(_, isOutlet = false))
-  val outlets: Vector[PortDescriptor] = proto.outlets.toVector.map(port(_, isOutlet = true))
-
-  private def port(p: ankka.flow.v1.discovery.Port, isOutlet: Boolean) =
-    val c = p.getContract
-    PortDescriptor(p.name, SchemaDescriptor(c.schemaName, c.fingerprint, c.format), isOutlet)
+  val inlets: Vector[PortDescriptor] =
+    descriptor.streamlet.inlets.map(p => PortDescriptor(p.name, p.contract, isOutlet = false))
+  val outlets: Vector[PortDescriptor] =
+    descriptor.streamlet.outlets.map(p => PortDescriptor(p.name, p.contract, isOutlet = true))

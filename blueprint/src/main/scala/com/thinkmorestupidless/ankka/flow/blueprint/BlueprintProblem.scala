@@ -18,15 +18,16 @@ package com.thinkmorestupidless.ankka.flow.blueprint
 
 import scala.collection.immutable
 
+import com.thinkmorestupidless.ankka.flow.descriptor.Contract
+
 /**
  * Everything verification can find wrong, carried from Cloudflow's
  * `cloudflow.blueprint.BlueprintProblem`
  * (core/cloudflow-blueprint/src/main/scala/cloudflow/blueprint/BlueprintProblem.scala). Class
  * names, volume mounts and config-parameter validation are gone: a streamlet is named by its
- * descriptor, has no volumes, and its parameters are validated with the descriptor (protocol
- * `DescriptorValidation`). New: formats this version does not support, unmanaged topics with
- * producers or without brokers, streamlets without an image, and unconnected outlets reported as
- * notes, not refusals.
+ * descriptor, has no volumes, and its parameters are validated with the descriptor
+ * (`DescriptorValidation`). New: unmanaged topics with producers or without brokers, streamlets
+ * without an image, a removed setting, and unconnected outlets reported as notes, not refusals.
  */
 sealed trait BlueprintProblem
 
@@ -45,10 +46,10 @@ object BlueprintProblem:
         s"The streamlet descriptor list is empty."
       case EmptyStreamlets =>
         s"The application blueprint is empty."
-      case IncompatibleSchema(path, otherPath, schema, otherSchema) =>
-        s"'$path' ($schema) is not compatible with '$otherPath' ($otherSchema)."
-      case UnsupportedFormat(path, format) =>
-        s"'$path' uses format '$format', which this version does not support; the only contract format is json."
+      case IncompatibleContract(path, otherPath, contract, otherContract) =>
+        s"'$path' (contract ${PortDescriptor.show(contract)}) is not compatible with '$otherPath' (contract ${PortDescriptor.show(otherContract)})."
+      case BatchSettingRemoved(topic) =>
+        s"Topic '$topic' sets ${Blueprint.ConsumerConfigKey}.flow.batch, which is no longer a setting; remove it."
       case InvalidPortPath(path) =>
         s"'$path' is not a valid path to an outlet or an inlet."
       case InvalidTopicName(topicName) =>
@@ -77,11 +78,6 @@ object BlueprintProblem:
         s"Topic '$topic' is not managed and names no bootstrap.servers or cluster."
       case MissingImage(streamlet) =>
         s"Streamlet '$streamlet' has no image."
-      case UnknownBuiltin(streamletRef, descriptorName, known) =>
-        val list = if known.isEmpty then "none" else known.mkString(", ")
-        s"Streamlet '$streamletRef' names built-in descriptor '$descriptorName', which this version does not have; the built-ins are: $list."
-      case BuiltinHasImage(streamlet) =>
-        s"Streamlet '$streamlet' is built in and takes no image."
       case UnconnectedInlets(unconnectedInlets) =>
         val list = unconnectedInlets.map(ui => s"${ui.streamletRef}.${ui.port.name}").mkString(",")
         if unconnectedInlets.size > 1 then s"Inlets ($list) are not connected."
@@ -101,13 +97,15 @@ final case class BlueprintFormatError(reason: String) extends BlueprintProblem
 sealed trait PortProblem extends BlueprintProblem:
   def path: VerifiedPortPath
 
-final case class IncompatibleSchema(
+final case class IncompatibleContract(
     path: VerifiedPortPath,
     otherPath: VerifiedPortPath,
-    schema: SchemaDescriptor,
-    otherSchema: SchemaDescriptor
+    contract: Contract,
+    otherContract: Contract
 ) extends PortProblem
-final case class UnsupportedFormat(path: VerifiedPortPath, format: String) extends PortProblem
+
+/** A topic that sets `consumer-config.flow.batch`, which version one's sidecar read. */
+final case class BatchSettingRemoved(topic: String) extends BlueprintProblem
 
 final case class InvalidTopicName(topicName: String) extends BlueprintProblem
 
@@ -137,16 +135,6 @@ final case class UnmanagedTopicHasProducers(topic: String, paths: immutable.Inde
     extends BlueprintProblem
 final case class UnmanagedTopicWithoutBrokers(topic: String) extends BlueprintProblem
 final case class MissingImage(streamlet: String)             extends BlueprintProblem
-
-/** A `builtin/<name>` this version does not ship; `known` lists the built-ins that exist. */
-final case class UnknownBuiltin(
-    streamletRef: String,
-    descriptorName: String,
-    known: immutable.IndexedSeq[String]
-) extends BlueprintProblem
-
-/** An image given for a streamlet whose descriptor is built in: its pod has only the sidecar. */
-final case class BuiltinHasImage(streamlet: String) extends BlueprintProblem
 
 sealed trait UnconnectedPorts extends BlueprintProblem:
   def nonEmpty: Boolean
