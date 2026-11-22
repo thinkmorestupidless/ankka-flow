@@ -425,7 +425,8 @@ the protocol, either SDK or the merge sink.
 - **The Flink operator and the state store are the cluster's** (clarified). The Flink Kubernetes
   Operator is installed by whoever installs ankka-flow's operator, as a prerequisite; ankka-flow's operator
   renders Flink's resource for each Flink streamlet and reads its status, and does not install or
-  upgrade Flink's operator. The state store is durable storage named in the operator's settings.
+  upgrade Flink's operator. The state store is durable storage named in a Secret the
+  operator reads, beside the Secrets that name Kafka clusters.
 - **Kafka credentials reach the streamlet.** With no sidecar, a streamlet's container mounts the
   broker credential. The plan says how that is bounded, in place of version one's rule that only
   the sidecar held it.

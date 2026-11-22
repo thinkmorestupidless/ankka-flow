@@ -473,3 +473,18 @@ with an ACL authorizer and two SASL users standing in for a machine with and wit
 - **V11** a Scala 3 LTS `pekkoSdk` compiles the `from(inlet)` shape of R7 with
   `FlowWithContext`; if the type gets in an author's way, the fallback is a function
   `Record[A] => Seq[Emit]` plus `async` for a call, decided in research before the sample.
+
+## Design finished
+
+2026-11-22: analyze reported nothing above LOW.
+
+Two rounds. The first found six things, all applied, none changing a decision or a scenario:
+four task cross-references pointing at the wrong task; the operator's refusal of an unknown
+engine missing from T016 (FR-002); the scenario "an outlet writes an ankka topic by its project
+and name" proven only by hand, now also in T047; SC-002's "every pairing of engines" covered for
+one engine only in T044; the spec calling the state store's Secret "the operator's settings".
+The second found one LOW item, left: the spec's Status line still says Draft.
+
+Coverage: 29 functional requirements and 6 success criteria, each with at least one task; 31
+added or changed scenarios, each named by a task; 68 tasks, each mapped to a requirement, a
+scenario or a verify-first item except T068 (the family brain, outside this repository).
