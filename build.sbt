@@ -174,7 +174,6 @@ lazy val sdk = project
     libraryDependencies ++= Seq(slf4jApi)
   )
 
-
 /**
  * The cart router in Scala (feature 005): the Python sample's streamlet, tests and blueprint,
  * served by the Scala SDK. A module of this build, so every commit proves it against the SDK's
@@ -209,9 +208,9 @@ lazy val cartRouterScala = project
   )
 
 /**
- * The descriptor of an engine streamlet (feature 009, research R2 and R3): its model, canonical JSON
- * and validation, the contract and its fingerprint, and `streamlet.properties`. What `protocol` held
- * for version one, without a protocol. Depends on nothing of ankka-flow's.
+ * The descriptor of an engine streamlet (feature 009, research R2 and R3): its model, canonical
+ * JSON and validation, the contract and its fingerprint, and `streamlet.properties`. What
+ * `protocol` held for version one, without a protocol. Depends on nothing of ankka-flow's.
  */
 lazy val descriptor = project
   .in(file("descriptor"))
@@ -239,8 +238,8 @@ lazy val pekkoSdk = project
   .settings(commonSettings)
   .settings(ltsSettings)
   .settings(
-    name := "ankka-flow-pekko-streams",
-    buildInfoKeys := Seq[BuildInfoKey](BuildInfoKey.action("version")(sdkVersion.value)),
+    name             := "ankka-flow-pekko-streams",
+    buildInfoKeys    := Seq[BuildInfoKey](BuildInfoKey.action("version")(sdkVersion.value)),
     buildInfoPackage := "com.thinkmorestupidless.ankka.flow.pekko",
     buildInfoObject  := "PekkoSdkBuildInfo",
     libraryDependencies ++= Seq(

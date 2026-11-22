@@ -46,8 +46,8 @@ object Dependencies {
 
     /**
      * Flink streamlets (feature 009, research R1): Flink 2.2, the newest line with a Kafka
-     * connector, on Java 17 by `--release`. The connector brings kafka-clients 4.2.0, on a classpath
-     * no Pekko Streams module shares.
+     * connector, on Java 17 by `--release`. The connector brings kafka-clients 4.2.0, on a
+     * classpath no Pekko Streams module shares.
      */
     val flink      = "2.2.1"
     val flinkKafka = "5.0.0-2.2"
@@ -63,7 +63,8 @@ object Dependencies {
 
     /**
      * The state store of the cluster suite and the local overlay. MinIO's own images are no longer
-     * published; Chainguard's build, pinned by digest (research V4), with its client for the bucket.
+     * published; Chainguard's build, pinned by digest (research V4), with its client for the
+     * bucket.
      */
     val minioImage =
       "cgr.dev/chainguard/minio@sha256:548147b5fc95a67e3e45285dff7e0e50326c3eb1977c6218039461771156c5e7"
@@ -132,13 +133,13 @@ object Dependencies {
 
   // Flink (feature 009). Provided: the image's distribution supplies them; the connector is not
   // in the distribution and goes into the image's usrlib beside the streamlet's jar.
-  val flinkStreaming      = "org.apache.flink" % "flink-streaming-java"  % V.flink
-  val flinkClients        = "org.apache.flink" % "flink-clients"         % V.flink
-  val flinkConnectorBase  = "org.apache.flink" % "flink-connector-base"  % V.flink
-  val flinkConnectorKafka = "org.apache.flink" % "flink-connector-kafka" % V.flinkKafka
-  val jacksonDatabind     = "com.fasterxml.jackson.core" % "jackson-databind" % V.jackson
-  val junitJupiter        = "org.junit.jupiter"          % "junit-jupiter"    % V.junit
-  val jupiterInterface    = "com.github.sbt.junit" % "jupiter-interface" % "0.20.0"
+  val flinkStreaming      = "org.apache.flink"           % "flink-streaming-java"  % V.flink
+  val flinkClients        = "org.apache.flink"           % "flink-clients"         % V.flink
+  val flinkConnectorBase  = "org.apache.flink"           % "flink-connector-base"  % V.flink
+  val flinkConnectorKafka = "org.apache.flink"           % "flink-connector-kafka" % V.flinkKafka
+  val jacksonDatabind     = "com.fasterxml.jackson.core" % "jackson-databind"      % V.jackson
+  val junitJupiter        = "org.junit.jupiter"          % "junit-jupiter"         % V.junit
+  val jupiterInterface    = "com.github.sbt.junit"       % "jupiter-interface"     % "0.20.0"
 
   val commonTest: Seq[ModuleID] = Seq(munit % Test, logback % Test)
 }
