@@ -571,3 +571,12 @@ scenario or a verify-first item except T068 (the family brain, outside this repo
   - **kind and Docker's containerd store**: `kind load docker-image` fails with `ctr: content digest
     … not found` for multi-platform images; `docker save --platform linux/<arch> <image> | kind load
     image-archive` loads them. `deploy-local.sh` loads that way.
+
+**V11** (2026-11-22): holds. `pekkoSdk` on Scala 3.3.8 compiles `from(inlet)(flow: Stage[A] =>
+Stage.Out)` with `Stage[A] = FlowWithContext[Record[A], Offset, Record[A], Offset, NotUsed]` and
+`Stage.Out = FlowWithContext[Nothing, Offset, Emit | Seq[Emit] | Option[Emit], Offset, Any]`:
+`FlowWithContext` is contravariant in its input and context and covariant in its output, so an
+author's `.map(r => out(…))`, `.mapConcat(…)` to `Seq[Emit]` or `.map(…)` to `Option[Emit]` is a
+`Stage.Out` without a type annotation, warning-free under `-Wunused:all`. The fallback is not
+needed. One thing for T020: an element `mapConcat` splits into several carries the same offset
+on each, so the runner must not commit that offset until the last of them is confirmed.

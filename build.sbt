@@ -242,6 +242,9 @@ lazy val pekkoSdk = project
     buildInfoKeys    := Seq[BuildInfoKey](BuildInfoKey.action("version")(sdkVersion.value)),
     buildInfoPackage := "com.thinkmorestupidless.ankka.flow.pekko",
     buildInfoObject  := "PekkoSdkBuildInfo",
+    // The cart-cleaner fixture states its inlet's schema; the suite reads it from the sample.
+    Test / unmanagedResourceDirectories +=
+      (ThisBuild / baseDirectory).value / "samples" / "cart-pipeline" / "schemas",
     libraryDependencies ++= Seq(
       pekkoActorTyped,
       pekkoStream,
@@ -249,6 +252,7 @@ lazy val pekkoSdk = project
       pekkoKafka,
       kafkaClients,
       jsoniterCore,
+      jacksonDatabind,
       slf4jApi,
       jsoniterMacros      % Test,
       pekkoStreamTestkit  % Test,
