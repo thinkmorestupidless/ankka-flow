@@ -73,7 +73,14 @@ lazy val forwardedTestSwitches = Seq(
   "flow.cli.agent",
   // Which languages' projects `flow init`'s template suite builds: `scala,python` (the default), a
   // comma list, or `off`.
-  "flow.template.tests"
+  "flow.template.tests",
+  // Feature 009: `off` skips the Flink cases of the cluster suite; `on` runs its kill cases for ten
+  // minutes under load (SC-003); the images the cluster suite runs for Flink and its state store.
+  "flow.flink.tests",
+  "flow.cluster.soak",
+  "flow.flink.image",
+  "flow.flink.operator.image",
+  "flow.minio.image"
 )
 
 lazy val commonSettings = Seq(
@@ -167,9 +174,6 @@ lazy val sdk = project
     libraryDependencies ++= Seq(slf4jApi)
   )
 
-lazy val descriptor = taskKey[Unit]("Writes the sample's flow/descriptor.json from its declaration")
-lazy val descriptorCheck =
-  taskKey[Unit]("Fails when the sample's committed flow/descriptor.json differs")
 
 /**
  * The cart router in Scala (feature 005): the Python sample's streamlet, tests and blueprint,
@@ -192,7 +196,7 @@ lazy val cartRouterScala = project
     // Forked, so the descriptor command's exit code is the task's and System.exit leaves sbt alone.
     run / fork := true,
     libraryDependencies += slf4jSimple,
-    descriptor := Def.taskDyn {
+    writeDescriptor := Def.taskDyn {
       val path = (baseDirectory.value / "flow" / "descriptor.json").getAbsolutePath
       (Compile / runMain)
         .toTask(s" com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter $path")
@@ -202,6 +206,153 @@ lazy val cartRouterScala = project
       (Compile / runMain)
         .toTask(s" com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter $path --check")
     }.value
+  )
+
+/**
+ * The descriptor of an engine streamlet (feature 009, research R2 and R3): its model, canonical JSON
+ * and validation, the contract and its fingerprint, and `streamlet.properties`. What `protocol` held
+ * for version one, without a protocol. Depends on nothing of ankka-flow's.
+ */
+lazy val descriptor = project
+  .in(file("descriptor"))
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(
+    name := "ankka-flow-descriptor",
+    libraryDependencies ++= Seq(typesafeConfig)
+  )
+
+/** The version an SDK writes into a descriptor: the release's at a tag, 0.0.0 otherwise. */
+lazy val sdkVersion = Def.setting {
+  val v = version.value
+  if (v.contains("+") || v.endsWith("SNAPSHOT")) "0.0.0" else v
+}
+
+/**
+ * The Pekko Streams SDK (feature 009, research R7): a streamlet with no state, at least once, the
+ * read, the write and the commit owned here so that commit after write holds.
+ */
+lazy val pekkoSdk = project
+  .in(file("sdks/pekko-streams"))
+  .dependsOn(descriptor)
+  .enablePlugins(BuildInfoPlugin)
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(
+    name := "ankka-flow-pekko-streams",
+    buildInfoKeys := Seq[BuildInfoKey](BuildInfoKey.action("version")(sdkVersion.value)),
+    buildInfoPackage := "com.thinkmorestupidless.ankka.flow.pekko",
+    buildInfoObject  := "PekkoSdkBuildInfo",
+    libraryDependencies ++= Seq(
+      pekkoActorTyped,
+      pekkoStream,
+      pekkoSlf4j,
+      pekkoKafka,
+      kafkaClients,
+      jsoniterCore,
+      slf4jApi,
+      jsoniterMacros      % Test,
+      pekkoStreamTestkit  % Test,
+      testcontainersKafka % Test
+    ),
+    dependencyOverrides += kafkaClients
+  )
+
+/**
+ * The Java modules (feature 009, research R2 and R8): Java 17 by `--release` so the image's JDK 17
+ * runs them, no Scala library on the classpath, every lint a failure. Tests are JUnit, run by
+ * sbt-jupiter-interface, forked with the same switches as the Scala suites.
+ */
+lazy val javaSettings = Seq(
+  crossPaths       := false,
+  autoScalaLibrary := false,
+  javacOptions     := Seq("--release", "17", "-encoding", "UTF-8", "-Xlint:all", "-Werror"),
+  Compile / doc / javacOptions := Seq("--release", "17", "-encoding", "UTF-8", "-Xdoclint:none"),
+  libraryDependencies ++= Seq(junitJupiter % Test, jupiterInterface % Test, logback % Test),
+  Test / fork              := true,
+  Test / parallelExecution := false,
+  Test / javaOptions ++= forwardedTestSwitches.flatMap(k => sys.props.get(k).map(v => s"-D$k=$v")),
+  Test / javaOptions += s"-Dflow.kafka.image=${V.kafkaImage}",
+  Test / javaOptions += s"-Dflow.repo.root=${(LocalRootProject / baseDirectory).value.getAbsolutePath}"
+)
+
+/** Flink's own modules a streamlet compiles against and the image provides. */
+lazy val flinkProvided = Seq(
+  flinkStreaming     % Provided,
+  flinkConnectorBase % Provided
+)
+
+/**
+ * The Flink SDK (feature 009, research R8), in Java: ports as Flink's own sources and sinks, and
+ * everything between them Flink's. Writes its descriptor itself, held to the same fixture bytes.
+ */
+lazy val flinkSdk = project
+  .in(file("sdks/flink"))
+  .settings(javaSettings)
+  .settings(
+    name := "ankka-flow-flink",
+    libraryDependencies ++= flinkProvided ++ Seq(flinkConnectorKafka, jacksonDatabind),
+    libraryDependencies ++= flinkProvided.map(_.withConfigurations(Some("test"))),
+    Compile / resourceGenerators += Def.task {
+      val f = (Compile / resourceManaged).value / "ankka-flow-flink.properties"
+      IO.write(f, s"version=${sdkVersion.value}\n")
+      Seq(f)
+    }.taskValue
+  )
+
+/** The Flink SDK's harness: a streamlet's job on a local environment, with no broker or cluster. */
+lazy val flinkTestkit = project
+  .in(file("sdks/flink-testkit"))
+  .dependsOn(flinkSdk)
+  .settings(javaSettings)
+  .settings(
+    name := "ankka-flow-flink-testkit",
+    libraryDependencies ++= Seq(flinkStreaming, flinkConnectorBase, flinkClients)
+  )
+
+// The key is `descriptor`, as the module is: `sbt cartCleaner/descriptor` and `sbt descriptor/test`.
+lazy val writeDescriptor =
+  TaskKey[Unit]("descriptor", "Writes a sample streamlet's descriptor from its declaration")
+lazy val descriptorCheck =
+  taskKey[Unit]("Fails when a sample streamlet's committed descriptor differs from its declaration")
+
+/** The sample pipeline's Pekko Streams streamlet (feature 009, research R19). */
+lazy val cartCleaner = project
+  .in(file("samples/cart-pipeline/cleaner"))
+  .dependsOn(pekkoSdk)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+  .settings(commonSettings)
+  .settings(ltsSettings)
+  .settings(dockerSettings)
+  .settings(noDocs)
+  .settings(
+    name                 := "cart-cleaner",
+    publish / skip       := true,
+    Docker / packageName := "sample-cart-cleaner",
+    Compile / mainClass  := Some("cart.cleaner.Main"),
+    run / fork           := true,
+    run / envVars ++= sys.env.get("FLOW_CONFIG_DIR").map("FLOW_CONFIG_DIR" -> _).toMap,
+    libraryDependencies ++= Seq(jsoniterMacros, logback)
+  )
+
+/** The sample pipeline's Flink streamlet, in Java (feature 009, research R19). */
+lazy val cartCounter = project
+  .in(file("samples/cart-pipeline/counter"))
+  .dependsOn(flinkSdk, flinkTestkit % Test)
+  .settings(javaSettings)
+  .settings(noDocs)
+  .settings(
+    name           := "cart-counter",
+    publish / skip := true,
+    libraryDependencies ++= flinkProvided,
+    // `sbt cartCounter/run` on a laptop: Flink's own modules are provided in an image, so the run
+    // puts them back.
+    Compile / run := Defaults
+      .runTask(Compile / fullClasspath, Compile / run / mainClass, Compile / run / runner)
+      .evaluated,
+    Compile / run / mainClass := Some("cart.counter.CartCounter"),
+    run / fork                := true,
+    run / envVars ++= sys.env.get("FLOW_CONFIG_DIR").map("FLOW_CONFIG_DIR" -> _).toMap
   )
 
 /** Blueprint verification, carried from cloudflow-blueprint. Pure: no Kafka, no cluster. */
@@ -487,7 +638,22 @@ lazy val clusterImages =
 
 lazy val root = project
   .in(file("."))
-  .aggregate(protocol, sdk, blueprint, crd, sidecar, operator, cli, cartRouterScala)
+  .aggregate(
+    protocol,
+    sdk,
+    blueprint,
+    crd,
+    sidecar,
+    operator,
+    cli,
+    cartRouterScala,
+    descriptor,
+    pekkoSdk,
+    flinkSdk,
+    flinkTestkit,
+    cartCleaner,
+    cartCounter
+  )
   .settings(
     name           := "ankka-flow",
     publish / skip := true,

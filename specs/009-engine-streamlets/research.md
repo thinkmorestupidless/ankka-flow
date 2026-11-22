@@ -488,3 +488,9 @@ The second found one LOW item, left: the spec's Status line still says Draft.
 Coverage: 29 functional requirements and 6 success criteria, each with at least one task; 31
 added or changed scenarios, each named by a task; 68 tasks, each mapped to a requirement, a
 scenario or a verify-first item except T068 (the family brain, outside this repository).
+
+## Verified
+
+- **V10** (T001): `sbt-jupiter-interface` 0.20.0, the current release, loads under sbt 1.13.1 and
+  runs JUnit Jupiter 6.1.3 (the version its `jupiter-interface` is built against, so `V.junit` is
+  that).
