@@ -517,6 +517,89 @@ class FlowClusterSuite extends munit.FunSuite:
     assert(committed(Group) >= position, s"${committed(Group)} after $position")
   }
 
+  // ── Ten minutes of killed pods under load (SC-003), with -Dflow.cluster.soak=on ──────────
+
+  private val soak      = sys.props.get("flow.cluster.soak").contains("on")
+  private val SoakFor   = 10.minutes
+  private val KillEvery = 1.minute
+
+  private def soakTest(name: String)(body: => Any)(using munit.Location): Unit =
+    test(if soak then new munit.TestOptions(name) else name.ignore)(body)
+
+  /**
+   * Sends `record(i)` for i = 0, 1, … from a thread for `SoakFor`, each confirmed by the broker,
+   * while one of `pods()` is deleted at random, without grace, every `KillEvery`. The indices the
+   * broker confirmed, and how many pods were killed.
+   */
+  private def underLoad(pods: () => Vector[io.fabric8.kubernetes.api.model.Pod])(
+      record: Int => ProducerRecord[Array[Byte], Array[Byte]]
+  ): (Vector[Int], Int) =
+    val sent           = new java.util.concurrent.ConcurrentLinkedQueue[Integer]()
+    @volatile var stop = false
+    val load = new Thread(() =>
+      val p = new Properties()
+      p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, external)
+      p.put(ProducerConfig.ACKS_CONFIG, "all")
+      val producer = new KafkaProducer(p, new ByteArraySerializer, new ByteArraySerializer)
+      try
+        var i = 0
+        while !stop do
+          producer.send(record(i)).get(): Unit
+          sent.add(i): Unit
+          i += 1
+          Thread.sleep(50)
+      finally producer.close()
+    )
+    load.start()
+    val random   = new scala.util.Random(7)
+    val deadline = SoakFor.fromNow
+    var kills    = 0
+    while deadline.hasTimeLeft() do
+      Thread.sleep(math.min(KillEvery.toMillis, deadline.timeLeft.toMillis.max(1)))
+      val live = pods()
+      if deadline.hasTimeLeft() && live.nonEmpty then
+        val pod = live(random.nextInt(live.size))
+        client.pods.inNamespace(Namespace).resource(pod).withGracePeriod(0).delete(): Unit
+        kills += 1
+    stop = true
+    load.join()
+    (sent.asScala.map(_.intValue).toVector, kills)
+
+  private def cleanerPods: Vector[io.fabric8.kubernetes.api.model.Pod] =
+    client.pods
+      .inNamespace(Namespace)
+      .withLabel(Labels.StreamletKey, "cleaner")
+      .withLabel(Labels.PipelineKey, "cart")
+      .list()
+      .getItems
+      .asScala
+      .toVector
+      .filter(p => Option(p.getMetadata.getDeletionTimestamp).isEmpty)
+
+  /** Seqs from here on are the soak's, apart from every earlier case's. */
+  private val SoakSeq = 1000000
+
+  soakTest("ten minutes of killed cleaner pods under load lose no record") {
+    apply(spec(maxTotal = 10000, replicas = 2))
+    eventually(5.minutes, "two ready cleaner pods")(assertEquals(readyPods("cleaner"), 2))
+    val (sent, kills) = underLoad(() => cleanerPods) { i =>
+      val cart = s"soak-${i % 20}"
+      new ProducerRecord(
+        Events,
+        cart.getBytes,
+        s"""{"cartId":"$cart","seq":${SoakSeq + i},"total":1,"at":$i}""".getBytes
+      )
+    }
+    val want = sent.map(SoakSeq + _).toSet
+    val seen = mutable.Set.empty[Int]
+    eventually(5.minutes, s"every soak record cleaned (${want.size - seen.size} missing)") {
+      seen ++= seqs(consume(Seq(Clean), Int.MaxValue, 20.seconds)).filter(_ >= SoakSeq)
+      val missing = want -- seen
+      assert(missing.isEmpty, s"${missing.size} lost, such as ${missing.toVector.sorted.take(10)}")
+    }
+    println(s"[soak] cleaner: ${want.size} records, $kills pods killed, none lost")
+  }
+
   // ── Version one ──────────────────────────────────────────────────────────────────────────
 
   test("a version one resource is refused, saying a descriptor must name an engine") {
@@ -975,6 +1058,45 @@ class FlowClusterSuite extends munit.FunSuite:
     }
   }
 
+  soakTest(
+    "ten minutes of killed counter pods under load: every window written once, with its count"
+  ) {
+    applyCounts(countsSpec(image = s"$counterImage-added"))
+    readyAt(s"$counterImage-added")
+    // Windows from 100 on, past every earlier case's watermark; two events a second of event time
+    // apart, across five carts.
+    val First            = 100
+    def at(i: Int): Long = window(First) + 500L * i
+    val (sent, kills) = underLoad(() => counterPods) { i =>
+      val (k, v) = cartEvent(s"soak-${i % 5}", i, at(i))
+      new ProducerRecord(CountsIn, k.getBytes, v.getBytes)
+    }
+    val expected = sent
+      .groupBy(i => (s"soak-${i % 5}", window(First) + (at(i) - window(First)) / 60000 * 60000))
+      .view
+      .mapValues(_.size.toLong)
+      .toMap
+    val last = expected.keys.map(_._2).max
+    tick(((last - base) / 60000).toInt + 2)
+    val soakCounts = eventually(8.minutes, s"a count for each of ${expected.size} windows") {
+      val found = committedCounts(expected.size, 30.seconds)
+        .filter((c, w, _) => c.startsWith("soak-") && w >= window(First))
+      val missing = expected.keySet -- found.map(c => (c._1, c._2)).toSet
+      assert(
+        missing.isEmpty,
+        s"${missing.size} windows not yet written, such as ${missing.take(5)}"
+      )
+      found
+    }
+    val twice = soakCounts.groupBy(c => (c._1, c._2)).filter(_._2.size > 1)
+    assert(twice.isEmpty, s"windows written more than once: ${twice.take(5)}")
+    val wrong = soakCounts.filter(c => expected.get((c._1, c._2)).exists(_ != c._3))
+    assert(wrong.isEmpty, s"counts that lost or repeated an event: ${wrong.take(5)}")
+    println(
+      s"[soak] counter: ${sent.size} events in ${expected.size} windows, $kills pods killed, each window once"
+    )
+  }
+
   // ── The whole sample pipeline: a Pekko Streams streamlet feeding a Flink one ──────────────
 
   private val repoRoot = java.nio.file.Path.of(sys.props("flow.repo.root"))
@@ -987,7 +1109,7 @@ class FlowClusterSuite extends munit.FunSuite:
     val kubeconfig = java.nio.file.Files.createTempFile("k3s", ".yaml")
     java.nio.file.Files.writeString(kubeconfig, k3s.getKubeConfigYaml)
     val out = new StringBuilder
-    val log = scala.sys.process.ProcessLogger(l => out.append(l).append('\n'))
+    val log = scala.sys.process.ProcessLogger(l => out.append(l).append('\n'): Unit)
     val code = scala.sys.process
       .Process(flowBin.toString +: args, sample.toFile, "KUBECONFIG" -> kubeconfig.toString)
       .!(log)
@@ -1092,9 +1214,14 @@ class FlowClusterSuite extends munit.FunSuite:
 
     eventually(2.minutes, s"a lag for each inlet (status: $cartsStatus)") {
       assertEquals(
-        inletsOf("cleaner").map(i => (i.topic, i.group, i.lag)),
-        List((SampleIn, "carts.cleaner.in", Some(0L)))
+        inletsOf("cleaner").map(i => (i.topic, i.group)),
+        List((SampleIn, "carts.cleaner.in"))
       )
+      // Read to the end: a Pekko Streams streamlet holds the last record of a quiet partition
+      // uncommitted until the next arrives (research, "commits on the next offset"), so at most
+      // one per partition remains.
+      val cleanerLag = inletsOf("cleaner").flatMap(_.lag)
+      assert(cleanerLag.size == 1 && cleanerLag.forall(_ <= 3L), inletsOf("cleaner").toString)
       val counter = inletsOf("counter")
       assertEquals(
         counter.map(i => (i.topic, i.group)),

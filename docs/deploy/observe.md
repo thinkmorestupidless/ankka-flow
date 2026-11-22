@@ -67,12 +67,15 @@ kubectl -n shop get aflow carts -o jsonpath='{.status.streamlets}' | jq '.[] | {
 ```
 
 ```json
-{ "name": "cleaner", "inlets": [ { "name": "in", "topic": "shop.cart-events.v1", "group": "carts.cleaner.in", "lag": 0 } ] }
+{ "name": "cleaner", "inlets": [ { "name": "in", "topic": "shop.cart-events.v1", "group": "carts.cleaner.in", "lag": 3 } ] }
 { "name": "counter", "inlets": [ { "name": "in", "topic": "carts.clean-carts", "group": "carts.counter.in", "lag": 12 } ] }
 ```
 
 The operator asks each inlet's Kafka cluster every 30 seconds. `lag` is absent when the cluster could
-not be asked. A Flink streamlet commits its group on each checkpoint, so its lag trails by up to one
+not be asked. A Pekko Streams streamlet commits a record once the next record of its partition is
+confirmed, or when it stops, so on a partition gone quiet its last record stays uncommitted: a
+streamlet that has read everything shows a lag of up to one per partition, and reads those records
+again after a restart. A Flink streamlet commits its group on each checkpoint, so its lag trails by up to one
 checkpoint interval, and on a topic written in transactions a group that has read everything may show
 the few commit markers at the end. A lag that grows and does not fall is a streamlet that cannot keep
 up, or a record it fails on every time.
