@@ -18,7 +18,7 @@ package com.thinkmorestupidless.ankka.flow.blueprint
 
 import scala.collection.immutable
 
-import com.thinkmorestupidless.ankka.flow.descriptor.Contract
+import com.thinkmorestupidless.ankka.flow.descriptor.{Contract, Engine}
 
 /**
  * Everything verification can find wrong, carried from Cloudflow's
@@ -48,6 +48,8 @@ object BlueprintProblem:
         s"The application blueprint is empty."
       case IncompatibleContract(path, otherPath, contract, otherContract) =>
         s"'$path' (contract ${PortDescriptor.show(contract)}) is not compatible with '$otherPath' (contract ${PortDescriptor.show(otherContract)})."
+      case EngineSettingNotAllowed(streamlet, key, engine) =>
+        s"Streamlet '$streamlet' runs on ${engine.id}, which takes no '$key'; it is a setting of flink streamlets."
       case BatchSettingRemoved(topic) =>
         s"Topic '$topic' sets ${Blueprint.ConsumerConfigKey}.flow.batch, which is no longer a setting; remove it."
       case InvalidPortPath(path) =>
@@ -103,6 +105,10 @@ final case class IncompatibleContract(
     contract: Contract,
     otherContract: Contract
 ) extends PortProblem
+
+/** A deploy-time setting one engine takes, given to a streamlet of another. */
+final case class EngineSettingNotAllowed(streamlet: String, key: String, engine: Engine)
+    extends BlueprintProblem
 
 /** A topic that sets `consumer-config.flow.batch`, which version one's sidecar read. */
 final case class BatchSettingRemoved(topic: String) extends BlueprintProblem

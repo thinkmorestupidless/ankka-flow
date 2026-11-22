@@ -22,7 +22,7 @@ import Builders.*
  * Carried from Cloudflow's BlueprintSpec
  * (core/cloudflow-blueprint/src/test/scala/cloudflow/blueprint/BlueprintSpec.scala) as munit: the
  * cases that verify a blueprint. The editing cases (update, remove, disconnect) tested tooling this
- * project does not have; the config-parameter cases are the protocol's descriptor validation now
+ * project does not have; the config-parameter cases are the descriptor's validation now
  * (DescriptorJsonSuite); volume mounts do not exist. An unconnected outlet is a note here, not a
  * problem (spec S2.2), so the expectations that listed UnconnectedOutlets as a problem now find it
  * among the notes.
