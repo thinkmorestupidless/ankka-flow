@@ -12,7 +12,9 @@ final case class Settings(
     retryMinBackoff: FiniteDuration,
     retryMaxBackoff: FiniteDuration,
     maxConcurrentReconciles: Int,
-    reportingInstance: String
+    reportingInstance: String,
+    /** The service account a `FlinkDeployment` runs as: one the Flink operator's chart made. */
+    flinkServiceAccount: String = "flink"
 ):
   def backoffFor(attempt: Int): FiniteDuration =
     val grown = retryMinBackoff * math.pow(2, (attempt - 1).min(20)).toLong
@@ -42,5 +44,6 @@ object Settings:
       retryMaxBackoff = seconds("FLOW_OPERATOR_RETRY_MAX_BACKOFF_SECONDS", 300),
       maxConcurrentReconciles =
         get("FLOW_OPERATOR_MAX_CONCURRENT_RECONCILES").flatMap(_.toIntOption).getOrElse(4),
-      reportingInstance = env.getOrElse("HOSTNAME", "ankka-flow-operator")
+      reportingInstance = env.getOrElse("HOSTNAME", "ankka-flow-operator"),
+      flinkServiceAccount = get("FLOW_FLINK_SERVICE_ACCOUNT").getOrElse("flink")
     )

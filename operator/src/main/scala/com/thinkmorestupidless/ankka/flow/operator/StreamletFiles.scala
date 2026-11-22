@@ -8,6 +8,7 @@ import com.thinkmorestupidless.ankka.flow.descriptor.{
   Delivery,
   Descriptor,
   DescriptorJson,
+  Engine,
   InletSettings,
   Json,
   OutletSettings,
@@ -33,11 +34,26 @@ object StreamletFiles:
   /** The key of the file in the streamlet's Secret. */
   val Key: String = FlowSettings.FileName
 
+  /** A Flink outlet's transaction timeout: the broker's default maximum (R13). */
+  val TransactionTimeoutMs = "900000"
+
+  /**
+   * `flow.<namespace>.<pipeline>.<streamlet>.<outlet>.e<epoch>`: unique to the job's state (R13).
+   */
+  def transactionalIdPrefix(
+      namespace: String,
+      pipeline: String,
+      streamlet: String,
+      outlet: String,
+      epoch: Int
+  ): String = s"flow.$namespace.$pipeline.$streamlet.$outlet.e$epoch"
+
   def render(
       pipeline: String,
       namespace: String,
       s: StreamletSpec,
-      topics: Map[String, ResolvedTopic]
+      topics: Map[String, ResolvedTopic],
+      epoch: Int = 1
   ): Either[String, StreamletFiles] =
     for
       streamlet <- Json
@@ -76,14 +92,28 @@ object StreamletFiles:
           )
         },
         outlets = outlets.map { (port, t) =>
-          OutletSettings(
-            port,
-            t.name,
-            Names.clientId(pipeline, s.name, port),
-            Delivery.AtLeastOnce,
-            None,
+          val kafka =
             t.connectionConfig ++ t.producerConfig ++ Map("bootstrap.servers" -> t.bootstrapServers)
-          )
+          // A Flink streamlet writes a managed topic in transactions; any other topic, at least
+          // once, as ankka renders no transactional id rule for a machine (R13).
+          if streamlet.engine == Engine.Flink && t.managed then
+            OutletSettings(
+              port,
+              t.name,
+              Names.clientId(pipeline, s.name, port),
+              Delivery.ExactlyOnce,
+              Some(transactionalIdPrefix(namespace, pipeline, s.name, port, epoch)),
+              kafka ++ Map("transaction.timeout.ms" -> TransactionTimeoutMs)
+            )
+          else
+            OutletSettings(
+              port,
+              t.name,
+              Names.clientId(pipeline, s.name, port),
+              Delivery.AtLeastOnce,
+              None,
+              kafka
+            )
         }
       )
       StreamletFiles(

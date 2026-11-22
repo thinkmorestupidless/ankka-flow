@@ -55,23 +55,11 @@ class RenderingSuite extends munit.FunSuite:
     )
   }
 
-  test("a Flink streamlet is refused until the operator runs that engine") {
-    val counter = StreamletSpec(
-      name = "counter",
-      image = "ghcr.io/example/cart-counter:0.6.0",
-      engine = "flink",
-      inlets = Map("in" -> "clean-carts"),
-      outlets = Map("out" -> "cart-counts"),
-      descriptor = descriptor("cart-counter")
-    )
-    val r = cart()
-    r.setSpec(r.getSpec.copy(streamlets = r.getSpec.streamlets :+ counter))
-    val rendered = render(r)
+  test("a Flink streamlet with no state store is refused, naming the Secret to create") {
+    val rendered = render(cartWithCounter())
     assertEquals(deployments(rendered), Vector.empty)
     assert(
-      events(rendered).exists(
-        _.note == "streamlet 'counter': engine flink is not yet run by this operator"
-      ),
+      events(rendered).exists(_.note == Rendering.stateStoreMissing(settings)),
       events(rendered)
     )
     assertEquals(status(rendered).phase, AnkkaFlowStatus.Failed)

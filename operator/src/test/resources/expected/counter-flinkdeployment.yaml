@@ -1,0 +1,78 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: ankka-flow
+    flow.ankka.thinkmorestupidless.com/pipeline: cart
+    flow.ankka.thinkmorestupidless.com/streamlet: counter
+    app.kubernetes.io/name: cart-counter
+  name: flow-cart-counter
+  namespace: shop
+  ownerReferences:
+  - apiVersion: flow.ankka.thinkmorestupidless.com/v1alpha1
+    kind: AnkkaFlow
+    blockOwnerDeletion: true
+    controller: true
+    name: cart
+    uid: uid-1
+spec:
+  image: ghcr.io/example/cart-counter:0.6.0
+  imagePullPolicy: IfNotPresent
+  flinkVersion: v2_2
+  serviceAccount: flink-jobs
+  flinkConfiguration:
+    execution.checkpointing.dir: s3://flow-state/dev/shop/cart/counter/1/checkpoints
+    execution.checkpointing.interval: 30s
+    execution.checkpointing.mode: EXACTLY_ONCE
+    execution.checkpointing.savepoint-dir: s3://flow-state/dev/shop/cart/counter/1/savepoints
+    high-availability.storageDir: s3://flow-state/dev/shop/cart/counter/1/ha
+    high-availability.type: kubernetes
+    restart-strategy.type: exponential-delay
+    s3.endpoint: http://minio.minio:9000
+    s3.path-style-access: "true"
+  jobManager:
+    replicas: 1
+    resource:
+      cpu: 1.0
+      memory: 1024m
+  taskManager:
+    resource:
+      cpu: 0.5
+      memory: 2048m
+  podTemplate:
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: ankka-flow
+        app.kubernetes.io/name: cart-counter
+        flow.ankka.thinkmorestupidless.com/pipeline: cart
+        flow.ankka.thinkmorestupidless.com/streamlet: counter
+      annotations:
+        flow.ankka.thinkmorestupidless.com/config-hash: 7c931c63f4e3c85ebfe6cd1255ab5da5648004f358fa3bfa8b621940168ab780
+    spec:
+      securityContext:
+        fsGroup: 9999
+      containers:
+      - name: flink-main-container
+        env:
+        - name: FLOW_CONFIG_DIR
+          value: /etc/flow/config
+        envFrom:
+        - secretRef:
+            name: flow-cart-flink-state
+        volumeMounts:
+        - name: config
+          mountPath: /etc/flow/config
+          readOnly: true
+      volumes:
+      - name: config
+        secret:
+          secretName: flow-cart-counter
+          defaultMode: 288
+  job:
+    jarURI: local:///opt/flink/usrlib/streamlet.jar
+    entryClass: cart.counter.CartCounter
+    parallelism: 2
+    upgradeMode: last-state
+    state: running

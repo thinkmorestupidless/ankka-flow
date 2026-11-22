@@ -32,7 +32,13 @@ object Rendering:
   val StateDir  = "/tmp/flow"
 
   /** The engines this operator runs. */
-  private val Runs = Set("pekko-streams")
+  private val Runs = Set("pekko-streams", "flink")
+
+  private def isFlink(s: StreamletSpec): Boolean = s.engine == "flink"
+
+  /** `StateStoreMissing`'s message (contracts/resource-and-operator.md). */
+  def stateStoreMissing(settings: Settings): String =
+    s"create the Secret ${StateStore.SecretName} in namespace ${settings.clustersNamespace} with a dir key"
 
   final case class Rendered(
       actions: Vector[Action],
@@ -42,7 +48,7 @@ object Rendering:
 
   def render(
       resource: AnkkaFlow,
-      @scala.annotation.unused settings: Settings,
+      settings: Settings,
       observed: Observed,
       now: String
   ): Rendered =
@@ -65,7 +71,12 @@ object Rendering:
     val refusals: Vector[String] =
       topicsResolved.toVector.collect { case (_, Left(e)) => e } ++
         spec.topics.flatMap(t => t.cluster.flatMap(observed.clusterProblems.get)).distinct ++
-        spec.streamlets.flatMap(s => descriptorProblems(s))
+        spec.streamlets.flatMap(s => descriptorProblems(s)) ++
+        Option
+          .when(spec.streamlets.exists(isFlink) && observed.stateStore.isEmpty)(
+            stateStoreMissing(settings)
+          )
+          .toVector
     if refusals.nonEmpty then
       return Rendered(
         refusals.map(p => Action.RecordEvent("Refused", Events.Warning, p)) :+
@@ -164,7 +175,9 @@ object Rendering:
 
     // ── 4. Per streamlet: the Secret with its settings, and the Deployment ────────────────────
     val files = spec.streamlets
-      .map(s => s.name -> StreamletFiles.render(pipeline, namespace, s, byId))
+      .map(s =>
+        s.name -> StreamletFiles.render(pipeline, namespace, s, byId, observed.epoch(s.name))
+      )
       .toMap
     val fileProblems = files.values.collect { case Left(e) => e }.toVector
     if fileProblems.nonEmpty then
@@ -176,24 +189,58 @@ object Rendering:
         Map.empty
       )
     val hashes = files.collect { case (n, Right(f)) => n -> f.hash }
-    val streamletActions = spec.streamlets.toVector.flatMap { s =>
-      val f          = files(s.name).toOption.get
-      val secret     = secretFor(resource, s, f, owner)
-      val deployment = deploymentFor(resource, s, f.hash, owner)
-      val rolled = observed.deployments
-        .get(s.name)
-        .filter(d => d.configHash != f.hash || d.image != s.image)
-        .map { _ =>
-          Action.RecordEvent(
-            "StreamletRolled",
-            Events.Normal,
-            s"streamlet '${s.name}' rolls out: its image, descriptor or configuration changed"
-          )
-        }
-      Vector(Action.EnsureSecret(secret), Action.ApplyDeployment(deployment)) ++ rolled
+    def rolledEvent(s: StreamletSpec) = Action.RecordEvent(
+      "StreamletRolled",
+      Events.Normal,
+      s"streamlet '${s.name}' rolls out: its image, descriptor or configuration changed"
+    )
+    // The state store's env, once per pipeline that has a Flink streamlet (R11).
+    val flinkEnv = observed.stateStore
+      .filter(_ => spec.streamlets.exists(isFlink))
+      .map(store => Action.EnsureSecret(FlinkRendering.envSecret(resource, store, owner)))
+      .toVector
+    val streamletActions = flinkEnv ++ spec.streamlets.toVector.flatMap { s =>
+      val f      = files(s.name).toOption.get
+      val secret = secretFor(resource, s, f, owner)
+      if isFlink(s) then
+        val deployment = FlinkRendering.deploymentFor(
+          resource,
+          s,
+          f.hash,
+          settings,
+          observed.stateStore.get,
+          observed.epoch(s.name),
+          FlinkRendering.tokenEndpoints(s, byId),
+          owner
+        )
+        val rolled = observed.flinkDeployments
+          .get(s.name)
+          .filter(d => d.configHash != f.hash || d.image != s.image)
+          .map(_ => rolledEvent(s))
+        Vector(Action.EnsureSecret(secret), Action.ApplyFlinkDeployment(deployment)) ++ rolled
+      else
+        val deployment = deploymentFor(resource, s, f.hash, owner)
+        val rolled = observed.deployments
+          .get(s.name)
+          .filter(d => d.configHash != f.hash || d.image != s.image)
+          .map(_ => rolledEvent(s))
+        Vector(Action.EnsureSecret(secret), Action.ApplyDeployment(deployment)) ++ rolled
     }
-    val removed =
-      (observed.labelledStreamlets -- spec.streamlets.map(_.name)).toVector.sorted.flatMap { name =>
+    val inSpec = spec.streamlets.map(_.name).toSet
+    val removedFlink =
+      (observed.flinkDeployments.keySet -- inSpec).toVector.sorted.flatMap { name =>
+        Vector(
+          Action.DeleteFlinkDeployment(namespace, Names.deployment(pipeline, name)),
+          Action.DeleteSecret(namespace, Names.secret(pipeline, name)),
+          Action.RecordEvent(
+            "StreamletRemoved",
+            Events.Normal,
+            s"streamlet '$name' is no longer in the pipeline"
+          )
+        )
+      }
+    val removed = removedFlink ++
+      (observed.labelledStreamlets -- inSpec).toVector.sorted.flatMap { name =>
         Vector(
           Action.DeleteDeployment(namespace, Names.deployment(pipeline, name)),
           Action.DeleteSecret(namespace, Names.secret(pipeline, name)),

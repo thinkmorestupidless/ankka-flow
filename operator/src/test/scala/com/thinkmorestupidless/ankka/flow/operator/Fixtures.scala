@@ -98,3 +98,51 @@ object Fixtures:
     resource.getMetadata.setUid("uid-1")
     resource.getMetadata.setGeneration(1L)
     resource
+
+  /** The state store the Flink suites observe: MinIO, as the local overlay installs it. */
+  val stateStore: StateStore = StateStore(
+    "s3://flow-state/dev",
+    Map("s3.endpoint"       -> "http://minio.minio:9000", "s3.path-style-access" -> "true"),
+    Map("AWS_ACCESS_KEY_ID" -> "minio", "AWS_SECRET_ACCESS_KEY"                  -> "minio-secret")
+  )
+
+  val flinkObserved: Observed = observed.copy(stateStore = Some(stateStore))
+
+  /** The cart pipeline with the counter on Flink reading the cleaner's managed output. */
+  def cartWithCounter(
+      counterImage: String = "ghcr.io/example/cart-counter:0.6.0",
+      counterReplicas: Int = 1,
+      countsManaged: Boolean = true
+  ): AnkkaFlow =
+    val counter = StreamletSpec(
+      name = "counter",
+      image = counterImage,
+      engine = "flink",
+      replicas = counterReplicas,
+      parallelism = Some(2),
+      flink = Some(
+        FlinkSpec(
+          entryClass = "cart.counter.CartCounter",
+          version = "2.2",
+          checkpointInterval = "30s",
+          jobManager = Resources("1", "1024m"),
+          taskManager = Resources("0.5", "2048m")
+        )
+      ),
+      config = Map("window" -> mapper.readTree("\"1m\"")),
+      inlets = Map("in" -> "clean-carts"),
+      outlets = Map("out" -> "cart-counts"),
+      descriptor = descriptor("cart-counter")
+    )
+    val r = cart(withSink = false)
+    r.setSpec(
+      r.getSpec.copy(
+        streamlets = r.getSpec.streamlets :+ counter,
+        topics = r.getSpec.topics.map(t =>
+          if t.id == "cart-counts" && !countsManaged then
+            t.copy(managed = false, name = "shop.cart-counts.v1", cluster = Some("shop"))
+          else t
+        )
+      )
+    )
+    r

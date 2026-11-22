@@ -1,7 +1,7 @@
 package com.thinkmorestupidless.ankka.flow.operator
 
 import com.thinkmorestupidless.ankka.flow.crd.AnkkaFlowStatus
-import io.fabric8.kubernetes.api.model.Secret
+import io.fabric8.kubernetes.api.model.{GenericKubernetesResource, Secret}
 import io.fabric8.kubernetes.api.model.apps.Deployment
 import io.fabric8.kubernetes.api.model.rbac.{Role, RoleBinding}
 import io.fabric8.kubernetes.api.model.ServiceAccount
@@ -16,6 +16,11 @@ enum Action:
   case EnsureRoleBinding(binding: RoleBinding)
   case ApplyDeployment(deployment: Deployment)
   case DeleteDeployment(namespace: String, name: String)
+  case ApplyFlinkDeployment(deployment: GenericKubernetesResource)
+  case DeleteFlinkDeployment(namespace: String, name: String)
+
+  /** Moves the streamlet's state epoch on by one in the resource's `state-epochs` annotation. */
+  case AdvanceStateEpoch(streamlet: String)
   case DeleteSecret(namespace: String, name: String)
   case ResetGroup(target: ResetTarget)
   case MarkResetDone(id: String)
@@ -33,6 +38,9 @@ enum Action:
     case EnsureRoleBinding(b)            => s"ensure role binding ${b.getMetadata.getName}"
     case ApplyDeployment(d)              => s"apply deployment ${d.getMetadata.getName}"
     case DeleteDeployment(_, n)          => s"delete deployment $n"
+    case ApplyFlinkDeployment(d)         => s"apply flink deployment ${d.getMetadata.getName}"
+    case DeleteFlinkDeployment(_, n)     => s"delete flink deployment $n"
+    case AdvanceStateEpoch(s)            => s"advance state epoch of $s"
     case DeleteSecret(_, n)              => s"delete secret $n"
     case ResetGroup(t)                   => s"reset group ${t.groupId}"
     case MarkResetDone(id)               => s"mark reset $id done"
