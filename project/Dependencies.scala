@@ -12,7 +12,7 @@ object Dependencies {
      */
     val scalaLts = "3.3.8"
 
-    val pekko      = "1.7.0"
+    val pekko      = "1.7.1"
     val pekkoKafka = "1.2.0"
 
     /** pekko-connectors-kafka 1.2.0's own line; pinned so every module agrees (research R8). */
