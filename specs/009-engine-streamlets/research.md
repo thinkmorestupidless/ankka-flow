@@ -580,3 +580,15 @@ author's `.map(r => out(…))`, `.mapConcat(…)` to `Seq[Emit]` or `.map(…)` 
 `Stage.Out` without a type annotation, warning-free under `-Wunused:all`. The fallback is not
 needed. One thing for T020: an element `mapConcat` splits into several carries the same offset
 on each, so the runner must not commit that offset until the last of them is confirmed.
+
+## Found during implementation
+
+**The Pekko Streams runner commits on the next offset** (2026-11-22, asked at T019). A stage's
+`mapConcat` can make several elements of one record, each carrying its offset; committing each
+offset on its first element written (`CommitWhen.OffsetFirstObserved`) would lose the rest on a
+crash between them. The runner commits with `CommitWhen.NextOffsetObserved`: an offset once the
+partition's next offset is seen, and the last one when the stream stops. The promise of C:sdks
+holds as written. The cost, accepted: on a partition gone quiet its last record stays uncommitted
+(lag 1 in the status) and is read again after a restart, which at least once allows. Rejected: a
+stream per record (the author's `mapAsync` loses its concurrency across records), and committing
+on the first write (breaks the `mapConcat` promise, a contract change).

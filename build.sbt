@@ -256,7 +256,8 @@ lazy val pekkoSdk = project
       slf4jApi,
       jsoniterMacros      % Test,
       pekkoStreamTestkit  % Test,
-      testcontainersKafka % Test
+      testcontainersKafka % Test,
+      logback             % Test
     ),
     dependencyOverrides += kafkaClients
   )
@@ -704,13 +705,13 @@ lazy val mutationCheck = Command.command("mutationCheck") { state =>
   val mutated = Project
     .extract(state)
     .appendWithSession(
-      Seq(sidecar / Test / javaOptions += "-Dflow.mutation=commit-first"),
+      Seq(pekkoSdk / Test / javaOptions += "-Dflow.mutation=commit-first"),
       state
     )
   val outcome = scala.util.Try(
     Project
       .extract(mutated)
-      .runInputTask(sidecar / Test / testOnly, " *SinkCommittingAfterKafkaSuite", mutated)
+      .runInputTask(pekkoSdk / Test / testOnly, " *SinkCommittingAfterKafkaSuite", mutated)
   )
   if (outcome.isSuccess)
     throw new MessageOnlyException(
