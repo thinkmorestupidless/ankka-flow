@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path}
 
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion
+import com.thinkmorestupidless.ankka.flow.descriptor.Descriptor
 
 /**
  * `flow`: verify a blueprint, generate the resource the operator runs, request a reset. Exit codes:
@@ -92,7 +92,7 @@ object Main:
   )
 
   private val version =
-    Opts.subcommand("version", "Print the CLI and protocol versions.")(Opts(Cmd.VersionCmd))
+    Opts.subcommand("version", "Print the CLI and descriptor versions.")(Opts(Cmd.VersionCmd))
 
   private val init = Opts.subcommand("init", "Write a new streamlet project, in Scala or Python.")(
     (
@@ -171,7 +171,7 @@ object Main:
       case Right(cmd) =>
         cmd match
           case Cmd.VersionCmd =>
-            out.println(s"flow ${BuildInfo.version}, protocol ${ProtocolVersion.Current}")
+            out.println(s"flow ${BuildInfo.version}, descriptor ${Descriptor.Version}")
             0
           case Cmd.VerifyCmd(in) =>
             Verify.run(in) match

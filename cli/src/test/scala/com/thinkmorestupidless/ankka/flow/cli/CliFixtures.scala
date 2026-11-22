@@ -5,7 +5,10 @@ import java.nio.file.{Files, Path, Paths}
 
 import scala.jdk.CollectionConverters.*
 
-/** The cart pipeline under test resources, and a way to run `flow` against a variant of it. */
+/**
+ * The cart pipeline under test resources (a Pekko Streams cleaner and a Flink counter), and a way
+ * to run `flow` against a variant of it.
+ */
 object CliFixtures:
 
   val cart: Path =
@@ -14,26 +17,8 @@ object CliFixtures:
   val repoRoot: Path =
     Paths.get(sys.props.getOrElse("flow.repo.root", ".")).toAbsolutePath.normalize
 
-  /** A pipeline with a built-in streamlet: a mapper in front of the Neo4j merge sink. */
-  val graph: Path =
-    Paths.get(getClass.getResource("/blueprints/graph/blueprint.conf").toURI).getParent
-
-  /** A copy of the graph pipeline in a temporary directory, with edits applied. */
-  def graphVariant(
-      blueprint: String => String = identity,
-      mapper: String => String = identity
-  ): Path =
-    val dir = Files.createTempDirectory("graph")
-    Files.createDirectories(dir.resolve("descriptors"))
-    Files.writeString(
-      dir.resolve("blueprint.conf"),
-      blueprint(Files.readString(graph.resolve("blueprint.conf")))
-    )
-    Files.writeString(
-      dir.resolve("descriptors/mapper.json"),
-      mapper(Files.readString(graph.resolve("descriptors/mapper.json")))
-    )
-    dir
+  /** Version one's cart router descriptor, kept to prove it is refused. */
+  val v1Router: Path = Paths.get(getClass.getResource("/v1-router.json").toURI)
 
   final case class Result(code: Int, out: String, err: String):
     def lines: Vector[String] = err.linesIterator.toVector.filter(_.nonEmpty)

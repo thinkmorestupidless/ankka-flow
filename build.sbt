@@ -566,7 +566,7 @@ lazy val initTemplates = Def.task {
 /** `flow`: verify, generate, reset, version. */
 lazy val cli = project
   .in(file("cli"))
-  .dependsOn(blueprint, crd, protocol)
+  .dependsOn(blueprint, crd, descriptor, protocol)
   .enablePlugins(JavaAppPackaging, BuildInfoPlugin, GraalVMNativeImagePlugin)
   .settings(commonSettings)
   .settings(cliBuildInfo)

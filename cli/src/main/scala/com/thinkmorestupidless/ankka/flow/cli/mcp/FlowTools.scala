@@ -3,7 +3,7 @@ package com.thinkmorestupidless.ankka.flow.cli.mcp
 import java.nio.file.Path
 
 import com.thinkmorestupidless.ankka.flow.cli.{BuildInfo, Generate, Verify}
-import com.thinkmorestupidless.ankka.flow.protocol.{Json, ProtocolVersion}
+import com.thinkmorestupidless.ankka.flow.descriptor.{Descriptor, Json}
 
 import JsonText.*
 
@@ -55,7 +55,7 @@ private[cli] final class FlowTools(
   private val blueprintArgs = Seq(
     "blueprint" -> string("Path of the blueprint (blueprint.conf)."),
     "descriptors" -> string(
-      "Directory of descriptor files (*.json); optional when every streamlet is built in."
+      "Directory of descriptor files (*.json), one per streamlet the blueprint uses."
     ),
     "conf" -> strings("Deploy-time configuration files (HOCON); later files win.")
   )
@@ -127,12 +127,12 @@ private[cli] final class FlowTools(
     },
     Tool(
       "flow_version",
-      "The CLI and protocol versions",
-      "What `flow version` prints: this CLI's version and the streamlet protocol version it writes.",
+      "The CLI and descriptor versions",
+      "What `flow version` prints: this CLI's version and the descriptor version it reads and writes.",
       schema(Nil),
       readOnly = true,
       idempotent = true
-    )(_ => ToolResult(s"flow ${BuildInfo.version}, protocol ${ProtocolVersion.Current}\n"))
+    )(_ => ToolResult(s"flow ${BuildInfo.version}, descriptor ${Descriptor.Version}\n"))
   )
 
   // ── The named cluster ───────────────────────────────────────────────────

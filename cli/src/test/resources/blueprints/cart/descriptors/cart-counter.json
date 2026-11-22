@@ -1,0 +1,40 @@
+{
+  "descriptor_version": "2.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "default_value": "1m",
+        "description": "The length of each counting window.",
+        "key": "window",
+        "type": "DURATION"
+      }
+    ],
+    "description": "Counts each cart's events in windows of the time they carry.",
+    "engine": "flink",
+    "flink": {
+      "entry_class": "cart.counter.CartCounter",
+      "version": "2.2"
+    },
+    "inlets": [
+      {
+        "contract": {
+          "name": "clean-carts.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "cart-counter",
+    "outlets": [
+      {
+        "contract": {
+          "name": "cart-counts.v1"
+        },
+        "name": "out"
+      }
+    ]
+  }
+}

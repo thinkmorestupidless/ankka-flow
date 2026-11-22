@@ -5,11 +5,7 @@ import java.nio.file.Path
 import scala.sys.process.{Process, ProcessLogger}
 import scala.util.Try
 
-import com.thinkmorestupidless.ankka.flow.blueprint.{
-  BlueprintProblem,
-  BuiltinHasImage,
-  MissingImage
-}
+import com.thinkmorestupidless.ankka.flow.blueprint.{BlueprintProblem, MissingImage}
 import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, OnDelete}
 
 /**
@@ -37,14 +33,10 @@ object Generate:
     val verified = Verify.run(g.in)
     val images   = Images.load(g.images, g.image)
     val missing = verified.toOption.toVector.flatMap { v =>
-      val known              = images.getOrElse(Map.empty)
-      val (builtin, process) = v.blueprint.streamlets.partition(_.descriptor.builtin)
-      process
+      val known = images.getOrElse(Map.empty)
+      v.blueprint.streamlets
         .filterNot(s => known.contains(s.name))
-        .map(s => BlueprintProblem.toMessage(MissingImage(s.name))) ++
-        builtin
-          .filter(s => known.contains(s.name))
-          .map(s => BlueprintProblem.toMessage(BuiltinHasImage(s.name)))
+        .map(s => BlueprintProblem.toMessage(MissingImage(s.name)))
     }
     val pipeline = g.pipeline
       .orElse(verified.toOption.flatMap(_.blueprint.name))

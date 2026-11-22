@@ -1,9 +1,15 @@
 package com.thinkmorestupidless.ankka.flow.cli
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.thinkmorestupidless.ankka.flow.blueprint.{DeltaTopics, TopicSettings, VerifiedTopic}
+import com.thinkmorestupidless.ankka.flow.blueprint.{
+  FlinkOverrides,
+  ResourceOverrides,
+  TopicSettings,
+  VerifiedStreamlet,
+  VerifiedTopic
+}
 import com.thinkmorestupidless.ankka.flow.crd.*
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json, ProtocolVersion}
+import com.thinkmorestupidless.ankka.flow.descriptor.{Descriptor, DescriptorJson, Json}
 
 /**
  * The only place a resource is built: a verified blueprint, the deploy-time overrides and the
@@ -33,13 +39,15 @@ object ResourceWriter:
     val streamlets = v.streamlets.toList.map { s =>
       StreamletSpec(
         name = s.name,
-        image = if s.descriptor.builtin then "" else images(s.name),
+        image = images(s.name),
+        engine = s.descriptor.engine.id,
         replicas = verified.replicas(s.name),
+        parallelism = verified.parallelism(s.name),
+        flink = flink(s, verified.flink(s.name)),
         config = verified.parameters(s.name).map((k, j) => k -> node(j)).toMap,
         inlets = portsOf(s.name, outlets = false),
         outlets = portsOf(s.name, outlets = true),
-        descriptor = node(DescriptorJson.streamletToJson(s.descriptor.proto)),
-        builtin = s.descriptor.builtin
+        descriptor = node(DescriptorJson.streamletToJson(s.descriptor.descriptor.streamlet))
       )
     }
     val topics = v.topics.toList.map(t => topic(t, verified, pipeline))
@@ -49,7 +57,7 @@ object ResourceWriter:
       AnkkaFlowSpec(
         pipeline = pipeline,
         version = version,
-        protocolVersion = ProtocolVersion.Current.toString,
+        descriptorVersion = Descriptor.Version,
         onDelete = onDelete,
         streamlets = streamlets,
         topics = topics
@@ -66,14 +74,24 @@ object ResourceWriter:
     resource.getMetadata.setLabels(labels)
     resource
 
+  /** A Flink streamlet's job: the descriptor's entry class and version, the deploy's settings. */
+  private def flink(s: VerifiedStreamlet, o: Option[FlinkOverrides]): Option[FlinkSpec] =
+    s.descriptor.descriptor.streamlet.flink.map { job =>
+      def resources(r: Option[ResourceOverrides]) =
+        val d = Resources()
+        Resources(r.flatMap(_.cpu).getOrElse(d.cpu), r.flatMap(_.memory).getOrElse(d.memory))
+      FlinkSpec(
+        entryClass = job.entryClass,
+        version = job.version,
+        checkpointInterval =
+          o.flatMap(_.checkpointInterval).getOrElse(FlinkSpec.DefaultCheckpointInterval),
+        jobManager = resources(o.map(_.jobManager)),
+        taskManager = resources(o.map(_.taskManager))
+      )
+    }
+
   private def topic(t: VerifiedTopic, verified: Verify.Verified, pipeline: String): TopicSpec =
     val s = TopicSettings.fromConfig(verified.overrides.topicConfig(t))
-    // A delta topic the pipeline owns is compacted unless the blueprint or --conf chose a policy:
-    // written here, so the resource says what runs and the operator adds nothing.
-    val topicConfig = DeltaTopics.decide(t, s.topicConfig) match
-      case Some(DeltaTopics.Decision.Compacted) =>
-        s.topicConfig + (DeltaTopics.CleanupPolicy -> DeltaTopics.Compact)
-      case _ => s.topicConfig
     TopicSpec(
       id = t.id,
       name = t.kafkaName(pipeline),
@@ -85,6 +103,5 @@ object ResourceWriter:
       connectionConfig = s.connectionConfig,
       producerConfig = s.producerConfig,
       consumerConfig = s.consumerConfig,
-      topicConfig = topicConfig,
-      batch = BatchSpec(s.batch.maxRecords, s.batch.maxBytes)
+      topicConfig = s.topicConfig
     )

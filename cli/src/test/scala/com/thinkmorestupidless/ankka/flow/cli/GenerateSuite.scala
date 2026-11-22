@@ -4,8 +4,8 @@ import java.nio.file.Files
 
 import scala.jdk.CollectionConverters.*
 
-import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, OnDelete}
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json}
+import com.thinkmorestupidless.ankka.flow.crd.{FlinkSpec, FlowSerialization, OnDelete, Resources}
+import com.thinkmorestupidless.ankka.flow.descriptor.{DescriptorJson, Json}
 
 import CliFixtures.*
 
@@ -22,187 +22,93 @@ class GenerateSuite extends munit.FunSuite:
         "--images",
         cart.resolve("images.conf").toString,
         "--version",
-        "0.3.1",
+        "0.6.0",
         "-n",
         "shop"
       ) ++ extra*
     )
 
-  test("the emitted resource carries every descriptor, image, binding and topic") {
+  private def embedded(node: com.fasterxml.jackson.databind.JsonNode) =
+    DescriptorJson.streamletFromJson(Json.parse(node.toString).toOption.get).toOption.get
+
+  private def fromFile(name: String) =
+    DescriptorJson.read(Files.readString(cart.resolve(s"descriptors/$name"))).toOption.get.streamlet
+
+  test("the emitted resource carries every descriptor, engine, image, binding and topic") {
     val r = generate("--conf", cart.resolve("overrides.conf").toString)
     assertEquals(r.code, 0, r.err)
     // Strings that look like numbers stay strings, or kubectl and the API server read numbers.
-    assert(r.out.contains("protocolVersion: \"1.0\""), r.out)
-    assert(r.out.contains("default_value: \"100\""), r.out)
+    assert(r.out.contains("descriptorVersion: \"2.0\""), r.out)
+    assert(r.out.contains("default_value: \"10000\""), r.out)
     val resource = FlowSerialization.fromYaml(r.out)
     assertEquals(resource.getKind, "AnkkaFlow")
     assertEquals(resource.getApiVersion, "flow.ankka.thinkmorestupidless.com/v1alpha1")
-    assertEquals(resource.getMetadata.getName, "cart")
+    assertEquals(resource.getMetadata.getName, "carts")
     assertEquals(resource.getMetadata.getNamespace, "shop")
     val spec = resource.getSpec
-    assertEquals((spec.pipeline, spec.version, spec.protocolVersion), ("cart", "0.3.1", "1.0"))
+    assertEquals((spec.pipeline, spec.version, spec.descriptorVersion), ("carts", "0.6.0", "2.0"))
 
-    val router = spec.streamlets.find(_.name == "router").get
-    assertEquals(router.image, "ghcr.io/example/cart-router:0.3.1")
-    assertEquals(router.replicas, 3)
-    assertEquals(router.inlets, Map("in" -> "cart-events"))
-    assertEquals(router.outlets, Map("valid" -> "valid-carts", "review" -> "review-carts"))
-    assertEquals(router.config("review-threshold").asInt, 250)
-    // the descriptor is embedded byte-equal to the file's streamlet object
-    val file = DescriptorJson
-      .read(Files.readString(cart.resolve("descriptors/cart-router.json")))
-      .toOption
-      .get
-    val embedded = DescriptorJson
-      .streamletFromJson(Json.parse(router.descriptor.toString).toOption.get)
-      .toOption
-      .get
-    assertEquals(embedded, file.getStreamlet)
-    assertEquals(spec.streamlets.find(_.name == "sink").get.replicas, 1)
+    val cleaner = spec.streamlets.find(_.name == "cleaner").get
+    assertEquals(cleaner.image, "ghcr.io/example/cart-cleaner:0.6.0")
+    assertEquals(cleaner.engine, "pekko-streams")
+    assertEquals(cleaner.replicas, 3)
+    assertEquals((cleaner.parallelism, cleaner.flink), (None, None))
+    assertEquals(cleaner.inlets, Map("in" -> "cart-events"))
+    assertEquals(cleaner.outlets, Map("out" -> "clean-carts"))
+    assertEquals(cleaner.config("max-total").asInt, 250)
+    // the descriptor is embedded equal to the file's streamlet object
+    assertEquals(embedded(cleaner.descriptor), fromFile("cart-cleaner.json"))
+
+    val counter = spec.streamlets.find(_.name == "counter").get
+    assertEquals(counter.image, "ghcr.io/example/cart-counter:0.6.0")
+    assertEquals(counter.engine, "flink")
+    assertEquals(counter.replicas, 1)
+    assertEquals(counter.parallelism, Some(2))
+    assertEquals(
+      counter.flink,
+      Some(
+        FlinkSpec(
+          entryClass = "cart.counter.CartCounter",
+          version = "2.2",
+          checkpointInterval = "30s",
+          jobManager = Resources("1", "1024m"),
+          taskManager = Resources("1", "2048m")
+        )
+      )
+    )
+    assertEquals(counter.config("window").asText, "1m")
+    assertEquals(embedded(counter.descriptor), fromFile("cart-counter.json"))
 
     val topics = spec.topics.map(t => t.id -> t).toMap
     assertEquals(topics("cart-events").name, "shop.cart-events.v1")
     assertEquals(topics("cart-events").managed, false)
     assertEquals(topics("cart-events").cluster, Some("shop"))
     assertEquals(topics("cart-events").consumerConfig, Map("auto.offset.reset" -> "earliest"))
-    assertEquals(topics("valid-carts").name, "cart.valid-carts")
-    assertEquals(topics("valid-carts").partitions, Some(12))
-    assertEquals(topics("valid-carts").topicConfig, Map("retention.ms" -> "86400000"))
-    assertEquals(topics("review-carts").name, "cart.review-carts")
-    assertEquals(topics("review-carts").partitions, None, "left for the cluster's default")
+    assertEquals(topics("clean-carts").name, "carts.clean-carts")
+    assertEquals(topics("clean-carts").partitions, Some(12))
+    assertEquals(topics("clean-carts").topicConfig, Map("retention.ms" -> "86400000"))
+    assertEquals(topics("cart-counts").name, "carts.cart-counts")
+    assertEquals(topics("cart-counts").partitions, None, "left for the cluster's default")
   }
 
-  private def generateGraph(extra: String*) =
-    flow(
-      Seq(
-        "generate",
-        graph.resolve("blueprint.conf").toString,
-        "--descriptors",
-        graph.resolve("descriptors").toString,
-        "--images",
-        graph.resolve("images.conf").toString,
-        "--conf",
-        graph.resolve("overrides.conf").toString,
-        "--version",
-        "0.1.0",
-        "-n",
-        "shop"
-      ) ++ extra*
-    )
-
-  test("a built-in streamlet needs no image and is recorded as built in") {
-    val r = generateGraph()
-    assertEquals(r.code, 0, r.err)
-    val spec   = FlowSerialization.fromYaml(r.out).getSpec
-    val sink   = spec.streamlets.find(_.name == "graph").get
-    val mapper = spec.streamlets.find(_.name == "mapper").get
-    assertEquals((sink.builtin, sink.image), (true, ""))
-    assertEquals((mapper.builtin, mapper.image), (false, "ghcr.io/example/checkout-graph:0.1.0"))
-    assertEquals(sink.config("secret").asText, "neo4j-shop")
-    assertEquals(sink.config("transaction-timeout").asText, "30s")
-    assertEquals(sink.inlets, Map("in" -> "graph-deltas"))
-    val fixture = DescriptorJson
-      .read(Files.readString(repoRoot.resolve("protocol/fixtures/builtin/neo4j-merge-sink.json")))
-      .toOption
-      .get
-    val embedded = DescriptorJson
-      .streamletFromJson(Json.parse(sink.descriptor.toString).toOption.get)
-      .toOption
-      .get
-    assertEquals(embedded, fixture.getStreamlet)
-    assert(!r.out.contains("sidecar"), r.out)
-  }
-
-  test("an image given for a built-in streamlet is refused") {
-    val r = generateGraph("--image", "graph=registry/neo4j-sink:1")
-    assertEquals(r.code, 1)
-    assert(r.err.contains("Streamlet 'graph' is built in and takes no image."), r.err)
-  }
-
-  // ── delta topics: compacted by default, written into the resource ────────────────────────
-
-  private def generateIn(dir: java.nio.file.Path, extra: String*) =
-    flow(
-      Seq(
-        "generate",
-        dir.resolve("blueprint.conf").toString,
-        "--descriptors",
-        dir.resolve("descriptors").toString,
-        "--images",
-        graph.resolve("images.conf").toString,
-        "--conf",
-        graph.resolve("overrides.conf").toString,
-        "--version",
-        "0.1.0",
-        "-n",
-        "shop"
-      ) ++ extra*
-    )
-
-  private def deltaTopic(r: Result) =
-    FlowSerialization.fromYaml(r.out).getSpec.topics.find(_.id == "graph-deltas").get
-
-  private def withPolicy(policy: String) =
-    graphVariant(blueprint =
-      _.replace("partitions = 3", s"partitions = 3\n      topic { cleanup.policy = $policy }")
-    )
-
-  test("a managed delta topic is generated compacted, with the note; no other topic changes") {
-    val r = generateGraph()
-    assertEquals(r.code, 0, r.err)
-    assertEquals(deltaTopic(r).topicConfig, Map("cleanup.policy" -> "compact"))
-    assert(r.out.contains("cleanup.policy: compact"), r.out)
-    assert(
-      r.err.contains(
-        "note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact)."
-      ),
-      r.err
-    )
-    val spec = FlowSerialization.fromYaml(r.out).getSpec
-    assertEquals(spec.topics.find(_.id == "cart-checkouts").get.topicConfig, Map.empty)
-  }
-
-  test("a blueprint's cleanup policy is kept in the resource, and --conf overrides it") {
-    val deleted = generateIn(withPolicy("delete"))
-    assertEquals(deleted.code, 0, deleted.err)
-    assertEquals(deltaTopic(deleted).topicConfig, Map("cleanup.policy" -> "delete"))
-    assert(deleted.err.contains("it will not hold the whole graph"), deleted.err)
-
-    val both = generateIn(withPolicy("\"compact,delete\""))
-    assertEquals(deltaTopic(both).topicConfig, Map("cleanup.policy" -> "compact,delete"))
-
-    val conf = Files.createTempFile("policy", ".conf")
-    Files.writeString(
-      conf,
-      "flow.topics.graph-deltas { topic { cleanup.policy = compact, retention.ms = 1000 } }"
-    )
-    val overridden = generateIn(withPolicy("delete"), "--conf", conf.toString)
-    assertEquals(overridden.code, 0, overridden.err)
-    assertEquals(
-      deltaTopic(overridden).topicConfig,
-      Map("cleanup.policy" -> "compact", "retention.ms" -> "1000")
-    )
-    // and a --conf policy over the default
-    Files.writeString(conf, "flow.topics.graph-deltas { topic { cleanup.policy = delete } }")
-    assertEquals(
-      deltaTopic(generateGraph("--conf", conf.toString)).topicConfig,
-      Map("cleanup.policy" -> "delete")
-    )
-  }
-
-  test("a pipeline with no delta port is generated exactly as before") {
+  test("a Flink streamlet with no deploy-time settings gets the job defaults") {
     val r = generate()
     assertEquals(r.code, 0, r.err)
-    assert(!r.out.contains("cleanup.policy"), r.out)
-    assertEquals(r.err, "")
-    val topics = FlowSerialization.fromYaml(r.out).getSpec.topics.map(t => t.id -> t.topicConfig)
+    val counter = FlowSerialization.fromYaml(r.out).getSpec.streamlets.find(_.name == "counter").get
+    assertEquals(counter.parallelism, None)
     assertEquals(
-      topics.toMap,
-      Map(
-        "cart-events"  -> Map.empty[String, String],
-        "valid-carts"  -> Map("retention.ms" -> "86400000"),
-        "review-carts" -> Map.empty[String, String]
-      )
+      counter.flink,
+      Some(FlinkSpec(entryClass = "cart.counter.CartCounter", version = "2.2"))
+    )
+    assertEquals(counter.flink.map(_.checkpointInterval), Some("10s"))
+  }
+
+  test("nothing in the resource is version one's: no protocol version, built-in or batch") {
+    val r = generate()
+    assertEquals(r.code, 0, r.err)
+    assertEquals(r.err, "")
+    Seq("protocolVersion", "builtin", "batch", "maxRecords").foreach(w =>
+      assert(!r.out.contains(w), s"$w in:\n${r.out}")
     )
   }
 
@@ -214,7 +120,7 @@ class GenerateSuite extends munit.FunSuite:
 
   test("a streamlet without an image is refused; --image supplies one") {
     val dir = variant()
-    Files.writeString(dir.resolve("images.conf"), "router = \"r:1\"")
+    Files.writeString(dir.resolve("images.conf"), "cleaner = \"c:1\"")
     val base = Seq(
       "generate",
       dir.resolve("blueprint.conf").toString,
@@ -225,19 +131,19 @@ class GenerateSuite extends munit.FunSuite:
     )
     val refused = flow(base*)
     assertEquals(refused.code, 1)
-    assert(refused.err.contains("Streamlet 'sink' has no image"), refused.err)
-    assertEquals(flow((base ++ Seq("--image", "sink=s:1"))*).code, 0)
+    assert(refused.err.contains("Streamlet 'counter' has no image"), refused.err)
+    assertEquals(flow((base ++ Seq("--image", "counter=k:1"))*).code, 0)
   }
 
   test("-o writes the file; the pipeline id comes from --pipeline, else blueprint.name") {
     val out = Files.createTempFile("cart", ".yaml")
-    val r   = generate("-o", out.toString, "--pipeline", "cart-eu")
+    val r   = generate("-o", out.toString, "--pipeline", "carts-eu")
     assertEquals(r.code, 0, r.err)
     val resource = FlowSerialization.fromYaml(Files.readString(out))
-    assertEquals(resource.getSpec.pipeline, "cart-eu")
+    assertEquals(resource.getSpec.pipeline, "carts-eu")
     assertEquals(
-      resource.getSpec.topics.find(_.id == "valid-carts").get.name,
-      "cart-eu.valid-carts"
+      resource.getSpec.topics.find(_.id == "clean-carts").get.name,
+      "carts-eu.clean-carts"
     )
     assert(
       resource.getMetadata.getLabels.asScala.contains("flow.ankka.thinkmorestupidless.com/pipeline")

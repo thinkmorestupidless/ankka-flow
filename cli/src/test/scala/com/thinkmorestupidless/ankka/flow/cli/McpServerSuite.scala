@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.thinkmorestupidless.ankka.flow.cli.mcp.*
 import com.thinkmorestupidless.ankka.flow.cli.mcp.JsonText.*
 import com.thinkmorestupidless.ankka.flow.crd.*
-import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.descriptor.Json
 import io.fabric8.kubernetes.api.model.{
   EventBuilder,
   ObjectMetaBuilder,
@@ -88,22 +88,21 @@ class McpServerSuite extends munit.FunSuite:
         pipeline = name,
         streamlets = List(
           StreamletSpec(
-            "router",
-            "ghcr.io/x/router:1",
-            routerReplicas,
-            Map.empty,
-            Map("in"  -> "t0"),
-            Map("out" -> "t1"),
-            node
+            name = "router",
+            image = "ghcr.io/x/router:1",
+            engine = "pekko-streams",
+            replicas = routerReplicas,
+            inlets = Map("in" -> "t0"),
+            outlets = Map("out" -> "t1"),
+            descriptor = node
           ),
           StreamletSpec(
-            "sink",
-            "ghcr.io/x/sink:1",
-            0,
-            Map.empty,
-            Map("in" -> "t1"),
-            Map.empty,
-            node
+            name = "sink",
+            image = "ghcr.io/x/sink:1",
+            engine = "pekko-streams",
+            replicas = 0,
+            inlets = Map("in" -> "t1"),
+            descriptor = node
           )
         )
       )
@@ -113,8 +112,8 @@ class McpServerSuite extends munit.FunSuite:
         phase = phase,
         detail = if phase == "Ready" then "" else "topic 't0' does not exist",
         streamlets = List(
-          StreamletStatus("router", routerReplicas, routerReplicas),
-          StreamletStatus("sink", 0, 0)
+          StreamletStatus("router", "pekko-streams", routerReplicas, routerReplicas),
+          StreamletStatus("sink", "pekko-streams", 0, 0)
         ),
         topics = List(TopicStatus("t0", phase == "Ready"))
       )
@@ -271,7 +270,7 @@ class McpServerSuite extends munit.FunSuite:
     )
     assert(!isError(result))
     assertEquals(text(result), expected.out + expected.err)
-    val broken = CliFixtures.variant(blueprint = _.replace("router.in", "router.nope"))
+    val broken = CliFixtures.variant(blueprint = _.replace("cleaner.in", "cleaner.nope"))
     val refused = call(
       server(None),
       "verify_blueprint",
@@ -457,7 +456,7 @@ class McpServerSuite extends munit.FunSuite:
   ) {
     val srv = server(Some(named))
     val imagesText = Json
-      .Obj(Vector("router" -> str("ghcr.io/x/router:9"), "sink" -> str("ghcr.io/x/sink:9")))
+      .Obj(Vector("cleaner" -> str("ghcr.io/x/cleaner:9"), "counter" -> str("ghcr.io/x/counter:9")))
       .render
     val r = call(
       srv,
@@ -467,9 +466,9 @@ class McpServerSuite extends munit.FunSuite:
         )}","version":"t","images":$imagesText}"""
     )
     assert(!isError(r), text(r))
-    val applied = client.resources(classOf[AnkkaFlow]).inNamespace("shop").withName("cart").get()
+    val applied = client.resources(classOf[AnkkaFlow]).inNamespace("shop").withName("carts").get()
     assert(
-      applied != null && applied.getSpec.streamlets.exists(_.image == "ghcr.io/x/router:9"),
+      applied != null && applied.getSpec.streamlets.exists(_.image == "ghcr.io/x/cleaner:9"),
       text(r)
     )
     val again = call(
@@ -484,13 +483,13 @@ class McpServerSuite extends munit.FunSuite:
       client
         .resources(classOf[AnkkaFlow])
         .inNamespace("shop")
-        .withName("cart")
+        .withName("carts")
         .get()
         .getSpec
         .version,
       "t2"
     )
-    val broken = CliFixtures.variant(blueprint = _.replace("router.in", "router.nope"))
+    val broken = CliFixtures.variant(blueprint = _.replace("cleaner.in", "cleaner.nope"))
     val before = client.resources(classOf[AnkkaFlow]).inNamespace("shop").list().getItems.size
     val refused = call(
       srv,

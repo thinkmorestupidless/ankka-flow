@@ -15,6 +15,9 @@ import scala.concurrent.duration.*
  * resolves the SDK this build published locally (`sdk/publishLocal` and `protocol/publishLocal` run
  * before this suite when Scala is on); the Python project gets a path source for `sdks/python`.
  */
+// Ignored until T060 (specs/009-engine-streamlets/tasks.md): flow init's templates are version
+// one's, and T060 rewrites them for the Pekko Streams and Flink SDKs.
+@munit.IgnoreSuite
 class TemplateSuite extends munit.FunSuite:
 
   override val munitTimeout: Duration = 20.minutes

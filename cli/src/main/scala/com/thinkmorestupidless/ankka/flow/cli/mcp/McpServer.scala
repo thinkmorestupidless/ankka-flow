@@ -2,7 +2,7 @@ package com.thinkmorestupidless.ankka.flow.cli.mcp
 
 import java.io.{BufferedReader, PrintStream}
 
-import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.descriptor.Json
 
 import JsonText.*
 
