@@ -611,6 +611,49 @@ Found on the way, and fixed in the sample and the SDK:
 - **`flink-clients` is provided** to the counter's `run` (the local executor), with an slf4j 1.7
   binding at `warn`, so the notice is seen; neither reaches the image.
 
+**The whole build, and SC-003** (2026-11-22, T065, on a MacBook with Docker). `sbt test` with
+the cluster suite and its Flink cases: green in 746 s (operator 134 cases with the 18 of the k3s
+suite, CLI 92, blueprint 63, descriptor 58, the SDKs and the sample's). The soak, `sbt
+operator/test -Dflow.cluster.soak=on`, 2,059 s: its two cases had not been written, as the switch
+was forwarded but read by nothing, so they were added at T065. Each runs ten minutes of load, a
+record every 50 ms confirmed by the broker, with one of the streamlet's pods deleted without grace
+every minute. The cleaner at two replicas: 10,596 records, 9 pods killed, every one cleaned (none
+lost; at least once, so repeats are allowed). The counter between managed topics: 10,495 events in
+440 windows of five carts, 9 pods killed (job and task managers alike), each window written once to
+a `read_committed` reader with its full count. In the same run the sample pipeline's case failed on
+its lag: it expected the cleaner's lag to be 0, and a Pekko Streams streamlet holds a quiet
+partition's last record uncommitted (below, "commits on the next offset"), so it was 3, one per
+partition. The case now expects at most one per partition, the observe page says so, and the
+suite passed again with it.
+
+**SC-001: the cleaner moved to Flink** (2026-11-22, T066, in a scratch worktree, discarded). The
+Pekko Streams cleaner rewritten as a Java Flink streamlet of the same name, ports, contracts and
+parameter (`CartCleaner`, a `flatMap` over `Codec.bytes()` that drops what does not decode or is
+above the maximum), with its tests as a `FlinkHarness` suite. `git diff --stat`:
+
+```text
+ build.sbt                                          | 40 +++++++-----
+ samples/cart-pipeline/cleaner/Dockerfile           |  6 ++
+ .../src/main/java/cart/cleaner/CartCleaner.java    | 74 ++++++++++++++++++++++
+ .../src/main/java/cart/cleaner/CartEvent.java      |  4 ++
+ .../src/main/java/cart/cleaner/CleanCart.java      |  4 ++
+ .../src/main/scala/cart/cleaner/Cleaner.scala      | 50 ---------------
+ .../cleaner/src/main/scala/cart/cleaner/Main.scala |  8 ---
+ .../test/java/cart/cleaner/CartCleanerTest.java    | 39 ++++++++++++
+ .../src/test/scala/cart/cleaner/CleanerSuite.scala | 59 -----------------
+ samples/cart-pipeline/flow/cleaner.json            |  8 ++-
+ 10 files changed, 156 insertions(+), 136 deletions(-)
+```
+
+No line of `blueprint.conf`, of the counter, of `k8s/` or of `images.conf` changed (the image
+keeps its name), and `flow verify` of the unchanged blueprint against the new descriptor said
+`verified: 2 streamlets, 3 topics`; `cartCleaner/test` (2 cases), `descriptor` and
+`descriptorCheck` were green. Outside the cleaner's directory two files changed, both the stage's
+own: its descriptor (`sdk.name`, `engine` and the `flink` section, 8 lines), and its module in
+`build.sbt`, whose definition is the stage's build. One line of that diff is not the module's:
+`operator`'s `clusterImages` names the cleaner's `Docker / publishLocal`, which a Flink module does
+not have; a build that moves a sample between engines changes that line too.
+
 ## Found during implementation
 
 **The Pekko Streams runner commits on the next offset** (2026-11-22, asked at T019). A stage's
