@@ -277,6 +277,8 @@ the protocol, either SDK or the merge sink.
   refuses a component that names both.
 - A grant revoked while the pipeline runs: the broker refuses the next read or write; the pipeline
   reports the topic and the right, keeps retrying, and continues when the grant returns.
+- A reset Flink streamlet's earlier state: no longer read by anything, and left in the state
+  store for the store's own rules or a person to remove.
 - A machine credential that is wrong or deleted: reported as a credential problem, distinct from a
   missing grant.
 - A descriptor of version one, which names no engine: refused by `flow` and by the operator,
@@ -304,8 +306,9 @@ the protocol, either SDK or the merge sink.
 - **FR-005**: An engine SDK MUST ship a harness with which a streamlet is tested with no broker
   and no cluster.
 - **FR-029**: A streamlet of either engine MUST run as an ordinary process, with no cluster,
-  against a Kafka its settings name, from the same main its image runs. A Flink streamlet run so
-  keeps its state only while it runs, and says so when it starts.
+  against a Kafka its settings name, from the same main its image runs. `flow` MUST write those
+  settings for every streamlet of a blueprint. A Flink streamlet run so keeps its state only
+  while it runs, and says so when it starts.
 
 **Pekko Streams**
 
@@ -449,7 +452,8 @@ the protocol, either SDK or the merge sink.
   next feature.
 - Migrating a version one streamlet or pipeline, or keeping one running.
 - `flow init` templates for the engines, and new `flow mcp` tools; each is a later feature.
-- Autoscaling a streamlet by its lag.
+- Autoscaling a streamlet by its lag, and metrics scraped from a streamlet: lag is on the
+  pipeline's status, and a Flink streamlet has Flink's own reporters.
 - Registering machines, making grants or declaring topics in ankka from `flow`.
 - Connectors to systems other than Kafka and ankka as part of the SDKs; a Pekko Streams streamlet
   may use any library its author adds.
