@@ -2,7 +2,6 @@
 title: Your first streamlet
 description: Run the sample cart pipeline on a laptop — a Pekko Streams streamlet that cleans cart events and a Flink streamlet that counts them — against Kafka in a container, with flow local writing each streamlet's settings.
 kind: tutorial
-languages: [scala, java]
 related: [build/pekko-streams-streamlet.md, build/flink-streamlet.md, build/testing.md, concepts/engines.md, get-started/deploy-locally.md]
 ---
 

@@ -18,6 +18,7 @@ The image is a Java runtime with the streamlet's classes and dependencies, start
 class that calls `PekkoStreamlets.run`. With sbt-native-packager's `JavaAppPackaging` and
 `DockerPlugin`, the cleaner's build is:
 
+<!-- languages: scala; a Pekko Streams streamlet is written in Scala, and built with sbt -->
 ```scala
 lazy val cartCleaner = project
   .in(file("samples/cart-pipeline/cleaner"))

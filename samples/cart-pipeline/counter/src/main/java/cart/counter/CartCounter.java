@@ -23,8 +23,10 @@ import org.apache.flink.util.Collector;
 /** Counts each cart's events in tumbling windows of the time each event carries. */
 public final class CartCounter extends FlinkStreamlet {
 
+  // docs:start ports
   final Inlet<CleanCart> in = inlet("in", Contract.of("clean-carts.v1"), Codec.json(CleanCart.class));
   final Outlet<CartCount> out = outlet("out", Contract.of("cart-counts.v1"), Codec.json(CartCount.class));
+  // docs:end ports
   final Parameter<Duration> window = durationParameter("window", "1m", "The length of each counting window.");
 
   public CartCounter() {

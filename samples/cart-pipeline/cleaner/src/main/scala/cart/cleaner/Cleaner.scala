@@ -29,8 +29,10 @@ object Cleaner
     ):
   // The inlet reads bytes: a record that is not a cart event is the cleaner's to drop, where a
   // typed codec would fail the stream on it.
+  // docs:start ports
   val in  = inlet("in", Contract("cart-events.v1", schema = "cart-events.v1.json"), Codec.bytes)
   val out = outlet("out", Contract("clean-carts.v1"), Codec.json[CleanCart])
+  // docs:end ports
   val maxTotal =
     intParameter(
       "max-total",

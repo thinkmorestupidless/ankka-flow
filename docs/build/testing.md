@@ -25,6 +25,7 @@ them.
 This is the test of the sample's cleaner, which keeps the cart events within its maximum, keyed by
 their cart, and drops the rest:
 
+<!-- languages: scala; a Pekko Streams streamlet is written in Scala -->
 <!-- include: samples/cart-pipeline/cleaner/src/test/scala/cart/cleaner/CleanerSuite.scala#test -->
 ```scala
 import com.thinkmorestupidless.ankka.flow.pekko.{PekkoHarness, Record}
@@ -83,6 +84,7 @@ rebalances or redelivery; the SDK's own suites run its commit after write agains
 This is the test of the sample's counter, which counts each cart's events in windows of the time each
 event carries:
 
+<!-- languages: java; a Flink streamlet is written in Java -->
 <!-- include: samples/cart-pipeline/counter/src/test/java/cart/counter/CartCounterTest.java#counter-test -->
 ```java
 import com.thinkmorestupidless.ankka.flow.flink.Record;

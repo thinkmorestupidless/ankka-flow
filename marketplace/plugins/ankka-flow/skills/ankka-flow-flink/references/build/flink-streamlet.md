@@ -26,6 +26,30 @@ libraryDependencies ++= Seq(
 )
 ```
 
+With Maven:
+
+```xml
+<dependencies>
+  <dependency>
+    <groupId>com.thinkmorestupidless</groupId>
+    <artifactId>ankka-flow-flink</artifactId>
+    <version><!-- the release of flow you use --></version>
+  </dependency>
+  <dependency>
+    <groupId>com.thinkmorestupidless</groupId>
+    <artifactId>ankka-flow-flink-testkit</artifactId>
+    <version><!-- the release of flow you use --></version>
+    <scope>test</scope>
+  </dependency>
+  <dependency>
+    <groupId>org.apache.flink</groupId>
+    <artifactId>flink-streaming-java</artifactId>
+    <version>2.2.1</version>
+    <scope>provided</scope>
+  </dependency>
+</dependencies>
+```
+
 ## Declare the streamlet
 
 This is the counter from

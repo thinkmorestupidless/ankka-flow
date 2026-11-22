@@ -45,9 +45,14 @@ check fails.
 ## Frontmatter
 
 Every page starts with `title`, `description` and `kind`. One optional key is this repository's:
-`languages`, `scala` and `python`, for a page that shows streamlet code; a page with both shows them
-in `/// tab | Scala` and `/// tab | Python` blocks, Scala first, each sample included from tested code. `related` lists the pages
-a reader most often needs next.
+`languages`, `scala` and `java`, for a page that shows streamlet code. Every sample on such a page is
+shown in each language the page names, in `/// tab | Scala` and `/// tab | Java` blocks, Scala first,
+each included from tested code. A sample bound to one engine is bound to its language too, a Pekko
+Streams streamlet to Scala and a Flink streamlet to Java, so it stands alone in its engine's
+section with the reason on the line before its fence: `<!-- languages: scala; a Pekko Streams
+streamlet is written in Scala -->`. The docs check (`extra.docs.samples` in `mkdocs.yml`) fails a
+sample that is in fewer languages than its page names without that comment, and a tab whose code is
+written in the page. `related` lists the pages a reader most often needs next.
 
 ## Rules that bite
 

@@ -69,6 +69,11 @@ extra:
   docs:
     facets:
       languages: [scala, java]
+    # Every sample is shown in each language its page names, or says why not, and each tab's code is
+    # included from a tested file.
+    samples:
+      facet: languages
+      tested: true
     skills:
       source: tools/docs/skill
       targets:

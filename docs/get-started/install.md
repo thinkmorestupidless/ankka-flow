@@ -94,12 +94,14 @@ release of `flow` that verifies and deploys it.
 
 A Pekko Streams streamlet, in Scala 3.3 or later on Java 21:
 
+<!-- languages: scala; the Pekko Streams SDK is a Scala library -->
 ```scala
 libraryDependencies += "com.thinkmorestupidless" %% "ankka-flow-pekko-streams" % "<version>"
 ```
 
 A Flink streamlet, in Java 17 or later, with Flink's own modules `provided` by the image it runs in:
 
+<!-- languages: scala; an sbt build line, the build the samples use; a Maven build is on the Flink streamlet page -->
 ```scala
 libraryDependencies += "com.thinkmorestupidless" % "ankka-flow-flink" % "<version>"
 ```

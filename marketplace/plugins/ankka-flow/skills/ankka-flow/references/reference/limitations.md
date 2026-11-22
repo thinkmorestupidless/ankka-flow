@@ -27,6 +27,8 @@ See [Delivery and failure](../concepts/delivery.md).
   streamlet's logic on more than one.
 - **Flink streamlets in Java.** No Flink SQL, no streamlet that is only a query, and no Flink
   streamlet in Python. Scala on Flink's Java API may work and is neither documented nor tested.
+- **Pekko Streams streamlets in Scala.** The SDK is a Scala library for Scala 3.3 or later. There is
+  no Java API for it, and no artifact for Scala 2.13.
 - **No windows, timers or state in a Pekko Streams streamlet.** A stage that needs any of them is a
   Flink streamlet.
 - **The Flink Kubernetes Operator is a prerequisite.** ankka-flow's operator neither installs nor

@@ -22,6 +22,7 @@ computes it for a topic it declares.
 
 /// tab | Scala
 
+<!-- include: samples/cart-pipeline/cleaner/src/main/scala/cart/cleaner/Cleaner.scala#ports -->
 ```scala
 val in  = inlet("in", Contract("cart-events.v1", schema = "cart-events.v1.json"), Codec.bytes)
 val out = outlet("out", Contract("clean-carts.v1"), Codec.json[CleanCart])
@@ -31,6 +32,7 @@ val out = outlet("out", Contract("clean-carts.v1"), Codec.json[CleanCart])
 
 /// tab | Java
 
+<!-- include: samples/cart-pipeline/counter/src/main/java/cart/counter/CartCounter.java#ports -->
 ```java
 final Inlet<CleanCart> in = inlet("in", Contract.of("clean-carts.v1"), Codec.json(CleanCart.class));
 final Outlet<CartCount> out = outlet("out", Contract.of("cart-counts.v1"), Codec.json(CartCount.class));
