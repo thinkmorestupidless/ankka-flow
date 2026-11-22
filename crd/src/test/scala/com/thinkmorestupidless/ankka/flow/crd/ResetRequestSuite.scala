@@ -66,8 +66,40 @@ class ResetRequestSuite extends munit.FunSuite:
     assert(!ResetRequest.Request("x", List("router")).includes("sink"))
   }
 
-  test("the group id is <pipeline>.<streamlet>.<inlet>, as the sidecar reads with") {
+  test("the group id is <pipeline>.<streamlet>.<inlet>, after a machine's prefix when given") {
     assertEquals(ResetRequest.groupId("cart", "router", "in"), "cart.router.in")
+    assertEquals(
+      ResetRequest.groupId("cart", "router", "in", Some("ankka.machine.affiliates.network.")),
+      "ankka.machine.affiliates.network.cart.router.in"
+    )
+  }
+
+  test("state epochs are absent, so 1, until one is advanced") {
+    val f = flow()
+    assertEquals(ResetRequest.stateEpochs(f), Map.empty[String, Int])
+    assertEquals(ResetRequest.stateEpoch(f, "counter"), 1)
+    val once = ResetRequest.withEpochAdvanced(f, "counter")
+    assertEquals(ResetRequest.stateEpochs(once), Map("counter" -> 2))
+    val twice =
+      ResetRequest.withEpochAdvanced(ResetRequest.withEpochAdvanced(once, "counter"), "other")
+    assertEquals(ResetRequest.stateEpochs(twice), Map("counter" -> 3, "other" -> 2))
+    assertEquals(ResetRequest.stateEpoch(twice, "elsewhere"), 1)
+  }
+
+  test("state epochs round-trip through their annotation as a JSON object") {
+    val f    = ResetRequest.withEpochAdvanced(flow(), "counter")
+    val text = f.getMetadata.getAnnotations.get(ResetRequest.StateEpochsAnnotation)
+    assertEquals(text, """{"counter":2}""")
+    assertEquals(
+      ResetRequest.stateEpochs(flow(ResetRequest.StateEpochsAnnotation -> """{"a":4,"b":1}""")),
+      Map("a" -> 4, "b" -> 1)
+    )
+  }
+
+  test("state epochs that do not parse are all 1, and advancing starts them again") {
+    val f = flow(ResetRequest.StateEpochsAnnotation -> "nope")
+    assertEquals(ResetRequest.stateEpochs(f), Map.empty[String, Int])
+    assertEquals(ResetRequest.stateEpochs(ResetRequest.withEpochAdvanced(f, "c")), Map("c" -> 2))
   }
 
   test("an annotation that does not parse is no request") {

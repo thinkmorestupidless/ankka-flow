@@ -33,20 +33,36 @@ class CrdSchemaSuite extends munit.FunSuite:
     assertEquals(crd.getSpec.getNames.getShortNames.asScala.toList, List("aflow"))
   }
 
-  test("every field of the spec, streamlet, topic, batch and status is declared") {
-    val spec   = schema.getProperties.get("spec")
-    val status = schema.getProperties.get("status")
+  private def obj(p: JSONSchemaProps, name: String) = p.getProperties.get(name)
+
+  test("every field of the spec, streamlet, flink, topic and status is declared") {
+    val spec      = schema.getProperties.get("spec")
+    val status    = schema.getProperties.get("status")
+    val streamlet = item(spec, "streamlets")
+    val flink     = obj(streamlet, "flink")
     assertEquals(props(spec), fields(classOf[AnkkaFlowSpec]))
-    assertEquals(props(spec.getProperties.get("onDelete")), fields(classOf[OnDelete]))
-    assertEquals(props(item(spec, "streamlets")), fields(classOf[StreamletSpec]))
+    assertEquals(props(obj(spec, "onDelete")), fields(classOf[OnDelete]))
+    assertEquals(props(streamlet), fields(classOf[StreamletSpec]))
+    assertEquals(props(flink), fields(classOf[FlinkSpec]))
+    assertEquals(props(obj(flink, "jobManager")), fields(classOf[Resources]))
+    assertEquals(props(obj(flink, "taskManager")), fields(classOf[Resources]))
     assertEquals(props(item(spec, "topics")), fields(classOf[TopicSpec]))
-    assertEquals(props(item(spec, "topics").getProperties.get("batch")), fields(classOf[BatchSpec]))
+    assertEquals(props(obj(item(spec, "topics"), "ankka")), fields(classOf[AnkkaRef]))
     assertEquals(props(status), fields(classOf[AnkkaFlowStatus]))
+    assertEquals(props(item(status, "conditions")), fields(classOf[Condition]))
     assertEquals(props(item(status, "streamlets")), fields(classOf[StreamletStatus]))
+    assertEquals(props(item(item(status, "streamlets"), "inlets")), fields(classOf[InletStatus]))
     assertEquals(props(item(status, "topics")), fields(classOf[TopicStatus]))
   }
 
-  test("a streamlet requires a name and a descriptor, and an image only when it is not built in") {
+  test("version one's fields are gone") {
+    val spec = schema.getProperties.get("spec")
+    assert(!props(spec).contains("protocolVersion"))
+    assert(!props(item(spec, "streamlets")).contains("builtin"))
+    assert(!props(item(spec, "topics")).contains("batch"))
+  }
+
+  test("a streamlet requires a name and a descriptor") {
     val spec = schema.getProperties.get("spec")
     assertEquals(item(spec, "streamlets").getRequired.asScala.toSet, Set("name", "descriptor"))
   }
@@ -54,48 +70,58 @@ class CrdSchemaSuite extends munit.FunSuite:
   test("a resource round-trips, the descriptor object and optional numbers intact") {
     val mapper = FlowSerialization.mapper()
     val descriptor = mapper.readTree(
-      """{"name":"cart-router","inlets":[{"name":"in","contract":{"format":"json","schema_name":"cart-events.v1","fingerprint":"x"}}]}"""
+      """{"name":"cart-counter","engine":"flink","inlets":[{"name":"in","contract":{"name":"clean-carts.v1"}}]}"""
     )
     val spec = AnkkaFlowSpec(
-      pipeline = "cart",
-      version = "0.3.1",
-      protocolVersion = "1.0",
+      pipeline = "carts",
+      version = "0.6.0",
+      descriptorVersion = "2.0",
       streamlets = List(
         StreamletSpec(
-          "router",
-          "img:1",
-          3,
-          Map("review-threshold" -> mapper.readTree("100")),
-          Map("in"               -> "cart-events"),
-          Map("valid"            -> "valid-carts"),
-          descriptor
+          name = "cleaner",
+          image = "img:1",
+          engine = "pekko-streams",
+          replicas = 3,
+          config = Map("max-total" -> mapper.readTree("10000")),
+          inlets = Map("in" -> "cart-events"),
+          outlets = Map("out" -> "clean-carts"),
+          descriptor = descriptor
         ),
         StreamletSpec(
-          name = "graph",
-          replicas = 1,
-          config = Map("secret" -> mapper.readTree("\"neo4j-shop\"")),
-          inlets = Map("in" -> "valid-carts"),
-          descriptor = descriptor,
-          builtin = true
+          name = "counter",
+          image = "img:2",
+          engine = "flink",
+          parallelism = Some(2),
+          flink = Some(
+            FlinkSpec(
+              entryClass = "cart.counter.CartCounter",
+              version = "2.2",
+              taskManager = Resources("1", "2048m")
+            )
+          ),
+          config = Map("window" -> mapper.readTree("\"1m\"")),
+          inlets = Map("in" -> "clean-carts"),
+          descriptor = descriptor
         )
       ),
       topics = List(
         TopicSpec(
           id = "cart-events",
-          name = "shop.cart-events.v1",
+          name = "checkout.cart-checkouts",
           managed = false,
-          cluster = Some("shop")
+          ankka = Some(AnkkaRef("checkout", "cart-checkouts")),
+          cluster = Some("ankka")
         ),
         TopicSpec(
-          id = "valid-carts",
-          name = "cart.valid-carts",
+          id = "clean-carts",
+          name = "carts.clean-carts",
           partitions = Some(6),
           replicas = Some(1),
           topicConfig = Map("retention.ms" -> "86400000")
         )
       )
     )
-    val resource = AnkkaFlow("shop", "cart", spec)
+    val resource = AnkkaFlow("shop", "carts", spec)
     val yaml     = FlowSerialization.toYaml(resource)
     val back     = FlowSerialization.fromYaml(yaml)
     // and through fabric8's own serialization, as the operator reads it from the API server
@@ -104,12 +130,53 @@ class CrdSchemaSuite extends munit.FunSuite:
     assertEquals(viaClient.getSpec, spec)
     assertEquals(back.getSpec, spec)
     assertEquals(back.getSpec.topics(1).partitions.map(_ + 1), Some(7))
-    assertEquals(back.getSpec.streamlets.head.descriptor.get("name").asText, "cart-router")
+    assertEquals(back.getSpec.streamlets(1).parallelism.map(_ + 1), Some(3))
+    assertEquals(back.getSpec.streamlets.head.descriptor.get("name").asText, "cart-counter")
     assert(!yaml.contains("empty"), yaml)
-    assertEquals(
-      back.getSpec.streamlets.map(s => s.name -> s.builtin),
-      List("router" -> false, "graph" -> true)
+    assertEquals(back.getSpec.streamlets.head.parallelism, None)
+    assertEquals(back.getSpec.streamlets(1).flink.map(_.checkpointInterval), Some("10s"))
+    assertEquals(back.getSpec.streamlets(1).flink.map(_.jobManager), Some(Resources("1", "1024m")))
+    val _: JsonNode = back.getSpec.streamlets.head.config("max-total")
+  }
+
+  test("a status round-trips with its conditions and its inlets' lag") {
+    val status = AnkkaFlowStatus(
+      phase = AnkkaFlowStatus.Degraded,
+      conditions = List(
+        Condition(Condition.TopicNotGranted, "True", "Read", "no grant", "2026-11-22T10:00:00Z"),
+        Condition(Condition.Ready, "False", "Degraded", "", "2026-11-22T10:00:00Z")
+      ),
+      streamlets = List(
+        StreamletStatus(
+          name = "counter",
+          engine = "flink",
+          desired = 1,
+          ready = 1,
+          detail = "running",
+          inlets = List(
+            InletStatus("in", "carts.clean-carts", "carts.counter.in", Some(12L)),
+            InletStatus("other", "carts.other", "carts.counter.other", None)
+          )
+        )
+      )
     )
-    assertEquals(back.getSpec.streamlets(1).image, "")
-    val _: JsonNode = back.getSpec.streamlets.head.config("review-threshold")
+    val resource = AnkkaFlow("shop", "carts", AnkkaFlowSpec(pipeline = "carts"))
+    resource.setStatus(status)
+    val back = FlowSerialization.fromYaml(FlowSerialization.toYaml(resource))
+    assertEquals(back.getStatus, status)
+    assertEquals(back.getStatus.streamlets.head.inlets.head.lag.map(_ + 1), Some(13L))
+  }
+
+  test("a report differing only in its times is the same report") {
+    val a = AnkkaFlowStatus(
+      phase = "Ready",
+      lastTransitionTime = "t1",
+      conditions = List(Condition(Condition.Ready, "True", "Ready", "", "t1"))
+    )
+    val b = a.copy(
+      lastTransitionTime = "t2",
+      conditions = List(Condition(Condition.Ready, "True", "Ready", "", "t2"))
+    )
+    assert(a.sameReport(b))
+    assert(!a.sameReport(b.copy(phase = "Degraded")))
   }

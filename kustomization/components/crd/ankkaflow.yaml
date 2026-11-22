@@ -56,7 +56,7 @@ spec:
                   maxLength: 40
                 version:
                   type: string
-                protocolVersion:
+                descriptorVersion:
                   type: string
                 onDelete:
                   type: object
@@ -68,7 +68,7 @@ spec:
                   type: array
                   items:
                     type: object
-                    # image is required unless builtin is true; the operator checks it.
+                    # engine and image are checked by the operator, which refuses with a reason.
                     required: [name, descriptor]
                     properties:
                       name:
@@ -76,9 +76,37 @@ spec:
                         pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
                       image:
                         type: string
+                      engine:
+                        type: string
                       replicas:
                         type: integer
                         minimum: 0
+                      parallelism:
+                        type: integer
+                        minimum: 1
+                      flink:
+                        type: object
+                        properties:
+                          entryClass:
+                            type: string
+                          version:
+                            type: string
+                          checkpointInterval:
+                            type: string
+                          jobManager:
+                            type: object
+                            properties:
+                              cpu:
+                                type: string
+                              memory:
+                                type: string
+                          taskManager:
+                            type: object
+                            properties:
+                              cpu:
+                                type: string
+                              memory:
+                                type: string
                       config:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
@@ -93,8 +121,6 @@ spec:
                       descriptor:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
-                      builtin:
-                        type: boolean
                 topics:
                   type: array
                   items:
@@ -107,6 +133,13 @@ spec:
                         type: string
                       managed:
                         type: boolean
+                      ankka:
+                        type: object
+                        properties:
+                          project:
+                            type: string
+                          name:
+                            type: string
                       cluster:
                         type: string
                       bootstrapServers:
@@ -133,13 +166,6 @@ spec:
                         type: object
                         additionalProperties:
                           type: string
-                      batch:
-                        type: object
-                        properties:
-                          maxRecords:
-                            type: integer
-                          maxBytes:
-                            type: integer
             status:
               type: object
               properties:
@@ -151,6 +177,22 @@ spec:
                   type: string
                 lastTransitionTime:
                   type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False"]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
                 streamlets:
                   type: array
                   items:
@@ -158,12 +200,27 @@ spec:
                     properties:
                       name:
                         type: string
+                      engine:
+                        type: string
                       desired:
                         type: integer
                       ready:
                         type: integer
                       detail:
                         type: string
+                      inlets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            topic:
+                              type: string
+                            group:
+                              type: string
+                            lag:
+                              type: integer
                 topics:
                   type: array
                   items:
