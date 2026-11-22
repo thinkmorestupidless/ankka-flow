@@ -17,6 +17,9 @@ object Labels:
   val ResetDone      = s"$d/reset-offsets-done"
   val TopicFinalizer = s"$d/managed-topics"
 
+  /** A JSON object, streamlet name to its state epoch; absent, every streamlet is at 1 (R12). */
+  val StateEpochs = s"$d/state-epochs"
+
   def pipeline(p: String): Map[String, String] = Map(ManagedByKey -> ManagedBy, PipelineKey -> p)
 
   def streamlet(p: String, s: String): Map[String, String] =

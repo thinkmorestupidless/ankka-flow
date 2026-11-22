@@ -33,6 +33,13 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list, watch]
+  # A Flink streamlet is a FlinkDeployment; whether the Flink operator is installed is its CRD.
+  - apiGroups: [flink.apache.org]
+    resources: [flinkdeployments]
+    verbs: [get, list, watch, create, patch, delete]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get]
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [roles, rolebindings]
     verbs: [get, list, watch, create, update, patch, delete]
@@ -83,6 +90,10 @@ spec:
           env:
             - name: FLOW_KAFKA_CLUSTERS_NAMESPACE
               value: ankka-flow
+            # The service account FlinkDeployments run as: the one the Flink operator's chart
+            # made, which holds the rights Kubernetes high availability needs.
+            - name: FLOW_FLINK_SERVICE_ACCOUNT
+              value: flink
           resources:
             requests:
               cpu: 100m

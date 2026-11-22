@@ -6,8 +6,10 @@ import java.util.Base64
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.thinkmorestupidless.ankka.flow.crd.AnkkaFlow
-import io.fabric8.kubernetes.api.model.Secret
+import io.fabric8.kubernetes.api.model.{GenericKubernetesResource, Secret}
+import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext
 import io.fabric8.kubernetes.client.{KubernetesClient, KubernetesClientException}
 import org.slf4j.LoggerFactory
 
@@ -34,7 +36,30 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
         current
       }): Unit
 
-  /** Deployments, pods and Kafka clusters: everything but Kafka itself. */
+  private def flinkDeployments(namespace: String) =
+    client.genericKubernetesResources(Fabric8Executor.FlinkDeploymentContext).inNamespace(namespace)
+
+  /** Whether the Flink operator's CRD is installed. */
+  def flinkCrdInstalled(): Boolean =
+    Try(
+      client.apiextensions.v1.customResourceDefinitions.withName(FlinkRendering.Crd).get()
+    ).toOption.exists(_ != null)
+
+  private def stateStore(): Option[StateStore] =
+    Try(
+      Option(
+        client.secrets.inNamespace(settings.clustersNamespace).withName(StateStore.SecretName).get()
+      )
+    ).toOption.flatten
+      .flatMap { secret =>
+        StateStore.fromData(decode(secret)) match
+          case Right(store) => store
+          case Left(problem) =>
+            log.warn("{}", problem)
+            None
+      }
+
+  /** Deployments, FlinkDeployments, pods, Kafka clusters and the state store. */
   def observe(resource: AnkkaFlow): Observed =
     val namespace = resource.getMetadata.getNamespace
     val pipeline  = resource.getSpec.pipeline
@@ -86,12 +111,37 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
       .mapValues(_.size)
       .toMap
     val (clusters, clusterProblems) = kafkaClusters()
+    val crd                         = flinkCrdInstalled()
+    val flink =
+      if !crd then Map.empty[String, FlinkState]
+      else
+        flinkDeployments(namespace)
+          .withLabel(Labels.PipelineKey, pipeline)
+          .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
+          .list()
+          .getItems
+          .asScala
+          .toVector
+          .filter(d =>
+            Option(d.getMetadata.getOwnerReferences)
+              .exists(_.asScala.exists(_.getUid == resource.getMetadata.getUid))
+          )
+          .flatMap(d =>
+            Option(d.getMetadata.getLabels)
+              .flatMap(l => Option(l.get(Labels.StreamletKey)))
+              .map(_ -> Fabric8Executor.flinkState(d))
+          )
+          .toMap
     Observed(
       deployments = states.toMap,
       labelledStreamlets = states.map(_._1).toSet,
       pods = pods,
       clusters = clusters,
-      clusterProblems = clusterProblems
+      clusterProblems = clusterProblems,
+      flinkCrd = crd,
+      stateStore = stateStore(),
+      flinkDeployments = flink,
+      stateEpochs = Fabric8Executor.stateEpochs(resource)
     )
 
   private def kafkaClusters(): (Map[String, KafkaCluster], Map[String, String]) =
@@ -135,6 +185,24 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
           .serverSideApply(): Unit
       case Action.DeleteDeployment(ns, name) =>
         client.apps.deployments.inNamespace(ns).withName(name).delete(): Unit
+      case Action.ApplyFlinkDeployment(deployment) =>
+        flinkDeployments(deployment.getMetadata.getNamespace)
+          .resource(deployment)
+          .fieldManager(FieldManager)
+          .forceConflicts()
+          .serverSideApply(): Unit
+      case Action.DeleteFlinkDeployment(ns, name) =>
+        flinkDeployments(ns).withName(name).delete(): Unit
+      case Action.AdvanceStateEpoch(streamlet) =>
+        editMeta(resource) { m =>
+          val annotations = Option(m.getAnnotations)
+            .map(a => new java.util.HashMap[String, String](a))
+            .getOrElse(new java.util.HashMap[String, String]())
+          val epochs = Fabric8Executor.parseEpochs(Option(annotations.get(Labels.StateEpochs)))
+          val next   = epochs.updated(streamlet, epochs.getOrElse(streamlet, 1) + 1)
+          annotations.put(Labels.StateEpochs, Fabric8Executor.writeEpochs(next))
+          m.setAnnotations(annotations)
+        }
       case Action.DeleteSecret(ns, name) =>
         client.secrets.inNamespace(ns).withName(name).delete(): Unit
       case Action.RecordEvent(reason, eventType, note) =>
@@ -190,3 +258,71 @@ final class Fabric8Executor(client: KubernetesClient, settings: Settings):
           }
       case other =>
         throw new IllegalArgumentException(s"not a Kubernetes action: ${other.describe}")
+
+object Fabric8Executor:
+
+  /** `flinkdeployments.flink.apache.org`, named so no discovery call is needed. */
+  val FlinkDeploymentContext: ResourceDefinitionContext = new ResourceDefinitionContext.Builder()
+    .withGroup("flink.apache.org")
+    .withVersion("v1beta1")
+    .withKind(FlinkRendering.Kind)
+    .withPlural("flinkdeployments")
+    .withNamespaced(true)
+    .build()
+
+  private val json = new ObjectMapper()
+
+  // Read with the build's mapper, whose Scala module gives an untyped object as a Scala map; an
+  // object built in this JVM is a Java one.
+  private def at(root: Any, path: String*): Option[Any] =
+    path.foldLeft(Option(root)) {
+      case (Some(m: java.util.Map[?, ?]), key) => Option(m.get(key))
+      case (Some(m: scala.collection.Map[?, ?]), key) =>
+        m.asInstanceOf[scala.collection.Map[String, Any]].get(key)
+      case _ => None
+    }
+
+  private def text(root: Any, path: String*): Option[String] =
+    at(root, path*).collect { case s: String => s }.filter(_.nonEmpty)
+
+  /** What the operator reads of a `FlinkDeployment`: what it applied, and the status. */
+  def flinkState(d: GenericKubernetesResource): FlinkState =
+    val props  = d.getAdditionalProperties
+    val spec   = props.get("spec")
+    val status = props.get("status")
+    // `lastStableSpec` is the spec, as JSON text, that last ran healthy.
+    val lastStableImage = text(status, "reconciliationStatus", "lastStableSpec").flatMap(t =>
+      Try(json.readTree(t)).toOption.flatMap(n => Option(n.get("image"))).map(_.asText)
+    )
+    FlinkState(
+      image = text(spec, "image").getOrElse(""),
+      configHash =
+        text(spec, "podTemplate", "metadata", "annotations", Labels.ConfigHash).getOrElse(""),
+      desiredState = text(spec, "job", "state").getOrElse("running"),
+      lifecycleState = text(status, "lifecycleState"),
+      jobState = text(status, "jobStatus", "state"),
+      jobManagerStatus = text(status, "jobManagerDeploymentStatus"),
+      error = text(status, "error"),
+      lastStableImage = lastStableImage
+    )
+
+  def parseEpochs(text: Option[String]): Map[String, Int] =
+    text
+      .flatMap(t => Try(json.readTree(t)).toOption)
+      .filter(_.isObject)
+      .map(
+        _.properties.asScala
+          .collect { case e if e.getValue.canConvertToInt => e.getKey -> e.getValue.asInt }
+          .toMap
+      )
+      .getOrElse(Map.empty)
+
+  def writeEpochs(epochs: Map[String, Int]): String =
+    val node = json.createObjectNode()
+    epochs.toVector.sortBy(_._1).foreach((k, v) => node.put(k, v))
+    json.writeValueAsString(node)
+
+  def stateEpochs(resource: AnkkaFlow): Map[String, Int] =
+    parseEpochs(
+      Option(resource.getMetadata.getAnnotations).flatMap(a => Option(a.get(Labels.StateEpochs)))
+    )
