@@ -52,6 +52,9 @@ object Dependencies {
     val flink      = "2.2.1"
     val flinkKafka = "5.0.0-2.2"
 
+    /** kafka-clients 4.2's OAUTHBEARER login needs it on the classpath and declares it provided (V2). */
+    val jose4j = "0.9.6"
+
     /** The Flink Kubernetes Operator a cluster runs Flink streamlets with (research R10). */
     val flinkOperator = "1.16.1"
 
@@ -137,6 +140,7 @@ object Dependencies {
   val flinkClients        = "org.apache.flink"           % "flink-clients"         % V.flink
   val flinkConnectorBase  = "org.apache.flink"           % "flink-connector-base"  % V.flink
   val flinkConnectorKafka = "org.apache.flink"           % "flink-connector-kafka" % V.flinkKafka
+  val jose4j              = "org.bitbucket.b_c"          % "jose4j"                % V.jose4j
   val jacksonDatabind     = "com.fasterxml.jackson.core" % "jackson-databind"      % V.jackson
   val junitJupiter        = "org.junit.jupiter"          % "junit-jupiter"         % V.junit
   val jupiterInterface    = "com.github.sbt.junit"       % "jupiter-interface"     % "0.20.0"

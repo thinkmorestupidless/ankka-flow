@@ -295,7 +295,7 @@ lazy val flinkSdk = project
   .settings(javaSettings)
   .settings(
     name := "ankka-flow-flink",
-    libraryDependencies ++= flinkProvided ++ Seq(flinkConnectorKafka, jacksonDatabind),
+    libraryDependencies ++= flinkProvided ++ Seq(flinkConnectorKafka, jacksonDatabind, jose4j),
     libraryDependencies ++= flinkProvided.map(_.withConfigurations(Some("test"))),
     Compile / resourceGenerators += Def.task {
       val f = (Compile / resourceManaged).value / "ankka-flow-flink.properties"
