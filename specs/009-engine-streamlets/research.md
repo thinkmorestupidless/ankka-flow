@@ -515,3 +515,27 @@ scenario or a verify-first item except T068 (the family brain, outside this repo
   job's classpath. `flink-connector-base`, which the connector declares provided, is inside
   `flink-dist-2.2.1.jar` (108 classes under `org/apache/flink/connector/base/`), so the SDK keeps
   it `Provided`. No fallback to sbt-assembly is needed.
+- **V2** (T005): `OAUTHBEARER` with client credentials against a stub token endpoint (the JDK's
+  `HttpServer`, answering a JWT), an `Admin` created with `SASL_PLAINTEXT`, the endpoint in
+  `sasl.oauthbearer.token.endpoint.url` and `clientId`/`clientSecret` in the JAAS line. The login
+  runs when the client is constructed, so a refusal is immediate.
+  - **The login callback handler** is
+    `org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler` in both 3.9.2
+    and 4.2.0 (3.9.2 still carries the deprecated `…oauthbearer.secured.` alias).
+  - **kafka-clients 3.9.2** (Pekko Streams, the operator): logs in with no system property. It needs
+    `jackson-databind` on the classpath (without it: `ClassNotFoundException:
+    com.fasterxml.jackson.databind.ObjectMapper`); kafka-clients declares no dependency on it.
+  - **kafka-clients 4.2.0** (Flink): refuses the endpoint unless
+    `-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=<endpoint>` is set ("The URL cannot be
+    accessed due to restrictions"), and needs `org.bitbucket.b_c:jose4j` (without it:
+    `ClassNotFoundException: org.jose4j.keys.resolvers.VerificationKeyResolver`) as well as
+    `jackson-databind`.
+  - **Consequences**: the Pekko Streams SDK depends on `jackson-databind`; the Flink SDK depends on
+    `jose4j` and `jackson-databind` (both reach the image's `usrlib`). The Flink SDK sets the
+    allowed-URLs property from the token endpoints its settings name before it builds a source or
+    sink, which covers the job manager (where the source's enumerator makes its `Admin`) and a
+    laptop. A task manager is a different JVM that never runs the main, so the operator also writes
+    `env.java.opts.taskmanager: -Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=<endpoints>` into a
+    `FlinkDeployment`'s `flinkConfiguration` when one of the streamlet's topics is on a cluster whose
+    connection settings name a token endpoint (T032). The operator's own `Admin` is on 3.9.2 and
+    needs nothing.
