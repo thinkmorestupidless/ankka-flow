@@ -4,7 +4,7 @@
 # docs-index.json and the agent skills — is rendered from the same tree by
 # `uv run --project tools/docs docs build`. See docs/contributing/documentation.md.
 site_name: ankka-flow
-site_description: Streaming pipelines beside ankka — streamlets in any language, wired by a blueprint over Kafka topics, with a sidecar in every pod that owns everything Kafka and commits only after the write.
+site_description: Streaming pipelines beside ankka — streamlets written against Pekko Streams or Apache Flink, wired by a blueprint over Kafka topics whose contracts are checked before anything runs.
 site_url: https://flow.ankka.cloud/
 repo_url: https://github.com/thinkmorestupidless/ankka-flow
 repo_name: thinkmorestupidless/ankka-flow
@@ -68,15 +68,11 @@ extra:
   # docs/contributing/documentation.md.
   docs:
     facets:
-      languages: [scala, python]
+      languages: [scala, java]
     skills:
       source: tools/docs/skill
       targets:
         - path: marketplace/plugins/ankka-flow/skills
-    generated:
-      protocol:
-        kind: protobuf
-        directory: protocol/src/main/protobuf/ankka/flow/v1
     site-links:
       retired-hosts: []
       files: [README.md, marketplace/plugins/ankka-flow/.claude-plugin/plugin.json]
@@ -90,42 +86,36 @@ nav:
       - Work with a coding agent: get-started/coding-agents.md
   - Concepts:
       - Pipelines and streamlets: concepts/pipelines.md
-      - The sidecar: concepts/sidecar.md
+      - Choosing an engine: concepts/engines.md
       - Delivery and failure: concepts/delivery.md
       - Contracts: concepts/contracts.md
       - Topics and Kafka clusters: concepts/topics.md
   - Build:
-      - Write a streamlet in Scala: build/scala-streamlet.md
-      - Write a streamlet in Python: build/python-streamlet.md
+      - Write a Pekko Streams streamlet: build/pekko-streams-streamlet.md
+      - Write a Flink streamlet: build/flink-streamlet.md
       - Test a streamlet: build/testing.md
       - Write a blueprint: build/blueprints.md
-      - Read an ankka service's topic: build/ankka-topics.md
-      - Build a graph from a pipeline: build/graph-sink.md
-      - Fill a graph from an ankka service: build/graph-from-ankka.md
+      - Read and write ankka topics: build/ankka-topics.md
       - Build an image: build/images.md
   - Run and operate:
       - Install the platform: deploy/install.md
       - Deploy a pipeline: deploy/deploy-a-pipeline.md
       - Configure at deploy time: deploy/configuration.md
       - Rebuild from the start: deploy/reset.md
-      - Rebuild a graph from its delta topic: deploy/rebuild-a-graph.md
       - Observe a pipeline: deploy/observe.md
       - Troubleshooting: deploy/troubleshooting.md
   - Reference:
       - CLI: reference/cli.md
       - Blueprint: reference/blueprint.md
+      - Descriptor: reference/descriptor.md
+      - Streamlet settings: reference/streamlet-settings.md
       - AnkkaFlow resource: reference/resource.md
       - Operator: reference/operator.md
-      - Sidecar: reference/sidecar.md
-      - Descriptor: reference/descriptor.md
-      - Graph deltas: reference/graph-deltas.md
-      - Neo4j merge sink: reference/neo4j-merge-sink.md
-      - Streamlet protocol: reference/protocol.md
-      - Scala SDK: reference/scala-sdk.md
-      - Python SDK: reference/python-sdk.md
+      - Pekko Streams SDK: reference/pekko-streams-sdk.md
+      - Flink SDK: reference/flink-sdk.md
       - Limitations: reference/limitations.md
       - Glossary: reference/glossary.md
   - Contributing:
       - Writing documentation: contributing/documentation.md
-      - Adding a language SDK: contributing/language-sdks.md
+      - Adding an engine: contributing/engines.md
       - Build ankka-flow from source: contributing/building.md

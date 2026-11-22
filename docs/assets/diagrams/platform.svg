@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" aria-labelledby="title desc">
   <title id="title">ankka-flow on Kubernetes</title>
-  <desc id="desc">A developer or CI job writes an AnkkaFlow resource with flow generate and applies it with kubectl. The ankka-flow operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka. They speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the managed topics before it commits.</desc>
+  <desc id="desc">A developer or CI job writes an AnkkaFlow resource with flow generate and applies it with kubectl. The ankka-flow operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, and runs each streamlet by its engine: the Pekko Streams cleaner as a Deployment, the Flink counter as a FlinkDeployment that the Flink Kubernetes Operator runs, its checkpoints in a state store. The cleaner consumes the unmanaged topic an ankka service publishes and produces to the managed topic carts.clean-carts; the counter reads it and writes carts.cart-counts. Each streamlet reads and writes Kafka itself, with the credentials of its own topics only. The operator writes status back to the resource.</desc>
   <style>
     .bg { fill: #ffffff; }
     .ink { fill: #1f2328; }
@@ -63,8 +63,8 @@
   <rect class="hot" x="274" y="112" width="346" height="100" rx="8"/>
   <text class="title ink" x="447" y="138" text-anchor="middle">Operator</text>
   <text class="small muted" x="447" y="158" text-anchor="middle">watches AnkkaFlow resources in every namespace</text>
-  <text class="small muted" x="447" y="175" text-anchor="middle">renders each streamlet as a Deployment and a Secret</text>
-  <text class="small muted" x="447" y="192" text-anchor="middle">adds the sidecar image and the Kafka settings</text>
+  <text class="small muted" x="447" y="175" text-anchor="middle">renders a Pekko Streams streamlet as a Deployment</text>
+  <text class="small muted" x="447" y="192" text-anchor="middle">and a Flink streamlet as a FlinkDeployment</text>
 
   <rect class="box" x="636" y="112" width="204" height="64" rx="8"/>
   <text class="mono ink" x="738" y="134" text-anchor="middle">kafka-cluster-&lt;name&gt;</text>
@@ -86,10 +86,10 @@
 
   <text class="label muted" x="980" y="286">MANAGED</text>
   <rect class="hot" x="980" y="296" width="154" height="56" rx="6"/>
-  <text class="mono ink" x="1057" y="319" text-anchor="middle">cart.valid-carts</text>
+  <text class="mono ink" x="1057" y="319" text-anchor="middle">carts.clean-carts</text>
   <text class="small muted" x="1057" y="338" text-anchor="middle">the pipeline's own</text>
   <rect class="hot" x="980" y="378" width="154" height="56" rx="6"/>
-  <text class="mono ink" x="1057" y="401" text-anchor="middle">cart.review-carts</text>
+  <text class="mono ink" x="1057" y="401" text-anchor="middle">carts.cart-counts</text>
   <text class="small muted" x="1057" y="420" text-anchor="middle">the pipeline's own</text>
 
   <text class="label muted" x="980" y="530">UNMANAGED</text>
@@ -107,7 +107,7 @@
   <text class="small muted" x="235" y="342" text-anchor="end">apply</text>
 
   <rect class="hot" x="274" y="318" width="246" height="62" rx="8"/>
-  <text class="title ink" x="397" y="343" text-anchor="middle">AnkkaFlow: cart</text>
+  <text class="title ink" x="397" y="343" text-anchor="middle">AnkkaFlow: carts</text>
   <text class="small muted" x="397" y="363" text-anchor="middle">one per pipeline · spec in, status out</text>
 
   <!-- operator <-> resource -->
@@ -116,59 +116,54 @@
   <line class="line" x1="460" y1="214" x2="460" y2="316" marker-end="url(#a)"/>
   <text class="small ink" x="468" y="279">writes status</text>
 
-  <!-- operator -> streamlet -->
-  <line class="line" x1="580" y1="214" x2="580" y2="408" marker-end="url(#a)"/>
+  <!-- operator -> streamlets -->
+  <line class="line" x1="580" y1="214" x2="580" y2="394"/>
+  <line class="line" x1="377" y1="394" x2="600" y2="394"/>
+  <line class="line" x1="377" y1="394" x2="377" y2="408" marker-end="url(#a)"/>
+  <line class="line" x1="600" y1="394" x2="600" y2="408" marker-end="url(#a)"/>
   <text class="small ink" x="588" y="340">creates and owns</text>
-  <text class="small muted" x="588" y="356">Deployment and Secret</text>
-  <text class="small muted" x="588" y="372">per streamlet</text>
+  <text class="small muted" x="588" y="356">one per streamlet, with</text>
+  <text class="small muted" x="588" y="372">its settings in a Secret</text>
 
-  <!-- The streamlet -->
-  <rect class="deploy" x="274" y="410" width="426" height="290" rx="8"/>
-  <text class="title ink" x="288" y="432">flow-cart-router</text>
-  <text class="small muted" x="406" y="432">Deployment · replicas share each group</text>
+  <!-- The Flink streamlet -->
+  <rect class="deploy" x="274" y="410" width="206" height="152" rx="8"/>
+  <text class="title ink" x="377" y="434" text-anchor="middle">flow-carts-counter</text>
+  <text class="small muted" x="377" y="452" text-anchor="middle">FlinkDeployment · Flink</text>
+  <rect class="box" x="288" y="464" width="178" height="84" rx="6"/>
+  <text class="small ink" x="377" y="484" text-anchor="middle">the counter's image</text>
+  <text class="small muted" x="377" y="501" text-anchor="middle">run by the Flink Kubernetes</text>
+  <text class="small muted" x="377" y="517" text-anchor="middle">Operator · windows and state</text>
+  <text class="small muted" x="377" y="533" text-anchor="middle">checkpoints · transactions</text>
 
-  <rect class="deploy" x="290" y="446" width="394" height="238" rx="8"/>
-  <text class="small muted" x="302" y="464">pod</text>
+  <rect class="box" x="274" y="596" width="150" height="56" rx="6"/>
+  <text class="small ink" x="349" y="618" text-anchor="middle">state store</text>
+  <text class="small muted" x="349" y="636" text-anchor="middle">checkpoints, by epoch</text>
+  <line class="dash" x1="349" y1="564" x2="349" y2="594" marker-end="url(#m)"/>
 
-  <rect class="box" x="304" y="474" width="156" height="100" rx="6"/>
-  <text class="title ink" x="382" y="498" text-anchor="middle">process</text>
-  <text class="small muted" x="382" y="517" text-anchor="middle">the streamlet's image</text>
-  <text class="small muted" x="382" y="534" text-anchor="middle">your code, any language</text>
-  <text class="small muted" x="382" y="551" text-anchor="middle">no Kafka client, ports,</text>
-  <text class="small muted" x="382" y="566" text-anchor="middle">probes or secrets</text>
+  <!-- The Pekko Streams streamlet -->
+  <rect class="deploy" x="500" y="410" width="206" height="152" rx="8"/>
+  <text class="title ink" x="603" y="434" text-anchor="middle">flow-carts-cleaner</text>
+  <text class="small muted" x="603" y="452" text-anchor="middle">Deployment · Pekko Streams</text>
+  <rect class="box" x="514" y="464" width="178" height="84" rx="6"/>
+  <text class="small ink" x="603" y="484" text-anchor="middle">the cleaner's image</text>
+  <text class="small muted" x="603" y="501" text-anchor="middle">its own Kafka clients</text>
+  <text class="small muted" x="603" y="517" text-anchor="middle">commits after the write</text>
+  <text class="small muted" x="603" y="533" text-anchor="middle">replicas share each group</text>
 
-  <rect class="hot" x="500" y="474" width="170" height="100" rx="6"/>
-  <text class="title ink" x="585" y="498" text-anchor="middle">sidecar</text>
-  <text class="small muted" x="585" y="517" text-anchor="middle">the operator's image</text>
-  <text class="small muted" x="585" y="534" text-anchor="middle">everything Kafka</text>
-  <text class="small muted" x="585" y="551" text-anchor="middle">commits after the write</text>
-  <text class="small muted" x="585" y="566" text-anchor="middle">probes · metrics :2050</text>
+  <!-- cleaner -> clean-carts -->
+  <path class="line" d="M 708 450 L 850 450 L 850 324 L 978 324" marker-end="url(#a)"/>
+  <text class="small ink" x="722" y="442">produces</text>
 
-  <line class="line" x1="462" y1="524" x2="498" y2="524" marker-start="url(#a)" marker-end="url(#a)"/>
-  <text class="small ink" x="382" y="596" text-anchor="middle">gRPC on 127.0.0.1</text>
-  <text class="small muted" x="382" y="612" text-anchor="middle">batches in; emits and</text>
-  <text class="small muted" x="382" y="627" text-anchor="middle">an ack back</text>
-
-  <rect class="bg" x="500" y="620" width="170" height="54" rx="5"/>
-  <rect class="deploy" x="500" y="620" width="170" height="54" rx="5"/>
-  <text class="small ink" x="585" y="637" text-anchor="middle">Secret flow-cart-router</text>
-  <text class="small muted" x="585" y="652" text-anchor="middle">descriptor, streamlet.conf</text>
-  <text class="small muted" x="585" y="667" text-anchor="middle">mounted in the sidecar</text>
-  <line class="dash" x1="585" y1="618" x2="585" y2="576" marker-end="url(#m)"/>
-
-  <!-- sidecar -> managed topics -->
-  <path class="line" d="M 672 510 L 850 510 L 850 324 L 978 324" marker-end="url(#a)"/>
-  <path class="line" d="M 850 406 L 978 406" marker-end="url(#a)"/>
-  <text class="small ink" x="690" y="502">produces</text>
-  <text class="small muted" x="858" y="316">valid</text>
-  <text class="small muted" x="858" y="398">review</text>
-
-  <!-- unmanaged topic -> sidecar -->
-  <path class="line" d="M 978 575 L 780 575 L 780 552 L 672 552" marker-end="url(#a)"/>
+  <!-- unmanaged topic -> cleaner -->
+  <path class="line" d="M 978 575 L 780 575 L 780 520 L 708 520" marker-end="url(#a)"/>
   <text class="small ink" x="790" y="567">consumes as group</text>
-  <text class="mono muted" x="790" y="591">cart.router.in</text>
+  <text class="mono muted" x="790" y="591">carts.cleaner.in</text>
 
-  <text class="small muted" x="274" y="722">also per pipeline: ServiceAccount, Role and RoleBinding flow-cart</text>
+  <!-- counter <-> clean-carts, cart-counts -->
+  <path class="line" d="M 452 564 L 452 690 L 918 690 L 918 406 L 978 406" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="small ink" x="470" y="682">reads carts.clean-carts · writes carts.cart-counts</text>
+
+  <text class="small muted" x="274" y="722">also per pipeline: ServiceAccount, Role and RoleBinding flow-carts</text>
 
   <!-- An ankka project -->
   <rect class="ns" x="258" y="754" width="672" height="110" rx="10"/>

@@ -1,102 +1,114 @@
 ---
 name: ankka-flow
-description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the sidecar that owns everything Kafka in every pod, JSON contracts matched by schema name and fingerprint, managed and unmanaged topics, commit after the write, at-least-once delivery, never skipping, stalled partitions, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing between ankka and ankka-flow, writing or reviewing a blueprint, or any question about ankka-flow that is not specifically writing a Scala or Python streamlet, deploying, or implementing the protocol; load it first when unsure which skill applies. Also building a graph from events with graph deltas keyed by element, compacted delta topics, and the built-in Neo4j merge sink.
+description: What ankka-flow is and how a pipeline behaves — streamlets with typed inlets and outlets wired by a blueprint over Kafka topics, the two engines (Pekko Streams for per-record stages, Apache Flink for windows and state) and how to choose between them, descriptors, contracts matched by name and fingerprint, managed, unmanaged and ankka topics, Kafka names, consumer groups, delivery per engine (at least once with commit after the write; once between managed topics with checkpoints), never skipping, and when a design is an ankka consumer rather than a flow. Use for designing a pipeline, choosing an engine for a stage, choosing between ankka and ankka-flow, writing or reviewing a blueprint, wiring an ankka project's topics, or any ankka-flow question that is not specifically writing a Pekko Streams streamlet (ankka-flow-pekko-streams), a Flink streamlet (ankka-flow-flink) or deploying and operating (ankka-flow-deploy); load it first when unsure which skill applies.
 ---
 
 # ankka-flow
 
 ankka-flow runs streaming pipelines beside ankka. A pipeline is a graph of **streamlets**, each with
-named inlets and outlets, connected by Kafka **topics** according to a **blueprint**. A streamlet's
-logic is written in any language and shipped as an image that holds only that code. A **sidecar** the
-platform adds to every pod owns everything Kafka — subscribing, batching, producing, committing,
-consumer groups, lag and resets — and talks to the streamlet's process over a gRPC protocol on the
-pod's loopback interface.
+named, typed inlets and outlets, connected by Kafka **topics** according to a **blueprint**. A
+streamlet is written against one engine's own API — Pekko Streams in Scala, or Apache Flink in Java —
+and shipped as an image of its own; the platform runs it on that engine, creates the pipeline's
+topics, and reports its state and each inlet's lag. Each engine reads and writes Kafka itself, with
+the credentials of its own topics only.
 
 ## Rules
 
 1. **A single reaction to a topic is an ankka consumer, not a flow.** Reach for ankka-flow when a
    design needs several of: a graph of stages whose contracts are checked against each other before
    anything runs, several typed outlets per stage, topics the platform creates and owns, per-key
-   ordering through a chain, a rebuild from the start of the inputs, lag per stage, or sinks that
-   commit only after writing elsewhere.
-2. **Ports connect by contract, checked before anything runs.** A contract is a format (only `json`)
-   and a schema name such as `cart-events.v1`; the fingerprint is Base64 of the SHA-256 of that name.
-   An outlet and an inlet on one topic must carry equal contracts. A new version is a new name.
-3. **The sidecar never decodes for a process.** A record's value is bytes from Kafka to the process
-   and back. Decoding, and deciding what to do with a record that will not decode, is the streamlet's
-   job. A built-in streamlet (`builtin/<name>`, no image, a pod with only the sidecar) decodes its own
-   contract and nothing else.
-4. **Delivery is at least once.** Offsets are committed only after every emit of the batch is
-   confirmed by the broker. A crash between the write and the commit delivers the record again, so
-   streamlet logic must tolerate repeats. There is no exactly-once.
-5. **Nothing is ever skipped by the platform.** A failed batch is redelivered from the last commit,
-   indefinitely; a batch that always fails stalls its partition and shows as lag, a metric and a
-   `PartitionStalled` event. Skipping is the streamlet's decision: acknowledge without emitting.
-6. **Order is per partition.** At most one batch per inlet partition is in flight, so records with the
-   same key stay in order through a chain of streamlets that keep the key. Batches of different
-   partitions interleave, and the assignment changes on every rebalance: never keep per-partition
-   state in the process.
-7. **Managed topics are the pipeline's; unmanaged topics are someone else's.** The operator creates a
-   managed topic (named `<pipeline>.<topic id>` unless `topic.name` says otherwise) and never changes
-   an existing one. An unmanaged topic is only read: never created, altered, deleted or produced to;
-   it is named by `topic.name`, else its bare topic id. Neither `managed` nor `topic.name` can be
-   overridden at deploy time.
-8. **The resource says what runs.** `flow generate` merges deploy-time configuration into the
-   `AnkkaFlow` resource; the operator adds only the sidecar image and Kafka cluster secrets.
-9. **A graph is built from state-shaped, versioned deltas.** Map events to `ankka.graph-delta.v1`
-   in an ordinary streamlet and wire `builtin/neo4j-merge-sink` behind it. Each delta is an element's
-   whole state with a global id and a version that rises with its one source entity. Redelivery,
-   reordering and a replay from the start then leave the same graph. No increments, no Cypher from
-   the pipeline; tombstones mark rather than delete.
-10. **A delta's record key is its element key, and the sink enforces it.** `node:<id>` for a node
-   merge or node tombstone, `edge:<id>` for an edge merge or edge tombstone, the id verbatim. The
-   sink fails the batch for a delta with no key or another key, naming the key expected. The SDKs'
-   graph delta outlets build the key (`graphDeltaOutlet` in Scala, `GraphDeltaOutlet` in Python); in
-   any other language the writer sets it.
-11. **A managed delta topic is compacted by default.** A topic with any port of the delta contract
-   gets `cleanup.policy = compact` from `flow generate` unless the blueprint or `--conf` sets a
-   policy, and `flow verify` says so in a note. It then holds the latest delta per element, so an
-   empty database is filled by resetting the sink alone. The platform writes no delete markers and
-   passes over any it reads; a tombstone stays in the topic.
-12. **`flow` is installed, not built.** `brew install thinkmorestupidless/tap/ankka-flow` (the tap
-   ankka's CLI ships through; the two coexist), or a release's `ankka-flow-cli-<version>-<platform>.tar.gz`
-   verified with its `.sha256`, for macOS arm64 and x64 and Linux arm64 and x64; no JVM. Building from
-   source, with sbt and optionally GraalVM, is for changing ankka-flow or for another platform.
-13. **A project starts with `flow init`.** `flow init <name>` writes a Scala project, `-l python` a
-   Python one: the streamlet, its test, the committed descriptor, a blueprint that verifies, the
-   image build, the laptop compose file and these skills, at the `flow` release's SDK and sidecar.
-
-14. **In a project from `flow init`, `flow`'s abilities are tools.** `.mcp.json` starts `flow mcp`:
-   `verify_blueprint`, `generate_resource`, `flow_version`, `search_docs` and `read_doc` need no
-   cluster; `list_pipelines`, `get_pipeline`, `pipeline_logs` and `pipeline_lag` read the one cluster
-   `flow.toml` names; `apply_pipeline` and `reset_pipeline` change it. Nothing touches any other
-   cluster, whatever kubectl points at.
+   ordering through a chain, windows and state across records, lag per stage, or a rebuild from the
+   start of the inputs.
+2. **Choose the engine per stage, from what the stage needs.** Windows, state kept across records,
+   late records or joins across streams: a Flink streamlet. Each record handled on its own (filter,
+   clean, reshape, route to one of several outlets, enrich by a call): a Pekko Streams streamlet. A
+   Pekko Streams streamlet has no windows, timers or state that survives a restart; never design one
+   that needs them. One blueprint wires streamlets of both engines over one topic.
+3. **The descriptor is the streamlet as the platform sees it.** Each SDK writes it from the
+   declaration (`--descriptor <file>` on the streamlet's main, checked with `--descriptor-check`):
+   name, engine (`pekko-streams` or `flink`), ports, contracts, parameters, in canonical JSON. A
+   blueprint is verified against descriptors, never code, so `flow verify` needs no image, network or
+   engine. A descriptor is never written or edited by hand.
+4. **Ports connect by contract, checked before anything runs.** A contract is a name such as
+   `cart-events.v1` and, optionally, a schema on the classpath whose fingerprint
+   (`sha256:` and the hex SHA-256 of the schema in RFC 8785 canonical form, as ankka computes it) goes
+   into the descriptor. Two contracts agree when the names are equal and, where both state one, the
+   fingerprints are equal. Nothing checks a record against its schema in flight; the port's codec
+   decodes it. A new version is a new name.
+5. **A blueprint names streamlets and topics; never engines or images.** `blueprint.streamlets` maps a
+   name in this pipeline to a descriptor's `streamlet.name` (one descriptor may run twice under two
+   names). `blueprint.topics.<id>` lists `producers` (outlets) and `consumers` (inlets) as
+   `<streamlet>.<port>`. Every inlet is on exactly one topic; an outlet is on at most one, and an
+   unconnected outlet is a note, not an error.
+6. **Three kinds of topic.** A **managed** topic (the default) is the pipeline's: the operator creates
+   it once, named `<pipeline>.<id>` unless `topic.name` says otherwise, and never alters it. An
+   **unmanaged** topic (`managed = false`) is someone else's: only read, never created, altered,
+   deleted or produced to; it names `cluster` or `bootstrap.servers` and almost always `topic.name`.
+   An **ankka topic** (`ankka = "<project>/<name>"`) is an ankka project's: Kafka name
+   `<project>.<name>`, read and written as a registered machine the project grants each topic to,
+   never created; it takes no `managed = true`, `topic.name` or `bootstrap.servers`.
+7. **Check ankka topics against the project.** `flow verify --ankka-topics <project>=<file>`, the file
+   from `ankka projects topics list -p <project> -o json`, checks every port's contract against the
+   project's declaration; without the file the blueprint verifies with a note that it was not
+   checked. The machine, its grants and the topic declarations are made with `ankka`, never with
+   `flow`.
+8. **Delivery depends on the engine and the topic.** A Pekko Streams streamlet is at least once:
+   each record's offset is committed only after everything it produced, and everything before it on
+   the partition, is acknowledged by the broker. A Flink streamlet counts each record once into topics
+   the pipeline manages (Kafka transactions committed with each checkpoint, readers on
+   `read_committed`, so downstream sees its records one checkpoint interval late), and at least once
+   into an unmanaged or ankka topic. Every reader of an at-least-once topic tolerates repeats.
+9. **Nothing is skipped by the platform.** A record that fails is retried from the last commit or
+   checkpoint, indefinitely; its partition stops advancing and the inlet's lag grows. Dropping a
+   record is the streamlet's own decision: emit nothing for it.
+10. **Order is per key, through partitions.** Records with one key are on one partition and read in
+    offset order; a streamlet that keeps the key when it emits keeps that order into the next topic.
+11. **Consumer groups are per inlet.** `<pipeline>.<streamlet>.<inlet>`, prefixed
+    `ankka.machine.<organization>.<name>.` on a machine's cluster. Two streamlets reading one topic each
+    read every record; a Pekko Streams streamlet's replicas share their groups. A new group starts at
+    the earliest offset.
+12. **The resource says what runs.** `flow generate` merges deploy-time configuration into the
+    `AnkkaFlow` resource; the operator adds only the Kafka cluster settings (from `kafka-cluster-<name>`
+    Secrets) and, for Flink, the state store (`flink-state`). Credentials never appear in a blueprint,
+    a resource or an image.
+13. **`flow` is installed, not built.** `brew install thinkmorestupidless/tap/ankka-flow`, or a
+    release's `ankka-flow-cli-<version>-<platform>.tar.gz` verified with its `.sha256`, for macOS
+    arm64 and x64 and Linux arm64 and x64; one native binary, no JVM. Building it from source is for
+    changing ankka-flow or another platform.
+14. **A streamlet starts from the sample, not a template.** `samples/cart-pipeline` holds a Pekko
+    Streams cleaner and a Flink counter with their tests, descriptors, blueprint and image builds; a
+    project depends on the SDK from Maven Central (`ankka-flow-pekko-streams`, or `ankka-flow-flink`
+    with `ankka-flow-flink-testkit`).
+15. **`flow mcp` gives a coding agent the CLI as tools.** `verify_blueprint`, `generate_resource`,
+    `flow_version`, `search_docs` and `read_doc` need no cluster; `list_pipelines`, `get_pipeline`,
+    `pipeline_logs` and `pipeline_lag` read, and `apply_pipeline` and `reset_pipeline` change, only the
+    cluster `flow.toml`'s `context` and `namespace` name, never kubectl's current context.
 
 ## Before answering
 
 - Is this a pipeline at all, or one ankka consumer? Apply rule 1 first.
-- Which topics are managed and which belong to something else? Unmanaged topics may have no producers
-  in the blueprint.
-- Does every inlet's contract equal the contract of every outlet on its topic?
-- Can the logic tolerate a record twice, and is anything relying on per-partition state?
+- Which engine does each stage need? Does any Pekko Streams stage need a window, a timer or state?
+- Which topics are managed, unmanaged or ankka's? Unmanaged topics have no producers in the blueprint.
+- Does every inlet's contract agree with every outlet's on its topic, and with the ankka project's?
+- Which outlets are at least once, and does every reader of them tolerate a record twice?
 - Does a limitation apply? Check `references/reference/limitations.md` before promising a feature.
 
 ## Mistakes to check for
 
-- Copying a sample out of the repository to start a project instead of running `flow init`.
-- Running `kubectl` against the shell's current context instead of the cluster `flow.toml` names.
-- Proposing Avro, Protobuf or a schema registry for a contract; only JSON by schema name exists.
-- A guide or script that builds `flow` from source instead of installing it, or that asks for a JVM
-  to run it.
-- A dead-letter topic or a "skip after N retries" setting; neither exists, by design.
+- A Pekko Streams streamlet holding per-key or per-partition state in memory, or a window built by
+  hand; it is a Flink streamlet.
+- Expecting once-only delivery from a Pekko Streams streamlet, or from a Flink streamlet into an ankka
+  or unmanaged topic.
+- An engine, an image or a Kafka credential written into a blueprint.
 - A blueprint that produces to an unmanaged topic, or leaves an inlet connected to nothing.
-- Kafka settings or credentials in the streamlet's own container; they belong to the sidecar.
-- An HTTP or gRPC ingress into a pipeline; records enter through a Kafka topic.
-- A graph pipeline whose mapper writes to Neo4j itself, or emits increments rather than whole state.
-- A delta keyed by the bare element id, by the input record's key, or not at all; the key is
-  `node:<id>` or `edge:<id>`.
-- `cleanup.policy = delete` on a delta topic that is expected to rebuild the graph, or a delete
-  marker written for an element that was never tombstoned.
+- An ankka topic with `managed = true`, `topic.name` or `bootstrap.servers`, or an ankka topic
+  modelled as a plain unmanaged one so it cannot be written.
+- A hand-written or hand-edited descriptor, or one not regenerated after a port, contract or
+  parameter changed.
+- Proposing Avro, Protobuf, a schema registry, a dead-letter topic, "skip after N retries", Flink SQL,
+  a Python streamlet, Spark, or an HTTP or gRPC ingress; none exists.
+- A guide or script that builds `flow` from source instead of installing it, or asks for a JVM to run it.
+- Running `kubectl` against the shell's current context instead of the cluster `flow.toml` names.
 
 ## Reference files
 
@@ -104,37 +116,30 @@ Open the one a task needs; each is one topic and stands alone.
 
 ### Start here
 
-- `references/index.md` — Streaming pipelines beside ankka — streamlets in any language, wired by a blueprint over Kafka topics, with a sidecar in every pod that owns everything Kafka.
+- `references/index.md` — Streaming pipelines beside ankka — streamlets written against Pekko Streams or Apache Flink, wired by a blueprint over Kafka topics whose contracts are checked before anything runs.
 
 ### Get started
 
-- `references/get-started/install.md` — Install the flow CLI with Homebrew or from a release archive, pull or build the sidecar, operator and sample images, and set up the Python SDK.
-- `references/get-started/first-streamlet.md` — Start a streamlet project with flow init, in Scala or Python — test it, check its descriptor, verify its blueprint and run it beside the sidecar on a laptop — then watch the cart router survive a restart.
-- `references/get-started/deploy-locally.md` — Install the operator and a development Kafka on a kind cluster, deploy the sample cart router as a pipeline with flow generate and kubectl, and watch it become Ready.
+- `references/get-started/install.md` — Install the flow CLI with Homebrew or from a release archive, pull the operator and sample images, and add the SDK of each engine as one dependency.
+- `references/get-started/first-streamlet.md` — Run the sample cart pipeline on a laptop — a Pekko Streams streamlet that cleans cart events and a Flink streamlet that counts them — against Kafka in a container, with flow local writing each streamlet's settings.
 - `references/get-started/coding-agents.md` — Give a coding agent this documentation as skills from the ankka marketplace and flow's abilities as tools through flow mcp — connecting Claude, naming the one cluster the tools may touch, and the loop from a change to a running pipeline.
 
 ### Concepts
 
 - `references/concepts/pipelines.md` — What a pipeline is — streamlets with typed inlets and outlets, wired by a blueprint over Kafka topics — and when a design needs one rather than an ankka consumer.
-- `references/concepts/sidecar.md` — The container the platform runs beside every streamlet, which owns everything Kafka and drives the streamlet's process over a gRPC protocol on the pod's loopback interface.
-- `references/concepts/delivery.md` — How the sidecar delivers records — commit only after the write, at least once, never skipping — and what happens when a batch fails, a partition stalls or a rebalance moves a partition.
-- `references/concepts/contracts.md` — What a port's contract is — a format and a fingerprint — how two ports are matched by it before anything runs, and why the sidecar never decodes a record.
+- `references/concepts/engines.md` — Which need selects a Flink streamlet, which a Pekko Streams streamlet, and which an ankka consumer instead of a pipeline, and what each promises about delivery.
+- `references/concepts/delivery.md` — What each engine promises about delivery — a Pekko Streams streamlet at least once, committing only after the write; a Flink streamlet once between managed topics — and what happens when a streamlet fails.
+- `references/concepts/contracts.md` — What a port's contract is — a name and, optionally, a schema's fingerprint, as ankka names one — and how two ports are matched by it before anything runs.
 - `references/concepts/topics.md` — Managed and unmanaged topics, how a topic's Kafka name is chosen, how its brokers and settings resolve from the blueprint and a Kafka cluster Secret, and how consumer groups and client ids are named.
 
 ### Build
 
 - `references/build/blueprints.md` — Write the blueprint that wires a pipeline's streamlets together over Kafka topics, from naming the streamlets to checking the result with flow verify.
-- `references/build/ankka-topics.md` — Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
-- `references/build/graph-sink.md` — Turn a service's events into a Neo4j graph — choose ids and versions, map events to keyed graph deltas in a streamlet, and wire the built-in Neo4j merge sink behind it.
-- `references/build/graph-from-ankka.md` — Keep a Neo4j graph in step with an ankka service that publishes its own graph deltas, with a pipeline that is the built-in merge sink and nothing else.
-
-### Run and operate
-
-- `references/deploy/rebuild-a-graph.md` — Fill an empty Neo4j database from a compacted topic of graph deltas by resetting only the merge sink, with no mapper running and no upstream topic read.
+- `references/build/ankka-topics.md` — Build a pipeline on an ankka project's topics — name each by project and name, check its contracts against the project's declarations, reach the broker as a registered machine, and see what a missing grant looks like.
 
 ### Reference
 
 - `references/reference/blueprint.md` — Every key of the blueprint file, the HOCON that names a pipeline's streamlets and the topics connecting their ports, and every rule flow verify checks it against.
-- `references/reference/graph-deltas.md` — The ankka.graph-delta.v1 contract a mapping streamlet writes and the Neo4j merge sink reads — node merges, edge merges and tombstones, each a versioned statement of state under its element key.
-- `references/reference/limitations.md` — What ankka-flow does not do — delivery guarantees, contract formats, SDKs, ingress, brokers and tooling — stated plainly so a design does not depend on it.
-- `references/reference/glossary.md` — Every term ankka-flow uses — streamlet, port, blueprint, contract, descriptor, sidecar, conversation, managed topic and the rest — each defined in a sentence with the page that explains it.
+- `references/reference/descriptor.md` — The descriptor file an SDK writes from a streamlet's declaration — its engine, ports, contracts and parameters in canonical JSON — and every rule flow and the operator check it against.
+- `references/reference/limitations.md` — What ankka-flow does not do — delivery per engine, engines, state, contracts, credentials, ankka's limits, ingress, brokers and tooling — stated plainly so a design does not depend on it.
+- `references/reference/glossary.md` — Every term ankka-flow uses — streamlet, engine, port, blueprint, contract, descriptor, state store, machine, grant and the rest — each defined in a sentence with the page that explains it.

@@ -1,98 +1,76 @@
 ---
 title: Build an image
-description: Package a streamlet as a container image that holds only its process — no Kafka client, no exposed ports — and make it available to a cluster.
+description: Package a streamlet as a container image for its engine — a Java runtime for a Pekko Streams streamlet, Flink's own image for a Flink streamlet — and make it available to a cluster.
 kind: guide
-languages: [scala, python]
-related: [build/scala-streamlet.md, build/python-streamlet.md, deploy/deploy-a-pipeline.md, concepts/sidecar.md]
+languages: [scala, java]
+related: [build/pekko-streams-streamlet.md, build/flink-streamlet.md, deploy/deploy-a-pipeline.md]
 ---
 
 # Build an image
 
-A streamlet's image holds its process and nothing else. The platform adds the sidecar to every pod, and
-the sidecar owns everything Kafka, so the image needs no Kafka client, no broker address, no
-credentials, no exposed ports and no health checks. The process listens on
-`127.0.0.1:$FLOW_PROCESS_PORT`, which the platform sets to `9010`, and the sidecar in the same pod
-dials it over loopback.
+A streamlet's image holds its code and what its engine needs to run it. The platform gives it its
+settings, a file mounted into the pod, and nothing else: the image needs no broker address, no
+credentials and no exposed ports.
 
-## The sample's image
+## A Pekko Streams streamlet
 
-/// tab | Scala
-
-A Scala streamlet's image comes from the build, with sbt-native-packager's `JavaAppPackaging` and
-`DockerPlugin`: the streamlet's classes and its dependencies on a Java runtime, started by the main
-class that calls `Serve.run`. The Scala cart router's settings in the ankka-flow build are:
+The image is a Java runtime with the streamlet's classes and dependencies, started by the main
+class that calls `PekkoStreamlets.run`. With sbt-native-packager's `JavaAppPackaging` and
+`DockerPlugin`, the cleaner's build is:
 
 ```scala
-lazy val cartRouterScala = project
+lazy val cartCleaner = project
+  .in(file("samples/cart-pipeline/cleaner"))
   .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(
     dockerBaseImage      := "eclipse-temurin:21-jre",
-    Docker / packageName := "sample-cart-router-scala",
-    Compile / mainClass  := Some("cart.Main")
+    Docker / packageName := "sample-cart-cleaner",
+    Compile / mainClass  := Some("cart.cleaner.Main")
   )
 ```
 
-`dockerExposedPorts` is left empty. Build it from the repository root:
-
 ```bash
-sbt cartRouterScala/docker:publishLocal     # sample-cart-router-scala:<version> and :latest
+sbt cartCleaner/docker:publishLocal     # sample-cart-cleaner:<version> and :latest
 ```
 
-///
+The operator runs it as a Deployment with one container, `streamlet`. Its readiness and liveness
+are files the SDK writes, so the image needs no health check of its own.
 
-/// tab | Python
+## A Flink streamlet
 
-The sample cart router's Dockerfile installs the SDK from its source in the repository and the
-streamlet from its lock file, and runs the entry point that calls `serve`:
+The image is Flink's own, at the Flink version the streamlet was built against, with the streamlet's
+jar at `/opt/flink/usrlib/streamlet.jar` and every dependency Flink does not provide beside it in
+`usrlib/`. Flink puts `usrlib/` on the job's classpath; the Flink Kubernetes Operator starts the job
+from the jar and the streamlet's entry class. The counter's Dockerfile:
 
-<!-- include: samples/cart-router/Dockerfile -->
+<!-- include: samples/cart-pipeline/counter/Dockerfile -->
 ```dockerfile
-# The cart router's process image: the streamlet and the SDK, nothing else. No ports are exposed;
-# the sidecar in the same pod dials 127.0.0.1:$FLOW_PROCESS_PORT.
-#
-# Build from the repository root, so the SDK can be installed from its source:
-#   docker build -f samples/cart-router/Dockerfile -t sample-cart-router .
-FROM python:3.12-slim
-# uv from PyPI rather than its container registry, which not every machine can pull from.
-RUN pip install --no-cache-dir "uv>=0.11,<0.12"
-ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
-
-WORKDIR /src
-COPY sdks/python/ sdks/python/
-# Generate the SDK's protobuf code from its committed copy of the protocol, then drop the tooling.
-RUN cd sdks/python && rm -rf .venv src/ankka_flow/_proto \
-    && uv run --frozen python scripts/proto.py && rm -rf .venv
-
-COPY samples/cart-router/pyproject.toml samples/cart-router/uv.lock samples/cart-router/
-COPY samples/cart-router/src samples/cart-router/src
-WORKDIR /src/samples/cart-router
-RUN uv sync --frozen --no-dev
-
-ENV PATH="/src/samples/cart-router/.venv/bin:$PATH" PYTHONUNBUFFERED=1
-CMD ["python", "-m", "cart_router.main"]
+# The counter's image: Flink's own, with the streamlet's jar and the dependencies Flink does not
+# provide in usrlib, which Flink puts on the job's classpath. `sbt cartCounter/image` stages the
+# jars in target/image and builds this file there.
+ARG FLINK_IMAGE
+FROM ${FLINK_IMAGE}
+COPY --chown=flink:flink usrlib/ /opt/flink/usrlib/
 ```
 
-Build it from the repository root:
+The build stages the jars into a directory beside the Dockerfile and builds there:
 
 ```bash
-docker build -f samples/cart-router/Dockerfile -t sample-cart-router .
+sbt cartCounter/image     # sample-cart-counter:<version>
 ```
 
-///
+Flink's own modules, `flink-streaming-java` and the connectors' Flink runtime among them, are
+`provided`: the image has them, and a second copy in `usrlib/` breaks class loading. The SDK and the
+Kafka connector it uses are not part of Flink's distribution, so they go in `usrlib/`.
 
-What to keep from it in your own streamlet's image:
+## Both
 
-- **No exposed port and no health check.** Nothing outside the pod talks to the process. The sidecar
-  reports readiness and liveness for the pod.
-- **A log that reaches the pod's output at once.** In Python, `PYTHONUNBUFFERED=1`; in Scala, an slf4j
-  binding, as the Scala sample has with `slf4j-simple`. The process's log is where the sidecar's refusals appear: when the
-  descriptor does not match, the sidecar sends every problem to the process to log before it refuses to start.
-- **Only the streamlet's code.** Tests, the descriptor file and development dependencies stay out of
-  the image: test-scoped dependencies never reach sbt's staged image, and `uv sync --no-dev` leaves
-  out the dependency group that holds pytest.
-- **The same declaration as the committed descriptor.** The sidecar compares what the running process
-  declares with the descriptor the pipeline was deployed with, and refuses to start on any difference.
-  Build the image from the same commit as the `flow/descriptor.json` you deploy.
+- **A log that reaches the pod's output at once.** An slf4j binding writing to standard output:
+  Logback in the cleaner; Flink's own in its image.
+- **Only the streamlet's code.** Tests and development dependencies stay out of the image.
+- **The same declaration as the committed descriptor.** The streamlet refuses to start when its
+  settings do not match its declared ports and parameters. Build the image from the same commit as the
+  descriptor you deploy.
 
 ## Tags
 
@@ -107,10 +85,11 @@ needs it replaced, conventionally with `-`; the ankka-flow build tags its own im
 
 A cluster pulls images from a registry: push the image, and give `flow generate` the full reference.
 
-A kind cluster can take an image straight from your local Docker instead:
+A kind cluster can take an image straight from your local Docker instead. With Docker's containerd
+image store, save one platform and load the archive:
 
 ```bash
-kind load docker-image --name ankka sample-cart-router:latest
+docker save --platform linux/arm64 sample-cart-counter:latest | kind load image-archive --name ankka /dev/stdin
 ```
 
 The operator renders every container with `imagePullPolicy: IfNotPresent`, so an image loaded into

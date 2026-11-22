@@ -1,11 +1,10 @@
 # CLI
 
-> Every command, option, message and exit code of the flow CLI, which starts streamlet projects, verifies blueprints, generates the AnkkaFlow resource and requests resets.
+> Every command, option, message and exit code of the flow CLI, which verifies blueprints, writes a laptop's streamlet settings, generates the AnkkaFlow resource and requests resets.
 
 Source: https://flow.ankka.cloud/reference/cli/
-`flow` starts a streamlet project, verifies a blueprint, writes the `AnkkaFlow` resource a cluster runs,
-and requests resets. It is
-one native executable with no JVM to install, for macOS (Apple silicon and Intel) and Linux (x64 and
+`flow` verifies a blueprint, writes the settings to run its streamlets on a laptop, writes the
+`AnkkaFlow` resource a cluster runs, and requests resets. It is one native executable with no JVM to install, for macOS (Apple silicon and Intel) and Linux (x64 and
 arm64). Homebrew installs it from the tap ankka's CLI ships through; every release also attaches an
 archive and a checksum per platform, and [Install the tools](../get-started/install.md) covers both:
 
@@ -14,8 +13,8 @@ brew install thinkmorestupidless/tap/ankka-flow
 flow version
 ```
 
-`flow version` prints the CLI's version and the protocol version it writes, for example
-`flow 0.1.0, protocol 1.0`. A platform outside the four builds the CLI from source;
+`flow version` prints the CLI's version and the descriptor version it reads, for example
+`flow 0.6.0, descriptor 2.0`. A platform outside the four builds the CLI from source;
 [Build ankka-flow from source](../contributing/building.md) covers that build, which behaves the same.
 
 | exit code | meaning |
@@ -24,85 +23,21 @@ flow version
 | `1` | refused or failed; every problem is on stderr, one per line |
 | `2` | usage error: an unknown command or option, or a missing argument |
 
-`init`, `verify` and `generate` need no image, no network and no language runtime. `reset` needs a
+`verify`, `generate` and `local` need no image, no network and no engine. `reset` needs a
 kubeconfig.
-
-## `flow init`
-
-```text
-flow init <name> [--language scala|python] [--dir <directory>] [--package <package>]
-```
-
-Writes a new streamlet project from templates carried inside `flow`; it needs no network and no copy
-of the repository.
-
-| option | default | meaning |
-|---|---|---|
-| `<name>` | — | the streamlet's and the pipeline's name |
-| `--language`, `-l` | `scala` | `scala` or `python` |
-| `--dir` | `<name>` | where to write; it must not exist, or be empty |
-| `--package` | Scala: the name without `-`; Python: the name with `_` for `-` | the Scala package (dotted, lower case) or the Python module |
-
-It refuses, writing nothing and exiting 2, with one line per problem on stderr:
-
-| refused | message |
-|---|---|
-| a name that is not 1–63 of `[a-z0-9-]`, or that starts or ends with `-` | `name '<name>' must be 1-63 of [a-z0-9-], not starting or ending with '-'` |
-| a name longer than 40 characters | `name '<name>' must be at most 40 characters: it becomes the pipeline id` |
-| a name that does not start with a letter | `name '<name>' must start with a letter: it becomes a class, a package and a module` |
-| a Scala package that is not dotted lower-case identifiers | `'<package>' is not a Scala package: …` |
-| a Python module that is not a lower-case identifier, or is a keyword | `'<package>' is not a Python module: …` |
-| a directory that holds files | `<directory> is not empty: flow init writes a new project into an empty or new directory` |
-| a language other than `scala` or `python` | the usage, as for any wrong option |
-
-On success it prints the number of files written and the next commands: change into the directory,
-run the tests, check the descriptor, and `flow verify blueprint.conf --descriptors flow`. It exits 1,
-writing nothing, only if a template would leave a `{{token}}` unreplaced, which the CLI's own tests
-rule out.
-
-The project holds:
-
-| | Scala | Python |
-|---|---|---|
-| the streamlet | `src/main/scala/<package>/<Class>.scala` | `src/<module>/streamlet.py` |
-| its entry point | `src/main/scala/<package>/Main.scala` | `src/<module>/main.py` |
-| its test | `src/test/scala/<package>/<Class>Suite.scala` | `tests/test_streamlet.py` |
-| the build and the image | `build.sbt`, `project/`; `sbt Docker/publishLocal` | `pyproject.toml`, `Dockerfile` |
-| the descriptor command | `sbt descriptor`, `sbt descriptorCheck` | `uv run descriptor`, `uv run descriptor --check` |
-
-and, for both, `flow/descriptor.json`, `flow/streamlet.conf`, `blueprint.conf`, `docker-compose.yml`,
-`k8s/in-cluster.conf`, `README.md`, `.gitignore`, `.github/workflows/ci.yml` and the ankka-flow skills
-under `.claude/skills/`. `<Class>` is the name in UpperCamelCase.
-
-The streamlet has one inlet `in` and one outlet `out`, both JSON with the schema name `<name>.v1`, and
-a string parameter `greeting` (default `hello, ankka-flow`). It adds `"greeting": <greeting>` to each
-JSON object it reads and emits it with the record's key and headers; a value that is not a JSON object
-fails the batch. The blueprint reads the unmanaged topic `<name>.in` and writes the managed topic `out`
-(`<name>.out` in Kafka).
-
-Versions follow the `flow` that wrote the project:
-
-- the Scala project depends on `ankka-flow-sdk` at `flow`'s version;
-- the Python project pins `ankka-flow`, and the committed descriptor names its SDK version, at the
-  release's version — or `0.0.0` from a `flow` built between releases, the version the SDKs report
-  then;
-- `docker-compose.yml` runs `ghcr.io/thinkmorestupidless/ankka-flow-sidecar` at `flow`'s version, with
-  `+` written as `-` (a Docker tag cannot hold `+`).
-
-A project written by a `flow` built from source between releases names a version no registry holds:
-build it against the repository's SDK, or write it with a released `flow`.
 
 ## `flow verify`
 
 ```text
-flow verify <blueprint.conf> [--descriptors <dir>] [--conf <file>]...
+flow verify <blueprint.conf> [--descriptors <dir>] [--conf <file>]... [--ankka-topics <project>=<file>]...
 ```
 
 | option | meaning |
 |---|---|
 | `<blueprint.conf>` | the blueprint, HOCON; see [the blueprint reference](blueprint.md) |
-| `--descriptors <dir>` | a directory whose `*.json` files are streamlet descriptors; other files are ignored. Optional when every streamlet is built in (`builtin/<name>`), whose descriptors the CLI already knows |
+| `--descriptors <dir>` | a directory whose `*.json` files are streamlet descriptors; other files are ignored |
 | `--conf <file>` | deploy-time configuration, HOCON; repeatable, later files win; see [Configure at deploy time](../deploy/configuration.md) |
+| `--ankka-topics <project>=<file>` | an ankka project's topic declarations, as `ankka projects topics list -p <project> -o json` prints them; repeatable, one per project; see [Read and write ankka topics](../build/ankka-topics.md) |
 
 It reads and validates every descriptor, parses the blueprint, checks it against the descriptors, and
 checks the `--conf` files against the result. On success it prints
@@ -112,19 +47,25 @@ one pass:
 | problem | message |
 |---|---|
 | the directory is missing or empty | `descriptors: '<dir>' is not a directory`, `descriptors: '<dir>' holds no *.json files` |
-| a descriptor does not parse or fails validation (a bad name, a port declared twice, a fingerprint that does not match its schema name, an unsupported protocol version) | `descriptor <file>: <problem>` |
+| a descriptor does not parse or fails validation (no engine or an unknown one, a bad name, a port declared twice, a malformed contract, an unsupported descriptor version) | `descriptor <file>: <problem>`; [Descriptor](descriptor.md#refusals) lists them |
 | two descriptors declare one streamlet | `2 descriptors declare streamlet '<name>'` |
 | the blueprint is not a file, or not HOCON | `blueprint: '<path>' is not a file`, `The blueprint file has an invalid format: …` |
 | a streamlet names a descriptor nobody declares | `Streamlet '<name>' names descriptor '<descriptor>', which no descriptor declares.` |
 | two streamlets share a name, or a name is illegal | `Duplicate streamlet names detected: …`, `Invalid streamlet name '<name>'. …` |
 | a port path names nothing | `'<path>' does not point to a known streamlet inlet or outlet, please try <suggestion>.` |
 | a producer is not an outlet, or a consumer is not an inlet | `'<path>' is not a valid producer for topic '<id>', must be an outlet.` (and the consumer form) |
-| an outlet and an inlet on one topic carry different contracts | `'<outlet>' (<contract>) is not compatible with '<inlet>' (<contract>).` |
-| a port uses a format other than `json` | `'<path>' uses format '<format>', which this version does not support; the only contract format is json.` |
+| two ports on one topic carry different contracts | `'<path>' (contract <contract>) is not compatible with '<path>' (contract <contract>).` |
 | an inlet is connected to nothing | `Inlet <streamlet>.<port> is not connected.` |
 | a port is bound to more than one topic | `'<path>' is bound to more than one topic: <ids>.` |
 | an unmanaged topic has producers | `Topic '<id>' is not managed but has producers <paths>; the platform only reads topics it does not own.` |
 | an unmanaged topic names no brokers and no cluster | `Topic '<id>' is not managed and names no bootstrap.servers or cluster.` |
+| an ankka topic that is not `<project>/<name>` | `Topic '<id>' names ankka topic '<value>', which is not <project>/<name>.` |
+| an ankka topic that is managed, or names `topic.name` or `bootstrap.servers` | `Topic '<id>' is an ankka topic, and an ankka topic is the ankka project's: a pipeline never creates it.`, `Topic '<id>' is an ankka topic and names <key>; ankka names its Kafka topic and its brokers.` |
+| a port's contract is not the ankka topic's | `<streamlet>.<port> declares contract <a> and ankka topic <project>/<name> declares <b>` |
+| the project does not declare the ankka topic | `ankka topic <project>/<name> is not declared; project <project> declares: <names>` |
+| the ankka topic declares no contract | `ankka topic <project>/<name> declares no contract: declare one with ankka projects topics set <name> --contract … --schema …` |
+| `--ankka-topics` names a project no topic does | `--ankka-topics names project '<project>', which no topic of the blueprint does` |
+| a topic sets `consumer-config.flow.batch` | `Topic '<id>' sets consumer-config.flow.batch, which is no longer a setting; remove it.` |
 | an illegal topic or Kafka cluster name | `'<name>' is not a valid topic name, …`, `Invalid Kafka cluster name '<name>'. …` |
 | `--conf` does not parse | `--conf <file>: <reason>` |
 | `--conf` names a topic or streamlet the blueprint does not | `overrides name unknown topic '<id>'`, `overrides name unknown streamlet '<name>'` |
@@ -132,19 +73,21 @@ one pass:
 | a parameter has no default and no value | `streamlet '<name>': parameter '<key>' has no default and no value` |
 | a parameter's value is not its type | `streamlet '<name>': parameter '<key>' = <value> is not a <type>` |
 | `replicas` is not a number, or is negative | `streamlet '<name>': replicas must be a number`, `… must not be negative` |
+| a Flink streamlet's `replicas` is not 0 or 1 | `streamlet '<name>': a flink streamlet's replicas may only be 0 or 1` |
+| `parallelism` is not a number of at least 1 | `streamlet '<name>': parallelism must be a number of at least 1` |
+| a `flink` setting is unknown or not its type | `streamlet '<name>': flink.<key> is not a setting`, `… flink.checkpoint-interval = <v> is not a duration`, and the like for `cpu` and `memory` |
+| a Pekko Streams streamlet sets `parallelism` or `flink` | `Streamlet '<name>' runs on pekko-streams, which takes no '<key>'; it is a setting of flink streamlets.` |
 
 An outlet connected to nothing is allowed. It is printed on stderr as a note
 (`note: Outlet <streamlet>.<port> is not connected.`) and does not change the exit code.
 
-A topic with a port of the graph delta contract gets a note too, saying whether it is compacted:
-`note: Topic '<id>' carries graph deltas and is compacted (cleanup.policy = compact).`, or, for a
-blueprint that set another policy or a topic that is not managed, what that means for rebuilding the
-graph. [Blueprint](blueprint.md#delta-topics) lists the four notes.
+An ankka project that the blueprint names and `--ankka-topics` does not gets a note too:
+`note: ankka topics of project '<project>' were not checked: pass --ankka-topics <project>=<file>`.
 
 ## `flow generate`
 
 ```text
-flow generate <blueprint.conf> [--descriptors <dir>] [--conf <file>]...
+flow generate <blueprint.conf> [--descriptors <dir>] [--conf <file>]... [--ankka-topics <project>=<file>]...
               [--images <file>] [--image <name>=<ref>]...
               [--pipeline <id>] [--version <v>] [-n|--namespace <ns>] [-o|--output <file>]
               [--delete-managed-topics]
@@ -152,8 +95,8 @@ flow generate <blueprint.conf> [--descriptors <dir>] [--conf <file>]...
 
 Everything `verify` does, then it writes the `AnkkaFlow` resource as YAML, to stdout or to `--output`
 (which prints `wrote <file>` on stderr). Deploy-time configuration is merged over the blueprint here, so
-the resource says exactly what will run; the operator adds only the sidecar image and Kafka cluster
-settings.
+the resource says exactly what will run; the operator adds only the Kafka cluster settings and the
+state store.
 
 | option | meaning |
 |---|---|
@@ -170,8 +113,7 @@ refuses when:
 
 | problem | message |
 |---|---|
-| a streamlet has no image | `Streamlet '<name>' has no image.` A built-in streamlet needs none |
-| an image is given for a built-in streamlet | `Streamlet '<name>' is built in and takes no image.` |
+| a streamlet has no image | `Streamlet '<name>' has no image.` |
 | an `--images` file does not parse | `images: <reason>` |
 | an `--image` is not `name=ref` | `--image '<value>' is not name=reference` |
 | the pipeline id is not a DNS label of at most 40 characters | `pipeline id '<id>' must be 1-40 of [a-z0-9-], not starting or ending with '-'` |
@@ -179,22 +121,44 @@ refuses when:
 An images file:
 
 ```hocon
-router = "ghcr.io/example/cart-router:0.3.1"
-sink   = "ghcr.io/example/cart-sink:0.3.1"
+# The image of each streamlet in the blueprint, by its name there: what `flow generate --images` reads.
+cleaner = "registry.example.com/cart-cleaner:0.6.0"
+counter = "registry.example.com/cart-counter:0.6.0"
 ```
 
 A typical deployment:
 
 ```bash
 flow generate blueprint.conf --descriptors flow --conf prod.conf \
-  --image router=registry.example.com/cart-router:1.2 -n shop | kubectl apply -f -
+  --image cleaner=registry.example.com/cart-cleaner:1.2 -n shop | kubectl apply -f -
 ```
 
-For a managed topic that carries graph deltas and sets no `cleanup.policy`, `generate` writes
-`cleanup.policy: compact` into the topic's `topicConfig`, and prints the same note `verify` does. Every
-other topic is written as the blueprint and `--conf` say.
+Every topic is written as the blueprint and `--conf` say; an ankka topic is written unmanaged, with
+`ankka: {project, name}` and the cluster `flow.ankka.cluster`, `ankka` or its own `cluster` names.
 
 See [the resource reference](resource.md) for every field `generate` writes.
+
+## `flow local`
+
+```text
+flow local <blueprint.conf> [--descriptors <dir>] [--conf <file>]... [--ankka-topics <project>=<file>]...
+           --bootstrap-servers <host:port> -o|--output <dir> [--ankka-bootstrap-servers <host:port>]
+```
+
+Everything `verify` does, then it writes `<dir>/<streamlet>/streamlet.properties` for every streamlet,
+the [settings](streamlet-settings.md) it runs with on a laptop, and prints `wrote <file>` for each. Set
+`FLOW_CONFIG_DIR` to a streamlet's directory and start it.
+
+| option | meaning |
+|---|---|
+| `--bootstrap-servers <host:port>` | the broker every topic is on, reached in plaintext |
+| `-o`, `--output <dir>` | the directory to write each streamlet's directory in |
+| `--ankka-bootstrap-servers <host:port>` | the broker every ankka topic is on, such as ankka's local platform's; required when the blueprint has an ankka topic |
+
+The settings carry `local=true`, the namespace `local`, the topic names and consumer groups a cluster
+would give them, the parameters with `--conf` applied, and every outlet at least once. It touches no
+cluster and no broker. Without `--ankka-bootstrap-servers`, a blueprint with an ankka topic is refused:
+`the blueprint reads or writes ankka topics: pass --ankka-bootstrap-servers HOST:PORT, the broker of ankka's local platform`.
 
 ## `flow reset`
 
@@ -202,8 +166,9 @@ See [the resource reference](resource.md) for every field `generate` writes.
 flow reset <pipeline> [--streamlet <name>]... [-n|--namespace <ns>]
 ```
 
-Records a request that the named streamlets reread their inputs from the earliest offset. The operator
-carries it out; see [Rebuild from the start](../deploy/reset.md).
+Records a request that the named streamlets reread their inputs from the earliest offset, and that a
+Flink streamlet among them start from an empty state. The operator carries it out; see
+[Rebuild from the start](../deploy/reset.md).
 
 | option | meaning |
 |---|---|
@@ -241,7 +206,7 @@ it — and that file's `context` and `namespace` are the only cluster the cluste
 
 ```toml
 context   = "kind-ankka"
-namespace = "greeter"
+namespace = "shop"
 ```
 
 Without the file, or with either key empty, every cluster tool answers with a refusal saying what to
@@ -254,7 +219,9 @@ used.
 | `generate_resource` | read-only | the YAML `flow generate` writes; nothing is applied |
 | `flow_version` | read-only | what `flow version` prints |
 | `search_docs`, `read_doc` | read-only | this version's documentation, also served as `ankka-flow://docs/<path>` resources |
-| `list_pipelines`, `get_pipeline`, `pipeline_logs`, `pipeline_lag` | read-only, on the named cluster | the namespace's pipelines; one pipeline's status and events; a streamlet's process or sidecar log; consumer lag per inlet partition from each sidecar's metrics |
+| `list_pipelines`, `get_pipeline` | read-only, on the named cluster | the namespace's pipelines; one pipeline's status, conditions, each streamlet's engine, and its events |
+| `pipeline_logs` | read-only, on the named cluster | the recent lines of every pod of a streamlet, each under a `--- <pod>` line; for a Flink streamlet, its job manager and task managers |
+| `pipeline_lag` | read-only, on the named cluster | one row per streamlet and inlet from the status: `streamlet  engine  inlet  topic  group  lag`, the lag `unknown` where the status has none |
 | `apply_pipeline` | destructive, on the named cluster | verify, generate and create or update the resource, as `flow generate | kubectl apply` would |
 | `reset_pipeline` | destructive, on the named cluster | what `flow reset` requests, with its refusals |
 
@@ -279,8 +246,7 @@ Tells an MCP client how to start `flow mcp`.
 | `--dry-run` | — | print what would change; change nothing |
 
 Every write merges: other servers and settings in the file are kept in their order, and an existing
-server named `ankka-flow` that differs is left as it is and shown, unless `--force`. A project written
-by `flow init` already has its `.mcp.json`, so it needs no install.
+server named `ankka-flow` that differs is left as it is and shown, unless `--force`.
 
 It exits 0 when it changed what it said, or had nothing to change, and 1 with the reason on stderr
 when it could not: `--scope project` with `--client desktop`, Claude Desktop on an operating system
@@ -294,5 +260,5 @@ prints the command to run; that is exit 0.
 flow version
 ```
 
-Prints the CLI's version and the protocol version its resources carry, as
-`flow <version>, protocol <major>.<minor>`.
+Prints the CLI's version and the descriptor version it reads, as
+`flow <version>, descriptor <major>.<minor>`.

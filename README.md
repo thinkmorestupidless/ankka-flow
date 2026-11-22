@@ -5,155 +5,229 @@
 
 [![ci](https://github.com/thinkmorestupidless/ankka-flow/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/thinkmorestupidless/ankka-flow/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-[![java 21+](https://img.shields.io/badge/java-21%2B-007396?logo=openjdk&logoColor=white)](docs/get-started/install.md) [![maven central](https://img.shields.io/maven-central/v/com.thinkmorestupidless/ankka-flow-sdk_3?label=maven%20central&logo=apachemaven&logoColor=white)](https://central.sonatype.com/artifact/com.thinkmorestupidless/ankka-flow-sdk_3)<br>
-[![python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](docs/get-started/install.md) [![pypi](https://img.shields.io/pypi/v/ankka-flow?label=pypi&logo=pypi&logoColor=white)](https://pypi.org/project/ankka-flow/)
+[![java 21+](https://img.shields.io/badge/java-21%2B-007396?logo=openjdk&logoColor=white)](docs/get-started/install.md) [![maven central](https://img.shields.io/maven-central/v/com.thinkmorestupidless/ankka-flow-pekko-streams_3?label=maven%20central&logo=apachemaven&logoColor=white)](https://central.sonatype.com/artifact/com.thinkmorestupidless/ankka-flow-pekko-streams_3)
 
 Streaming pipelines beside [ankka](https://github.com/thinkmorestupidless/ankka). A pipeline is a
 graph of **streamlets**, each with typed inlets and outlets, wired by a **blueprint** over Kafka
-topics. A streamlet's logic is written in any language and shipped as an image holding only that
-code. A **sidecar** in every pod owns everything Kafka: subscribing, batching, producing,
-committing only after the write, consumer groups, lag and resets.
+topics. A streamlet is written against one engine's own API, **Pekko Streams** for a stage that
+cleans, reshapes or routes each record, **Apache Flink** for one that keeps windows or state, and the
+platform runs it on that engine, creates its topics, checks every contract before anything runs, and
+reports each stage's state and lag. A blueprint reads and writes an ankka project's topics by name.
 
-![ankka-flow on Kubernetes: a developer or CI job writes an AnkkaFlow resource with flow generate and applies it. The operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, creates and owns a Deployment and a Secret per streamlet, and writes status back. Each streamlet pod has two containers: the process, holding only the streamlet's code, and the sidecar, the operator's image, which owns everything Kafka; they speak gRPC on loopback. The sidecar consumes the unmanaged topic an ankka service publishes, as its own consumer group, and produces to the pipeline's managed topics.](docs/assets/diagrams/platform.svg)
+![ankka-flow on Kubernetes: a developer or CI job writes an AnkkaFlow resource with flow generate and applies it. The operator, in namespace ankka-flow, watches AnkkaFlow resources in every namespace, reads the kafka-cluster Secrets, creates the pipeline's managed topics in Kafka, and runs each streamlet by its engine: a Pekko Streams streamlet as a Deployment, a Flink streamlet as a FlinkDeployment the Flink Kubernetes Operator runs, its checkpoints in a state store. Each streamlet reads and writes Kafka itself, with the credentials of its own topics only.](docs/assets/diagrams/platform.svg)
 
 It descends from [Cloudflow](https://github.com/lightbend/cloudflow) by way of the
 [thinkmorestupidless fork](https://github.com/thinkmorestupidless/cloudflow), which moved it to
 Apache Pekko. Neither is a dependency: six pieces were carried over with their tests (see `NOTICE`).
 
-## A streamlet
+## A pipeline of two engines
 
-A streamlet declares its ports and parameters and implements `process`, which gets one batch of
-records from one inlet partition and returns what to emit. The sample router reads cart events keyed
-by cart id and sends each to one of two outlets, by a threshold set when the pipeline is deployed.
-In Scala:
+The sample in [`samples/cart-pipeline`](samples/cart-pipeline) cleans a topic of cart events with a
+Pekko Streams streamlet and counts each cart's events per minute with a Flink one. The cleaner drops
+what is not a cart event and passes the rest on:
 
-<!-- include: samples/cart-router-scala/src/main/scala/cart/CartRouter.scala#router -->
+<!-- include: samples/cart-pipeline/cleaner/src/main/scala/cart/cleaner/Cleaner.scala#cleaner -->
 ```scala
-import com.thinkmorestupidless.ankka.flow.protocol.Json
-import com.thinkmorestupidless.ankka.flow.sdk.*
+import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, readFromArray}
+import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
+import com.thinkmorestupidless.ankka.flow.pekko.*
 
-final class CartRouter
-    extends Streamlet("cart-router", "Routes cart events to the valid or review outlet."):
-  val in     = inlet("in", schemaName = "cart-events.v1")
-  val valid  = outlet("valid", schemaName = "cart-events.v1")
-  val review = outlet("review", schemaName = "cart-events.v1")
-  val threshold = parameter.integer(
-    "review-threshold",
-    default = 100,
-    description = "Carts with a total above this go to the review outlet."
-  )
+import scala.util.Try
 
-  def process(batch: Batch): Iterable[Emit] =
-    val limit = config(threshold)
-    batch.records.map { record =>
-      // The SDK decodes nothing; this is the router's choice. A value that is not a cart event
-      // fails the batch, as the Python router's does.
-      val event =
-        Json.parse(record.valueString).fold(e => throw new IllegalArgumentException(e), identity)
-      val total = event.field("total") match
-        case Some(Json.Num(n)) => n
-        case _ => throw new IllegalArgumentException(s"no total in ${record.valueString}")
-      val outlet = if total > limit then review else valid
-      outlet.emit(record) // same key, same headers, same bytes
-    }
-```
+/** What the shop publishes: something that happened to a cart. */
+final case class CartEvent(cartId: String, seq: Long, total: Long, at: Long)
 
-The same streamlet in Python. The two declare the same ports, contracts and parameter, so one
-blueprint deploys either image:
+/** What the cleaner writes: an event that decoded and is within the maximum, keyed by its cart. */
+final case class CleanCart(cartId: String, seq: Long, total: Long, at: Long)
 
-<!-- include: samples/cart-router/src/cart_router/router.py#router -->
-```python
-from collections.abc import Iterable
+object CleanCart:
+  given JsonValueCodec[CleanCart] = JsonCodecMaker.make
 
-from ankka_flow import Batch, Emit, IntegerParameter, JsonInlet, JsonOutlet, Streamlet, json
+object CartEvent:
+  given JsonValueCodec[CartEvent] = JsonCodecMaker.make
 
+  /** The event, when the bytes are one. */
+  def parse(bytes: Array[Byte]): Option[CartEvent] = Try(readFromArray[CartEvent](bytes)).toOption
 
-class CartRouter(Streamlet):
-    name = "cart-router"
-    description = "Routes cart events to the valid or review outlet."
-    inlet = JsonInlet("in", schema_name="cart-events.v1")
-    valid = JsonOutlet("valid", schema_name="cart-events.v1")
-    review = JsonOutlet("review", schema_name="cart-events.v1")
-    threshold = IntegerParameter(
-        "review-threshold",
-        default=100,
-        description="Carts with a total above this go to the review outlet.",
+object Cleaner
+    extends PekkoStreamlet(
+      "cart-cleaner",
+      "Drops cart events that do not decode or whose total is above the maximum, and writes the rest clean."
+    ):
+  // The inlet reads bytes: a record that is not a cart event is the cleaner's to drop, where a
+  // typed codec would fail the stream on it.
+  val in  = inlet("in", Contract("cart-events.v1", schema = "cart-events.v1.json"), Codec.bytes)
+  val out = outlet("out", Contract("clean-carts.v1"), Codec.json[CleanCart])
+  val maxTotal =
+    intParameter(
+      "max-total",
+      default = 10000,
+      description = "Events whose total is above this are dropped."
     )
 
-    def process(self, batch: Batch) -> Iterable[Emit]:
-        limit = self.config[self.threshold]
-        for record in batch:
-            event = json.loads(record.value)  # the SDK decodes nothing; this is the router's choice
-            outlet = self.review if event["total"] > limit else self.valid
-            yield outlet.emit(record)  # same key, same headers, same bytes
+  def logic(ctx: Context): Logic =
+    val max = ctx(maxTotal)
+    from(in) {
+      _.map(r =>
+        CartEvent.parse(r.value).filter(_.total <= max).map { e =>
+          out(e.cartId, CleanCart(e.cartId, e.seq, e.total, e.at))
+        }
+      )
+    }
 ```
 
-The SDK decodes nothing and keeps nothing: a record is bytes in and bytes out, and an emit that
-reuses the record keeps its key, so each cart's events stay in order through the next topic. The
-sidecar does the rest — subscribes, batches, produces, and commits the batch's offsets only after
-every emit is confirmed by the broker, so a failed batch is delivered again and nothing is skipped
-unless the streamlet acknowledges without emitting. The streamlet's test runs `process` through a
-harness with no Kafka and no sidecar.
+The counter keeps a window per cart, by the time each event carries:
 
-The blueprint wires the ports to topics. The input is published by something else — an ankka
-service, say — so the pipeline only reads it; the two outputs are the pipeline's own, created by the
-operator with the partitions and replication declared:
+<!-- include: samples/cart-pipeline/counter/src/main/java/cart/counter/CartCounter.java#counter -->
+```java
+import com.thinkmorestupidless.ankka.flow.flink.Codec;
+import com.thinkmorestupidless.ankka.flow.flink.Contract;
+import com.thinkmorestupidless.ankka.flow.flink.FlinkContext;
+import com.thinkmorestupidless.ankka.flow.flink.FlinkStreamlet;
+import com.thinkmorestupidless.ankka.flow.flink.FlinkStreamlets;
+import com.thinkmorestupidless.ankka.flow.flink.Inlet;
+import com.thinkmorestupidless.ankka.flow.flink.Outlet;
+import com.thinkmorestupidless.ankka.flow.flink.Parameter;
+import com.thinkmorestupidless.ankka.flow.flink.Record;
+import java.time.Duration;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.typeinfo.TypeHint;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
+import org.apache.flink.util.Collector;
 
-<!-- include: samples/cart-router/blueprint.conf -->
+/** Counts each cart's events in tumbling windows of the time each event carries. */
+public final class CartCounter extends FlinkStreamlet {
+
+  final Inlet<CleanCart> in = inlet("in", Contract.of("clean-carts.v1"), Codec.json(CleanCart.class));
+  final Outlet<CartCount> out = outlet("out", Contract.of("cart-counts.v1"), Codec.json(CartCount.class));
+  final Parameter<Duration> window = durationParameter("window", "1m", "The length of each counting window.");
+
+  public CartCounter() {
+    super("cart-counter", "Counts each cart's events in windows of the time they carry.");
+  }
+
+  @Override
+  public void build(FlinkContext ctx) {
+    var events = ctx.read(in, WatermarkStrategy.<Record<CleanCart>>forBoundedOutOfOrderness(Duration.ofSeconds(10))
+        .withTimestampAssigner((r, previous) -> r.value().at())
+        .withIdleness(Duration.ofSeconds(30)));
+    var counts = events
+        .keyBy(r -> r.value().cartId())
+        .window(TumblingEventTimeWindows.of(ctx.get(window)))
+        .aggregate(new Count(), new Emit())
+        .returns(TypeInformation.of(new TypeHint<Record<CartCount>>() {}))
+        .uid("count");
+    ctx.write(out, counts);
+  }
+
+  /** Adds one to the window's tally for each event. */
+  static final class Count implements AggregateFunction<Record<CleanCart>, Tally, Long> {
+    private static final long serialVersionUID = 1L;
+
+    @Override
+    public Tally createAccumulator() {
+      return new Tally();
+    }
+
+    @Override
+    public Tally add(Record<CleanCart> event, Tally tally) {
+      tally.count++;
+      return tally;
+    }
+
+    @Override
+    public Long getResult(Tally tally) {
+      return tally.count;
+    }
+
+    @Override
+    public Tally merge(Tally a, Tally b) {
+      a.count += b.count;
+      return a;
+    }
+  }
+
+  /** One record per cart and window, keyed by the cart, at the window's last millisecond. */
+  static final class Emit extends ProcessWindowFunction<Long, Record<CartCount>, String, TimeWindow> {
+    private static final long serialVersionUID = 1L;
+
+    @Override
+    public void process(String cartId, Context c, Iterable<Long> counts, Collector<Record<CartCount>> o) {
+      long n = counts.iterator().next();
+      TimeWindow w = c.window();
+      o.collect(Record.of(cartId, new CartCount(cartId, w.getStart(), w.getEnd(), n), w.maxTimestamp()));
+    }
+  }
+
+  public static void main(String[] args) throws Exception {
+    FlinkStreamlets.run(new CartCounter(), args);
+  }
+}
+```
+
+The blueprint wires them over one topic:
+
+<!-- include: samples/cart-pipeline/blueprint.conf -->
 ```hocon
+# The sample pipeline: the shop's cart events, cleaned, then counted per cart in windows of time.
 blueprint {
-  name = cart
+  name = carts
   streamlets {
-    router = cart-router
+    cleaner = cart-cleaner
+    counter = cart-counter
   }
   topics {
-    # Published by something else (an ankka service in a cluster, produce.py on a laptop):
-    # the platform consumes it and never creates, alters or deletes it.
     cart-events {
-      managed           = false
-      topic.name        = "shop.cart-events.v1"
-      bootstrap.servers = "kafka:9092"
-      consumers         = [router.in]
+      managed    = false
+      topic.name = "shop.cart-events.v1"
+      cluster    = shop
+      consumers  = [cleaner.in]
       consumer-config { auto.offset.reset = earliest }
     }
-    valid-carts {
-      producers  = [router.valid]
+    clean-carts {
+      producers  = [cleaner.out]
+      consumers  = [counter.in]
       partitions = 3
-      replicas   = 1
     }
-    review-carts {
-      producers  = [router.review]
+    cart-counts {
+      producers  = [counter.out]
       partitions = 3
-      replicas   = 1
     }
   }
 }
 ```
 
 `flow verify` checks the blueprint against the streamlets' descriptors: every inlet connected, every
-topic's contract agreed by the ports on it. [Your first streamlet](https://flow.ankka.cloud/get-started/first-streamlet/)
-runs this one on a laptop and [Write a blueprint](https://flow.ankka.cloud/build/blueprints/) builds
-the blueprint line by line.
+topic's contract agreed by the ports on it, whatever their engines.
+[Your first streamlet](https://flow.ankka.cloud/get-started/first-streamlet/) runs this pipeline on a
+laptop and [Write a blueprint](https://flow.ankka.cloud/build/blueprints/) builds the blueprint line by
+line.
 
-## A streamlet on a laptop
+## On a laptop
 
 ```bash
-sbt sidecar/docker:publishLocal                 # the sidecar image
-cd samples/cart-router
-uv sync && uv run descriptor                    # the Python router's descriptor
-docker compose up -d                            # Kafka and the sidecar; the sidecar waits for the router
-uv run python -m cart_router.main &             # the router on 127.0.0.1:9010
-uv run python produce.py && uv run python verify.py
+docker compose up -d kafka
+sbt cli/stage
+cli/target/universal/stage/bin/flow local samples/cart-pipeline/blueprint.conf \
+  --descriptors samples/cart-pipeline/flow --bootstrap-servers localhost:9092 -o /tmp/carts
+FLOW_CONFIG_DIR=/tmp/carts/cleaner sbt cartCleaner/run     # terminal 1
+FLOW_CONFIG_DIR=/tmp/carts/counter sbt cartCounter/run     # terminal 2
+samples/cart-pipeline/produce.sh localhost:9092 50          # 50 cart events, 5 of them malformed
+samples/cart-pipeline/verify.sh localhost:9092              # the counts per cart per minute
 ```
 
 ## On Kubernetes
 
 ```bash
-just up                                          # kind, the CRD, the operator, a development Kafka
+just up                                              # kind, both operators, MinIO, a development Kafka
 brew install thinkmorestupidless/tap/ankka-flow      # the flow CLI; or the release archive for your platform
-flow generate samples/cart-router/blueprint.conf \
-  --descriptors samples/cart-router/flow --conf samples/cart-router/k8s/in-cluster.conf \
-  --image router=sample-cart-router:latest -n shop | kubectl apply -f -
+flow generate samples/cart-pipeline/blueprint.conf --descriptors samples/cart-pipeline/flow \
+  --image cleaner=sample-cart-cleaner:latest --image counter=sample-cart-counter:latest \
+  -n shop | kubectl apply -f -
 ```
 
 ## Read next
@@ -161,9 +235,9 @@ flow generate samples/cart-router/blueprint.conf \
 The documentation is at **[flow.ankka.cloud](https://flow.ankka.cloud/)**, built from [`docs/`](docs/)
 and published as a site, `llms.txt` and agent skills for the ankka marketplace. Start with
 [Pipelines and streamlets](https://flow.ankka.cloud/concepts/pipelines/),
-[the sidecar](https://flow.ankka.cloud/concepts/sidecar/) and
+[Choosing an engine](https://flow.ankka.cloud/concepts/engines/) and
 [your first streamlet](https://flow.ankka.cloud/get-started/first-streamlet/).
 
-The specification, plan and research behind version one are in
-[`specs/001-version-one/`](specs/001-version-one/spec.md). `just docs` builds the documentation into
-`target/docs-site`; `just docs-serve` serves it with live reload.
+The specification, plan and research behind the engines are in
+[`specs/009-engine-streamlets/`](specs/009-engine-streamlets/spec.md). `just docs` builds the
+documentation into `target/docs-site`; `just docs-serve` serves it with live reload.

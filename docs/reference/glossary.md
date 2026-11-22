@@ -1,222 +1,215 @@
 ---
 title: Glossary
-description: Every term ankka-flow uses — streamlet, port, blueprint, contract, descriptor, sidecar, conversation, managed topic and the rest — each defined in a sentence with the page that explains it.
+description: Every term ankka-flow uses — streamlet, engine, port, blueprint, contract, descriptor, state store, machine, grant and the rest — each defined in a sentence with the page that explains it.
 kind: reference
-related: [concepts/pipelines.md, concepts/sidecar.md, concepts/topics.md]
+related: [concepts/pipelines.md, concepts/engines.md, concepts/topics.md]
 ---
 
 # Glossary
+
 The documentation uses each of these terms in exactly this sense.
-
-### Ack (acknowledgement)
-
-The process's answer that it has finished a batch, sent after every emit for that batch. On an ack the
-sidecar writes the emits and then commits the batch's offsets. See
-[Delivery and failure](../concepts/delivery.md).
 
 ### AnkkaFlow
 
-The Kubernetes custom resource that describes one deployed pipeline: its streamlets, images,
-descriptors, bindings and topics. `flow generate` writes it; the operator runs it. See
-[AnkkaFlow resource](../reference/resource.md).
+The Kubernetes resource that is one deployed pipeline: its streamlets, their images and settings, and
+its topics. `flow generate` writes it and the operator runs it. See
+[AnkkaFlow resource](resource.md).
+
+### ankka consumer
+
+An ankka service's component that reads a topic and acts on each message. A single service reacting to
+a topic is one, not a pipeline. See [Choosing an engine](../concepts/engines.md).
+
+### ankka topic
+
+A topic an ankka project declares, named in a blueprint as `ankka = "<project>/<name>"`. The pipeline
+reads or writes it as a machine and never creates it. See
+[Read and write ankka topics](../build/ankka-topics.md).
 
 ### At least once
 
-The delivery guarantee: every record is processed, and a record may be processed more than once after a
-failure or a rebalance. See [Delivery and failure](../concepts/delivery.md).
-
-### Batch
-
-The records of one inlet partition that the sidecar sends to the process together, in offset order. At
-most one batch per inlet partition is in flight. See [The sidecar](../concepts/sidecar.md).
+A record may be delivered more than once and is never lost. What a Pekko Streams streamlet promises,
+and what a Flink streamlet promises into a topic the pipeline does not manage. See
+[Delivery and failure](../concepts/delivery.md).
 
 ### Blueprint
 
-The HOCON file that names a pipeline's streamlets and the topics connecting their ports. See
-[Write a blueprint](../build/blueprints.md) and [Blueprint](../reference/blueprint.md).
+The HOCON file that names a pipeline's streamlets and the topics that connect their ports. See
+[Write a blueprint](../build/blueprints.md).
 
-### Built-in streamlet
+### Checkpoint
 
-A streamlet whose descriptor ships with the platform, named `builtin/<name>` in a blueprint. It needs no
-image or descriptor file, and its pod has only the sidecar, which runs its logic as a stage. See
-[Blueprint](blueprint.md).
+A Flink streamlet's state and its read positions, written to the state store at an interval. A failed
+pod resumes from the last one. See [Write a Flink streamlet](../build/flink-streamlet.md).
 
 ### Client id
 
-The Kafka client id of one port, `<pipeline>.<streamlet>.<port>`, which labels its lag and rates in the
-sidecar's metrics. See [Topics and Kafka clusters](../concepts/topics.md).
+The Kafka client id of a port, `<pipeline>.<streamlet>.<port>`. See
+[Topics and Kafka clusters](../concepts/topics.md).
 
 ### Commit after the write
 
-The rule that an inlet's offsets are committed only once every emit for them is confirmed by the broker.
-See [Delivery and failure](../concepts/delivery.md).
+A Pekko Streams streamlet's rule: an offset is committed only once every record produced from it is
+confirmed by the broker. See [Delivery and failure](../concepts/delivery.md).
 
-### Conformance suite
+### Condition
 
-The suite of scripted conversations an SDK is run against to prove it implements the streamlet protocol
-correctly. See [Adding a language SDK](../contributing/language-sdks.md).
+A named fact on a pipeline's status, such as `TopicNotGranted` or `StateUnreadable`, with a reason and
+a message saying what to do. See [Observe a pipeline](../deploy/observe.md).
 
 ### Consumer group
 
-The Kafka consumer group of one inlet, `<pipeline>.<streamlet>.<inlet>`, shared by the streamlet's
-replicas and reset by `flow reset`. See [Topics and Kafka clusters](../concepts/topics.md).
+The Kafka consumer group of an inlet, `<pipeline>.<streamlet>.<inlet>`, prefixed with the machine's
+prefix on a machine's cluster. See [Topics and Kafka clusters](../concepts/topics.md).
 
 ### Contract
 
-A port's format and fingerprint. Two ports on one topic connect only when their contracts are equal. See
-[Contracts](../concepts/contracts.md).
+What a port's records are: a name and, optionally, a schema's fingerprint. Two ports on a topic must
+carry agreeing contracts. See [Contracts](../concepts/contracts.md).
 
-### Conversation
+### Declarations
 
-One `Run` stream between the sidecar and the process, opened with `Start` and carrying every batch until
-it stops or fails. See [Streamlet protocol](../reference/protocol.md).
+An ankka project's topics with their contracts, as `ankka projects topics list -o json` prints them,
+which `--ankka-topics` checks a blueprint against. See
+[Read and write ankka topics](../build/ankka-topics.md).
 
-### Delete marker
+### Deploy-time configuration
 
-A Kafka record with a key and no value, which removes that key from a compacted topic. It is not a graph
-delta: the Neo4j merge sink passes over it and counts it, and the platform never writes one. See
-[Graph deltas](graph-deltas.md#delete-markers).
-
-### Delta topic
-
-A topic with any port of the graph delta contract. A managed one is compacted by default, so it keeps
-the latest delta of every element and the graph can be rebuilt from it. See
-[Topics and Kafka clusters](../concepts/topics.md#delta-topics).
+Settings given when a pipeline is deployed rather than written in its blueprint: replicas,
+parallelism, Flink's resources, parameters, topic settings. See
+[Configure at deploy time](../deploy/configuration.md).
 
 ### Descriptor
 
-The streamlet as the platform sees it — name, ports, contracts and parameters — written as canonical
-JSON by the streamlet's SDK. See [Descriptor](../reference/descriptor.md).
+The JSON file a streamlet's SDK writes from its declaration: its name, engine, ports, contracts and
+parameters. See [Descriptor](descriptor.md).
 
-### Discovery
+### Engine
 
-The sidecar asking the process to describe itself and comparing the answer with the deployed descriptor
-before any record flows. See [The sidecar](../concepts/sidecar.md).
-
-### Element
-
-A node or an edge of a graph the Neo4j merge sink writes, found by its global id and holding the version
-of the last delta applied to it. See [Neo4j merge sink](neo4j-merge-sink.md).
-
-### Element key
-
-The Kafka record key every graph delta carries: `node:<id>` or `edge:<id>`, the element's kind and its
-id. The sink refuses a delta under any other key. See [Graph deltas](graph-deltas.md#the-record-key).
-
-### Emit
-
-A record the process sends to one of its outlets while handling a batch. See
-[Streamlet protocol](../reference/protocol.md).
-
-### Fail
-
-The process's answer that it could not handle a batch. It fails the stream, and the batch is redelivered
-from the last commit. See [Delivery and failure](../concepts/delivery.md).
+What runs a streamlet: Pekko Streams or Apache Flink. A streamlet is written against its engine's own
+API. See [Choosing an engine](../concepts/engines.md).
 
 ### Fingerprint
 
-The part of a contract compared between ports. For a JSON contract it is the Base64 of the SHA-256 of
-the schema name. See [Contracts](../concepts/contracts.md).
+`sha256:` and the hex SHA-256 of a contract's schema in RFC 8785 canonical form, as ankka computes it.
+See [Contracts](../concepts/contracts.md).
 
-### Graph delta
+### Flink operator
 
-One record of the `ankka.graph-delta.v1` contract: a node merge, an edge merge or a tombstone, stating an
-element's whole state at a version. See [Graph deltas](graph-deltas.md).
+The Apache Flink Kubernetes Operator, which runs each Flink streamlet's FlinkDeployment. See
+[Install the platform](../deploy/install.md).
+
+### Flink streamlet
+
+A streamlet written against Apache Flink's DataStream API, for windows and state. See
+[Write a Flink streamlet](../build/flink-streamlet.md).
+
+### Grant
+
+A project's permission for a machine to consume or produce one of its topics. See
+[Read and write ankka topics](../build/ankka-topics.md).
+
+### Harness
+
+An SDK's test support, which runs a streamlet's logic on records in a test with no broker. See
+[Test a streamlet](../build/testing.md).
 
 ### Inlet
 
-A port a streamlet reads records from. Every inlet is connected to exactly one topic. See
-[Pipelines and streamlets](../concepts/pipelines.md).
+A port a streamlet reads, bound to one topic. See [Pipelines and streamlets](../concepts/pipelines.md).
 
 ### Kafka cluster
 
-A named set of brokers and client settings, held in a `kafka-cluster-<name>` Secret beside the operator,
-that topics resolve their connection against. See [Topics and Kafka clusters](../concepts/topics.md).
+A Secret `kafka-cluster-<name>` beside the operator: brokers, client properties, defaults, and
+optionally the machine it is reached as. See [Topics and Kafka clusters](../concepts/topics.md).
+
+### Lag
+
+The records on an inlet's topic its consumer group has not committed, on the pipeline's status. See
+[Observe a pipeline](../deploy/observe.md).
+
+### Machine
+
+A system outside an ankka installation, registered on an organization, that reads and writes the
+topics a project grants it. A pipeline reaches ankka topics as one. See
+[Read and write ankka topics](../build/ankka-topics.md).
 
 ### Managed topic
 
-A topic the pipeline owns, created by the operator with its declared partitions and replication and
-named `<pipeline>.<id>` by default. See [Topics and Kafka clusters](../concepts/topics.md).
+A topic the pipeline owns: the operator creates it and, when asked, deletes it with the pipeline. See
+[Topics and Kafka clusters](../concepts/topics.md).
 
 ### Operator
 
-The Kubernetes controller that turns an `AnkkaFlow` into topics, Secrets and Deployments and reports the
-pipeline's status. See [Operator](../reference/operator.md).
+The ankka-flow operator, which runs every `AnkkaFlow` in the cluster. See [Operator](operator.md).
 
 ### Outlet
 
-A port a streamlet writes records to. An outlet is connected to at most one topic. See
+A port a streamlet writes, bound to at most one topic. See
 [Pipelines and streamlets](../concepts/pipelines.md).
+
+### Parallelism
+
+How many parallel tasks a Flink streamlet's job runs. See
+[Configure at deploy time](../deploy/configuration.md).
 
 ### Parameter
 
-A typed configuration value a streamlet declares, with an optional default, set per deployment. See
-[Configure at deploy time](../deploy/configuration.md).
+A typed setting a streamlet declares, with an optional default, given a value at deploy time. See
+[Descriptor](descriptor.md).
+
+### Pekko Streams streamlet
+
+A streamlet written with Pekko Streams' operators, for stages that need neither windows nor state. See
+[Write a Pekko Streams streamlet](../build/pekko-streams-streamlet.md).
 
 ### Pipeline
 
 A graph of streamlets connected by Kafka topics, described by a blueprint and deployed as one
 `AnkkaFlow`. See [Pipelines and streamlets](../concepts/pipelines.md).
 
-### Placeholder
-
-A node an edge names before the node's own delta has arrived, holding only its id; the node's first delta
-replaces it. See [Neo4j merge sink](neo4j-merge-sink.md).
-
 ### Port
 
 An inlet or an outlet, named and carrying a contract. A blueprint addresses it as `<streamlet>.<port>`.
-See [Blueprint](../reference/blueprint.md).
-
-### Process
-
-The streamlet's own container and the program in it, serving the streamlet protocol on
-`127.0.0.1:$FLOW_PROCESS_PORT`. See [The sidecar](../concepts/sidecar.md).
+See [Blueprint](blueprint.md).
 
 ### Reset
 
-Moving a pipeline's consumer groups back to the earliest offset so its streamlets reread their inputs
-from the start. See [Rebuild from the start](../deploy/reset.md). Resetting the merge sink alone
-rebuilds a graph from its delta topic; see
-[Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
+Moving a pipeline's consumer groups back to the earliest offset, and starting a Flink streamlet from an
+empty state, so its streamlets reread their inputs from the start. See
+[Rebuild from the start](../deploy/reset.md).
 
-### Sidecar
+### State
 
-The platform's container in every streamlet pod, which owns everything Kafka and drives the process over
-the streamlet protocol. See [The sidecar](../concepts/sidecar.md).
+What a Flink streamlet keeps between records, such as a window's count. It survives a failed pod and a
+new image, and a reset discards it. See [Write a Flink streamlet](../build/flink-streamlet.md).
 
-### Skip
+### State epoch
 
-Acknowledging a batch without emitting for a record. Only the streamlet skips; the platform never does.
-See [Delivery and failure](../concepts/delivery.md).
+The number of a Flink streamlet's state directory in the state store, which a reset moves on. See
+[Rebuild from the start](../deploy/reset.md).
 
-### Stage
+### State store
 
-Logic that runs inside the sidecar instead of in a process: the logic of a built-in streamlet. Its write
-is the write the sidecar commits after. See [The sidecar](../concepts/sidecar.md).
-
-### Stall
-
-A partition that makes no progress because one of its batches fails every time. It shows as lag, a
-metric and a `PartitionStalled` event. See [Delivery and failure](../concepts/delivery.md).
+The object store a Flink streamlet's checkpoints go to, named by the Secret `flink-state`. See
+[Install the platform](../deploy/install.md).
 
 ### Streamlet
 
-A pipeline stage: code in any language, in its own image, with declared ports and parameters and a
-function that turns batches into emits. See [Pipelines and streamlets](../concepts/pipelines.md).
+One stage of a pipeline, with typed inlets and outlets: logic written against one engine's own API, in
+its own image. See [Pipelines and streamlets](../concepts/pipelines.md).
 
-### Streamlet protocol
+### Streamlet settings
 
-The gRPC services, `ankka.flow.v1`, between the sidecar and the process. See
-[Streamlet protocol](../reference/protocol.md).
-
-### Tombstone
-
-A graph delta that marks an element deleted at a version rather than removing it, so an older delta
-cannot bring the element back. It has a value and its element's key, which makes it a different thing
-from a delete marker. See [Graph deltas](graph-deltas.md).
+The file `streamlet.properties` a streamlet is given: its names, parameters, and each port's topic,
+group and Kafka properties. See [Streamlet settings](streamlet-settings.md).
 
 ### Unmanaged topic
 
-A topic that belongs to something else. The pipeline only reads it and never creates, alters, deletes or
-produces to it. See [Topics and Kafka clusters](../concepts/topics.md).
+A topic that belongs to something else. The pipeline only reads it and never creates, alters or deletes
+it. See [Topics and Kafka clusters](../concepts/topics.md).
+
+### Window
+
+A span of time a Flink streamlet groups records by, such as a minute, by the time the records carry.
+See [Write a Flink streamlet](../build/flink-streamlet.md).

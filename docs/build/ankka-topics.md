@@ -1,172 +1,165 @@
 ---
-title: Read an ankka service's topic
-description: Build a pipeline on the messages an ankka service publishes — give the service a broker in its descriptor, declare its topic unmanaged in the blueprint, and decode ankka's CloudEvents in a streamlet.
+title: Read and write ankka topics
+description: Build a pipeline on an ankka project's topics — name each by project and name, check its contracts against the project's declarations, reach the broker as a registered machine, and see what a missing grant looks like.
 kind: guide
-languages: [python]
-related: [concepts/topics.md, build/blueprints.md, build/python-streamlet.md, deploy/deploy-a-pipeline.md]
+related: [concepts/topics.md, build/blueprints.md, deploy/configuration.md, deploy/troubleshooting.md]
 ---
 
-# Read an ankka service's topic
+# Read and write ankka topics
 
-An ankka service publishes to Kafka from a consumer that produces: it turns the service's own events
-into messages for the outside world and sends them to a topic. A pipeline reads that topic like any
-other input. The topic stays the service's: the pipeline declares it **unmanaged**, so the operator
-never creates, alters or deletes it, and nothing in the pipeline may produce to it.
+An ankka project's topics are ankka's: the project declares each one, with its partitions and its
+contract, and ankka makes it on the installation's broker. A pipeline can read them and write them,
+whatever the engine of the streamlet, by naming each topic by its project and its name. The pipeline
+never creates, alters or deletes one, and it reaches the broker the way any system outside the
+installation does: as a **registered machine** that the project has granted each topic to.
 
-This page builds the pipeline in
-[`samples/checkout-feed`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/samples/checkout-feed):
-ankka's shopping cart sample publishes a notice to `cart-checkouts` whenever a cart is checked out, and
-a streamlet turns each notice into an entry in a feed of checkouts.
-
-```text
-shopping-cart (ankka) ──► cart-checkouts ──► feed ──► checkouts.checkouts
-```
-
-## Give the service a broker
-
-ankka provides no broker of its own. A service reaches one through `ANKKA_KAFKA_BOOTSTRAP_SERVERS` in
-its descriptor's `env`: a process-hosted service's sidecar reads it, and a Scala service reads it when
-it registers `ProjectionRuntime.fromEnv()`. On a cluster where ankka-flow's development Kafka runs in
-the `kafka` namespace, the shopping cart's descriptor is:
-
-```json
-{
-  "name": "shopping-cart",
-  "service": {
-    "image": "sample-shopping-cart:latest",
-    "env": [
-      { "name": "ANKKA_KAFKA_BOOTSTRAP_SERVERS", "value": "kafka.kafka.svc:9092" }
-    ]
-  }
-}
-```
-
-```bash
-ankka services apply -f shopping-cart.json --project checkout
-```
-
-The service and the pipeline must use the same Kafka. Here both use the cluster's development Kafka,
-which is also what the `default` Kafka cluster Secret of
-[Install the platform](../deploy/install.md) points at.
-
-## What ankka publishes
-
-ankka frames every message as a CloudEvent in binary mode: the body is the message as plain JSON, and
-the CloudEvents attributes travel as Kafka headers. The record key is the source entity's id, so every
-message about one cart lands on one partition, in order. A checkout notice looks like this:
+This page builds the sample in
+[`samples/cart-pipeline/ankka`](https://github.com/thinkmorestupidless/ankka-flow/blob/main/samples/cart-pipeline/ankka):
+the cleaner, between two topics of the project `checkout`.
 
 ```text
-key      cart-1
-headers  ce-subject: cart-1, ce-specversion: 1.0, ce-id: 582b15a1-…, ce-type: message,
-         content-type: application/json
-value    {"cartId":"cart-1","at":1790627790360}
+checkout/cart-checkouts ──► cleaner ──► checkout/clean-checkouts
 ```
 
-## Decode it in a streamlet
+## Name the topics
 
-The streamlet decodes the body itself: the sidecar never decodes a record. It keeps the key, so each
-cart's checkouts stay in order downstream, and the headers, so the entry carries ankka's `ce-id`. A
-record that is not a checkout notice is skipped by acknowledging it without emitting, rather than
-failing the batch, which would stall the partition on a record that can never succeed. The sample
-is Python; in Scala the same streamlet declares the same ports with the SDK's `inlet` and `outlet`,
-as [Write a streamlet in Scala](scala-streamlet.md) shows.
+A topic with `ankka = "<project>/<name>"` is that project's topic:
 
-<!-- include: samples/checkout-feed/src/checkout_feed/feed.py#feed -->
-```python
-import logging
-from collections.abc import Iterable
-from datetime import UTC, datetime
-
-from ankka_flow import Batch, Emit, JsonInlet, JsonOutlet, Streamlet, json
-
-log = logging.getLogger(__name__)
-
-
-class CheckoutFeed(Streamlet):
-    name = "checkout-feed"
-    description = "Turns the shopping cart's checkout notices into a feed of checkouts."
-    notices = JsonInlet("in", schema_name="ankka.checkout-notice.v1")
-    checkouts = JsonOutlet("checkouts", schema_name="checkouts.v1")
-
-    def process(self, batch: Batch) -> Iterable[Emit]:
-        for record in batch:
-            # ankka publishes the notice as a plain JSON body, {"cartId": ..., "at": <epoch ms>},
-            # keyed by the cart's id, with the CloudEvents attributes as headers.
-            try:
-                notice = json.loads(record.value)
-                cart, at = str(notice["cartId"]), int(notice["at"])
-            except (ValueError, KeyError, TypeError):
-                # Not a checkout notice. Acknowledging without emitting skips it; failing the batch
-                # would stall the partition on a record that can never succeed.
-                log.warning("skipping a record at offset %d that is not a checkout notice", record.offset)
-                continue
-            checkout = {
-                "cartId": cart,
-                "checkedOutAt": datetime.fromtimestamp(at / 1000, UTC).isoformat(timespec="milliseconds"),
-            }
-            # Same key and headers, so each cart's checkouts stay in order and keep ankka's ce-id.
-            yield self.checkouts.emit(record, value=json.dumps(checkout))
-```
-
-The inlet's schema name, `ankka.checkout-notice.v1`, is a label this pipeline chooses: ankka does not
-publish contracts, and the contract check only compares the ports of one blueprint. Name it after the
-message so a second streamlet reading the same topic declares the same contract.
-
-## Declare the topic unmanaged
-
-<!-- include: samples/checkout-feed/blueprint.conf -->
+<!-- include: samples/cart-pipeline/ankka/blueprint.conf#ankka-blueprint -->
 ```hocon
 blueprint {
   name = checkouts
   streamlets {
-    feed = checkout-feed
+    cleaner = cart-cleaner
   }
   topics {
-    # Published by the ankka shopping cart's CheckoutNotifier. The platform only reads it: it never
-    # creates, alters or deletes it, and nothing in this pipeline may produce to it.
     cart-checkouts {
-      managed    = false
-      topic.name = "cart-checkouts"
-      cluster    = default
-      consumers  = [feed.in]
+      ankka     = "checkout/cart-checkouts"
+      consumers = [cleaner.in]
       consumer-config { auto.offset.reset = earliest }
     }
-    checkouts {
-      producers  = [feed.checkouts]
-      partitions = 3
-      replicas   = 1
+    clean-checkouts {
+      ankka     = "checkout/clean-checkouts"
+      producers = [cleaner.out]
     }
   }
 }
 ```
 
-`managed = false` and `topic.name` say the topic already exists under that name and belongs to
-something else. An unmanaged topic must name its brokers or a Kafka cluster; `cluster = default` uses
-the `kafka-cluster-default` Secret in the operator's namespace. `auto.offset.reset = earliest` makes a
-pipeline deployed after the service read the notices already published.
+Its Kafka name is `<project>.<name>`, here `checkout.cart-checkouts`. It may have producers, which
+another unmanaged topic may not, and it takes neither `managed = true`, `topic.name` nor
+`bootstrap.servers`: ankka names the topic and the broker, and each of those is refused.
 
-## Deploy and watch
+## Check the contracts against the project
+
+Every port on an ankka topic must carry the contract the project declares for it. Export the
+project's declarations and give them to `flow verify`:
 
 ```bash
-flow generate samples/checkout-feed/blueprint.conf --descriptors samples/checkout-feed/flow \
-  --image feed=sample-checkout-feed:latest -n shop | kubectl apply -f -
-kubectl -n shop get aflow checkouts                  # Ready
-curl -s --cacert ~/.ankka/local-ca.crt -X POST \
-  https://shopping-cart-checkout.127.0.0.1.sslip.io:8443/carts/cart-1/items \
-  -H 'content-type: application/json' -d '{"productId":"p1","name":"Pen","quantity":2}'
-curl -s --cacert ~/.ankka/local-ca.crt -X POST \
-  https://shopping-cart-checkout.127.0.0.1.sslip.io:8443/carts/cart-1/checkout
-kubectl -n kafka exec kafka-0 -- /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server localhost:9092 --topic checkouts.checkouts --from-beginning --property print.key=true
+ankka projects topics list -p checkout -o json > checkout-topics.json
+flow verify blueprint.conf --descriptors flow --ankka-topics checkout=checkout-topics.json
 ```
 
-The feed's entry arrives under the cart's key:
+`--ankka-topics` is repeatable, one per project, and `flow generate` and `flow local` take it too.
+`flow verify` refuses:
+
+| when | it says |
+|---|---|
+| a port's contract name differs from the topic's, or both state a fingerprint and they differ | `cleaner.in declares contract … and ankka topic checkout/cart-checkouts declares …` |
+| the project does not declare the topic | `ankka topic checkout/<name> is not declared; project checkout declares: …` |
+| the topic declares no contract | `ankka topic checkout/<name> declares no contract: declare one with ankka projects topics set <name> --contract … --schema …` |
+| a file names a project the blueprint does not | `--ankka-topics names project '<p>', which no topic of the blueprint does` |
+
+Without a file for a project the blueprint names, the blueprint verifies, with the note
+`ankka topics of project 'checkout' were not checked: pass --ankka-topics checkout=<file>`.
+
+## Register the machine
+
+An owner of an organization registers the machine the pipeline acts as, once:
+
+```bash
+ankka organizations machines register affiliates network
+```
+
+It answers the machine's client id, `machine:affiliates/network`, and its secret, shown then and
+never again. The machine holds no grant until a project gives it one.
+
+## Give it to the operator
+
+The machine is a Kafka cluster Secret in the operator's namespace, with one more key, `machine`:
+
+<!-- include: samples/cart-pipeline/k8s/kafka-cluster-ankka.yaml#kafka-cluster-ankka -->
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-cluster-ankka
+  namespace: ankka-flow
+  labels:
+    flow.ankka.thinkmorestupidless.com/kafka-cluster: ankka
+stringData:
+  bootstrap.servers: broker.<base domain>:9094
+  machine: affiliates/network
+  connection-config: |
+    security.protocol=SASL_SSL
+    sasl.mechanism=OAUTHBEARER
+    sasl.login.callback.handler.class=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
+    sasl.oauthbearer.token.endpoint.url=https://api.<base domain>/oauth/token
+    sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="machine:affiliates/network" clientSecret="<the machine's secret>";
+```
+
+`bootstrap.servers` is the installation's broker for machines, and `connection-config` the
+properties ankka documents for one: `SASL_SSL`, `OAUTHBEARER`, the control plane's token endpoint and
+the machine's client id and secret. The Kafka clients take the machine's token from the control
+plane themselves.
+
+An ankka topic is on the cluster named `ankka` unless the topic names another with `cluster`, or
+deploy-time configuration names one for every ankka topic:
+
+```hocon
+flow.ankka.cluster = "pipelines"
+```
+
+On a machine's cluster every consumer group carries the machine's prefix, the only groups ankka lets
+it use: the cleaner's inlet reads as `ankka.machine.affiliates.network.checkouts.cleaner.in`. The
+status and `flow reset` name the group the same way.
+
+## Grant the topics
+
+An owner of the project grants the machine each topic, to consume what the pipeline reads and to
+produce what it writes:
+
+```bash
+ankka projects grants make machine:affiliates/network topic cart-checkouts consume -p checkout
+ankka projects grants make machine:affiliates/network topic clean-checkouts produce -p checkout
+```
+
+The operator asks the broker, as the machine, what it may do with each of the pipeline's ankka topics
+every 30 seconds. A topic it may not read or write is the condition `TopicNotGranted`, recorded as an
+event too, and the pipeline is `Degraded`:
 
 ```text
-cart-1	{"cartId":"cart-1","checkedOutAt":"2026-09-28T20:36:30.360+00:00"}
+machine affiliates/network holds no grant to read topic checkout.cart-checkouts: an owner of project
+checkout runs `ankka projects grants make machine:affiliates/network topic cart-checkouts consume -p checkout`
 ```
 
-The events on the resource show `TopicCreated` for `checkouts.checkouts` and nothing for
-`cart-checkouts`: the operator left the service's topic alone. If the service's topic does not exist
-yet, the resource reports `TopicMissing` and the streamlet stays not ready until the service first
-publishes, or until the topic is created.
+Credentials ankka does not accept are the condition `MachineCredentialRefused`, with the broker's
+reason. The streamlets are started regardless and keep retrying; each condition clears on the first
+pass that succeeds, so a grant made after the deploy is picked up within a minute, and one revoked is
+reported within a minute.
+
+## Delivery
+
+A streamlet writes an ankka topic at least once, whatever its engine: a record may arrive twice
+after a restart, so a reader of the topic must tolerate repeats. Between topics the pipeline manages,
+a Flink streamlet writes each result once; see [Delivery and failure](../concepts/delivery.md).
+
+## Limits
+
+- ankka answers a machine's token requests at most twelve times a minute, and caps connections per
+  client address. Many replicas starting at once may be told to slow down; they retry.
+- A field ankka encrypts in a message stays an envelope: a streamlet receives it as ankka wrote it.
+- The machine's byte rates are the installation's defaults unless an owner sets them.
+
+On a laptop, `flow local` writes an ankka topic's settings for the broker `--ankka-bootstrap-servers`
+names, such as the one ankka's local platform runs.

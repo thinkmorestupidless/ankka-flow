@@ -1,16 +1,17 @@
 # Troubleshooting
 
-> Symptom, cause and fix for every way an ankka-flow pipeline is refused, fails to start, stops being ready or stalls, from flow verify to the sidecar.
+> Symptom, cause and fix for every way an ankka-flow pipeline is refused, fails to start, stops being ready, cannot read its state or falls behind, from flow verify to the operator's conditions.
 
 Source: https://flow.ankka.cloud/deploy/troubleshooting/
-Look in this order: `kubectl get aflow <name> -o wide` for the phase and its detail, the events on the
-`AnkkaFlow`, the sidecar container's log, then its metrics. Each is described in
+Look in this order: `kubectl get aflow <name> -o wide` for the phase and its detail, the status's
+conditions, the events on the `AnkkaFlow`, then the streamlet's logs. Each is described in
 [Observe a pipeline](observe.md). Then find the symptom here.
 
 ```bash
-kubectl -n shop get aflow cart -o wide
+kubectl -n shop get aflow carts -o wide
+kubectl -n shop get aflow carts -o jsonpath='{.status.conditions}' | jq .
 kubectl -n shop get events --field-selector involvedObject.kind=AnkkaFlow
-kubectl -n shop logs deploy/flow-cart-router -c sidecar
+kubectl -n shop logs -l flow.ankka.thinkmorestupidless.com/streamlet=cleaner
 ```
 
 ## `flow verify` or `flow generate` refuses
@@ -20,7 +21,7 @@ ones:
 
 | message | cause | fix |
 |---|---|---|
-| `'<outlet>' (…) is not compatible with '<inlet>' (…).` | the two ports on one topic carry different contracts | give both the same schema name; a new version of a contract is a new name, and every reader must move to it |
+| `'<outlet>' (…) is not compatible with '<inlet>' (…).` | the two ports on one topic carry different contracts, whatever their engines | give both the same contract; a new version of a contract is a new name, and every reader must move to it |
 | `'<path>' does not point to a known streamlet inlet or outlet, please try …` | a typo in a port path, or a stale descriptor | use a suggested path; regenerate the descriptor if the port was renamed |
 | `Streamlet '<name>' names descriptor '<d>', which no descriptor declares.` | the descriptor file is missing from `--descriptors`, or names the streamlet differently | write the descriptor into that directory, or fix the name in `blueprint.streamlets` |
 | `Inlet <streamlet>.<port> is not connected.` | an inlet is on no topic | add it to a topic's `consumers` |
@@ -29,16 +30,23 @@ ones:
 | `streamlet '<name>': parameter '<key>' has no default and no value` | a required parameter is unset | set it with `flow.streamlets.<name>.config` in a `--conf` file |
 | `overrides name unknown topic '<id>'` | a `--conf` file names a topic the blueprint does not | correct the id |
 | `Streamlet '<name>' has no image.` | `generate` was given no image for a streamlet | add `--image <name>=<ref>` or an entry in `--images` |
-| `descriptor <file>: …` | a descriptor fails validation | regenerate it with the SDK rather than editing it by hand |
+| `descriptor <file>: …` | a descriptor fails validation, names an engine flow does not know, or names none | regenerate it with the SDK rather than editing it by hand |
 
 Every message is listed in [the CLI reference](../reference/cli.md).
 
-## The pipeline is `Failed` with `SidecarImageMissing`
+## `FlinkOperatorMissing`
 
-The operator has no `FLOW_SIDECAR_IMAGE`, so it refuses every pipeline and applies nothing. Its log says
-so at start-up: `sidecar image (not configured: every pipeline will be refused)`. Set the variable on the
-`ankka-flow-operator` Deployment; the pipelines are reconciled again when the operator restarts. See
-[the operator reference](../reference/operator.md#settings).
+The pipeline has a Flink streamlet and the Flink Kubernetes Operator is not installed: its custom
+resource definition `flinkdeployments.flink.apache.org` does not exist. The pipeline is `Failed` and
+nothing of it was applied, its Pekko Streams streamlets included. Install the Flink Kubernetes
+Operator, watching the pipeline's namespace; see [Install the platform](install.md). The pipeline
+is reconciled again within a minute.
+
+## `StateStoreMissing`
+
+The pipeline has a Flink streamlet and there is no Secret `flink-state` in the operator's namespace,
+or it has no `dir`. The pipeline is `Failed` and nothing of it was applied. Create the Secret; see
+[Install the platform](install.md#the-state-store).
 
 ## The pipeline is `Failed` with `Refused` events
 
@@ -52,21 +60,17 @@ The resource cannot run, so nothing was applied. Each `Refused` event names one 
 | `managed topic '<id>' has no partitions: …` (or `replicas`) | set it on the topic, or as a default in the cluster's Secret |
 | `streamlet '<name>': inlet '<p>' is not bound to a topic` | a resource edited by hand; regenerate it with `flow generate` |
 | `streamlet '<name>': its descriptor does not parse: …` | regenerate the resource from a valid descriptor |
-| `streamlet '<name>' names Secret '<s>', which does not exist in namespace '<ns>'` | create the built-in streamlet's connection Secret in the pipeline's namespace |
-| `streamlet '<name>': Secret '<s>' has no key '<k>'` | add `uri`, `username` and `password` to the Secret |
-| `streamlet '<name>' is built in and names no Secret in its 'secret' parameter` | set `flow.streamlets.<name>.config.secret` with `--conf` and regenerate |
-| `streamlet '<name>' is built in and takes no image` | a built-in streamlet runs in the sidecar; regenerate without an image for it |
-| `streamlet '<name>' names built-in '<x>', which this operator does not know` | the CLI is newer than the operator; upgrade the operator |
+| `streamlet '<name>': the resource says engine '<a>' and its descriptor '<b>'` | a resource edited by hand; regenerate it |
+| a descriptor that must name an engine | the resource was generated by a release before engines; regenerate it from descriptors written by an engine's SDK |
+| `streamlet '<name>': parameter '<key>' has no default and no value` | set it with `flow.streamlets.<name>.config` in a `--conf` file and regenerate |
 
-Fixing a Secret needs no new apply: the operator reads the Secrets again at its next reconcile, within
-`FLOW_OPERATOR_RESYNC_SECONDS` (five minutes by default), or at once when the `AnkkaFlow` changes.
+Fixing a Secret needs no new apply: the operator looks at every pipeline again every 30 seconds.
 
 ## The pipeline is `Degraded` with `TopicMissing`
 
-An unmanaged topic, one the pipeline reads but does not own, does not exist. The platform never creates
-it, and the consumers of that topic stay not ready; the sidecar logs
-`inlet '<name>': topic '<topic>' does not exist; not ready until it does`. Create the topic with whatever
-owns it, or correct `topic.name`. The streamlets become ready on their own once it exists.
+An unmanaged topic, one the pipeline reads but does not own, does not exist. The platform never
+creates it. Create the topic with whatever owns it, or correct `topic.name`; the streamlets carry on
+once it exists.
 
 A `Kafka unreachable: …` detail means the operator could not reach the topic's brokers: check the
 cluster's `bootstrap.servers` and `connection-config`.
@@ -78,82 +82,68 @@ different value for a `topicConfig` entry. The operator never alters an existing
 it is and warned. The pipeline still runs, on the topic as it exists. To change the topic, change it with
 Kafka's own tools, or delete it so the operator creates it afresh.
 
-## `TopicNotCompacted`
+## `TopicNotGranted` and `MachineCredentialRefused`
 
-A managed topic that carries graph deltas already exists and is not compacted, while the resource asks
-for `cleanup.policy = compact`: typically a topic created before delta topics were compacted by default.
-The note reads `topic '<name>' exists and is not compacted (cleanup.policy = delete); the resource asks
-for compact. Left as it is: …`. The pipeline runs, but the topic is trimmed by time, so it will not hold
-the whole graph and cannot be relied on to
-[rebuild it](rebuild-a-graph.md). Alter the topic's `cleanup.policy` with Kafka's own tools, or delete
-the topic so the operator creates it compacted and reset the streamlets that write to it.
+The pipeline reaches an ankka topic as a registered machine, and ankka refused it. The condition's
+message names the machine, the topic and the right it lacks, and the command that makes the grant;
+`MachineCredentialRefused` means ankka did not accept the machine's credentials at all. The pipeline is
+`Degraded`; its streamlets are applied regardless and run once the grant exists. See
+[Read and write ankka topics](../build/ankka-topics.md).
 
-## A pod never becomes ready
+## A Pekko Streams streamlet's pod never becomes ready
 
-The pod's readiness is the sidecar's: a conversation with the process is running and every inlet is
-subscribed to a topic that exists. Read the sidecar's log:
+Read its log:
 
 | log | cause | fix |
 |---|---|---|
-| `discovery attempt <n> at 127.0.0.1:9010: …; retrying in …`, repeating | the process is not listening on `127.0.0.1:$FLOW_PROCESS_PORT` | check the process container's log; it may have crashed, or bind another port or address |
-| `refusing to start: the process does not match the deployed streamlet`, then the sidecar exits `1` and the pod restarts | the image's declaration differs from the descriptor in the resource: a port, contract or parameter was changed without regenerating, or the wrong image tag is deployed | regenerate the descriptor from the code in the image, run `flow generate` with it, and apply; or deploy the image the descriptor was written from |
-| `the SDK speaks protocol '<v>' and this sidecar speaks '<v>'; the major versions must match` | the SDK and the platform speak incompatible protocol versions | use an SDK of the platform's major version |
-| `the SDK speaks protocol '<v>', later than this sidecar's '<v>'; …` | the SDK is newer than the platform | upgrade the platform, or pin the SDK |
-| `refusing to start:` before any discovery, then exit `2` | `streamlet.conf` or `descriptor.json` does not parse, or does not match the descriptor's ports and parameters | on a laptop, correct the file; in a cluster, regenerate and apply the resource |
-| `inlet '<name>': topic '<topic>' does not exist; not ready until it does` | an input topic is missing | create it; see the `TopicMissing` entry |
-| `stream failed: …` then `reconnecting in …`, repeating | the process fails a batch or breaks the protocol every time | see the stalled partition entry |
+| `<streamlet>: <key> is missing`, then exit `1` | the settings lack a declared port or parameter: the image's declaration differs from the descriptor in the resource | regenerate the descriptor from the code in the image, run `flow generate` with it, and apply; or deploy the image the descriptor was written from |
+| `<streamlet>: FLOW_CONFIG_DIR is not set …` | the process runs outside a pod the operator made | run it with `flow local` |
+| the stream failing and restarting, repeating | a record the stage throws on, or Kafka refusing a write | see the next entry |
 
-When the sidecar refuses a process at discovery, it sends every problem to the process first, so they also
-appear in the process container's log.
+## Lag grows and does not fall
 
-## The Neo4j merge sink never becomes ready
+The inlet's lag on the status grows. Either the streamlet cannot keep up, so add replicas (Pekko
+Streams) or parallelism (Flink), or one record fails every time. A Pekko Streams streamlet never skips
+a record: its stream restarts from the last commit, indefinitely, so that partition stops advancing
+while the others carry on, and its log shows the same failure each time. The fix is in the streamlet:
+drop the record by emitting nothing for it, or correct the code that fails. Deploying the fixed image
+resumes from the last committed offset. See [Delivery and failure](../concepts/delivery.md).
 
-A built-in stage is ready once it has opened and every inlet is subscribed. Read the sidecar's log:
+A Flink streamlet's lag trails by up to one checkpoint interval at all times; that is not falling
+behind.
 
-| log | cause | fix |
+## A Flink streamlet stays rolling out
+
+Its `FlinkDeployment` is not `STABLE` with its job `RUNNING`. Read the Flink operator's events on it,
+and the job manager's log:
+
+```bash
+kubectl -n shop get events --field-selector involvedObject.kind=FlinkDeployment
+kubectl -n shop logs deploy/flow-carts-counter
+```
+
+| shows | cause | fix |
 |---|---|---|
-| `cannot open Neo4j at <uri>: …authentication…; retrying in …` | the Secret's username or password is wrong | correct the Secret; the sink re-reads the mounted files on every attempt, so no restart is needed |
-| `cannot open Neo4j at <uri>: …; retrying in …` with a connection error | the `uri` is wrong or the database is unreachable from the pod | check the `uri` and the database's Service |
-| `… is older than Neo4j 5.26, which the merge needs (dynamic labels)` | the server is too old | upgrade Neo4j to 5.26 or later |
-| `refusing to start: credentials directory /etc/flow/neo4j has no 'uri'`, exit `2` | the Secret lacks a key, or on a laptop the directory is not mounted | add the key, or mount the directory |
-| `refusing to start: cannot read 'password' in credentials directory …`, exit `2` | the files are not readable by the sidecar's user | in a cluster the operator mounts them with mode `0440`; on a laptop, make them readable |
-| `refusing to start: the deployed descriptor is not this sidecar's built-in`, exit `1` | the resource was generated by a CLI whose built-in descriptor differs from this sidecar image's | regenerate the resource with a CLI of the platform's version |
-| `stage '<x>' is not built into this sidecar`, exit `2` | the `stage` block names a stage this image does not have | use the stage name the CLI wrote, and a sidecar of the same version |
+| the job manager's pod `ImagePullBackOff` | the image cannot be pulled | deploy a reference the cluster can pull |
+| a `JobException` naming `ClassNotFoundException` | the image lacks the streamlet's jar at `/opt/flink/usrlib/streamlet.jar`, or a dependency beside it | see [Images](../build/images.md) |
+| a `JobException` naming the state store, such as an S3 `Access Denied` | `flink-state`'s `env` or `flink-config` does not reach the store | correct the Secret; the job restarts by itself |
+| a streamlet start-up failure naming a key | the descriptor in the resource is not the image's | regenerate and apply |
 
-A `ConstraintNotCreated` Warning on the pod is not a failure: the sink runs, more slowly, until the
-constraint exists; see [Observe a pipeline](observe.md#a-built-in-stage).
+## `StateUnreadable`
 
-## Lag grows and a `PartitionStalled` event appears
-
-A batch fails every time: the process raises on it, or breaks the protocol. The sidecar never skips a
-record or sends it to a dead-letter topic; it redelivers the batch from the last commit, indefinitely, so
-that partition stops advancing while the others carry on. The stall shows as growing lag,
-`ankka_flow_sidecar_stalled_seconds` rising, and one `PartitionStalled` Warning on the pod after
-`FLOW_STALL_WARNING_AFTER`, naming the inlet, the partition and the last error.
-
-For the Neo4j merge sink, the note names the reason: `neo4j merge failed for inlet 'in' partition <p>:`
-followed by a record that breaks the delta contract (`offset <n>: …`, fixed in the streamlet that wrote
-it), the database's refusal, or `the transaction did not complete within …` when the database stopped
-answering. A database outage drains on its own once the database is back.
-
-A reason of `offset <n>: key '<found>' is not this delta's element key '<expected>'`, or
-`offset <n>: no key; this delta's element key is '<expected>'`, is a delta written under the wrong
-record key. The sink requires every delta's key to be its element key, `node:<id>` or `edge:<id>`, and
-the message gives the one expected. The writer is the thing to fix: in Python, build deltas with
-`GraphDeltaOutlet` rather than by hand. A topic that already holds wrongly keyed records has to be
-replaced as well; the steps are on
-[Graph deltas](../reference/graph-deltas.md#for-a-writer-built-before-the-key-rule). A record with no
-value is never the cause: the sink passes over a delete marker.
-
-The fix is in the streamlet: skip the record by acknowledging the batch without emitting for it, or
-correct the code that fails. Deploying the fixed image resumes from the last committed offset. See
-[Delivery and failure](../concepts/delivery.md).
+A new image of a Flink streamlet cannot read the state the previous one left: a state type changed in
+a way Flink cannot carry, such as a field retyped or renamed, or an operator's `uid` changed. Its job
+keeps failing as it restores, and the pipeline is `Degraded`. The state store is left as it was.
+Either deploy the previous image again, which resumes from the same state, or
+[reset](reset.md) the streamlet, which starts it with no state. See
+[Write a Flink streamlet](../build/flink-streamlet.md#state-and-a-new-image) for the changes Flink
+can carry.
 
 ## The same record arrives twice
 
-Delivery is at least once. A record whose emits were written but whose offsets were not yet committed
-when a pod stopped, a rebalance moved its partition, or the stream failed, is delivered again. This is
-expected; streamlet logic must tolerate repeats.
+A Pekko Streams streamlet is at least once, and so is a Flink streamlet into a topic the pipeline does
+not manage: a record whose results were written but not yet committed when a pod stopped or a
+partition moved is processed again. Between managed topics a Flink streamlet writes each result once.
 
 ## `flow reset` refuses
 
@@ -164,10 +154,10 @@ expected; streamlet logic must tolerate repeats.
 | `no pipeline '<p>' in namespace '<ns>'` | pass `-n` with the pipeline's namespace |
 | `streamlet [<name>] has no inlets, so no consumer groups to reset` | leave that streamlet out; only streamlets that read have groups |
 
-A `ResetRefused` event with `reset <id> waits: …` means the request was recorded but a target still runs;
-the operator carries it out once the pods are gone. A `ResetOffsetsFailed` event carries Kafka's reason;
-`consumer group [<g>] has <n> active member(s)` means something still consumes with that group. See
-[Rebuild from the start](reset.md).
+A `ResetRefused` event with `reset <id> waits: …` means the request was recorded but a target still
+runs, or a Flink streamlet's job is not yet suspended; the operator carries it out once it is stopped.
+A `ResetOffsetsFailed` event carries Kafka's reason; `consumer group [<g>] has <n> active member(s)`
+means something still consumes with that group. See [Rebuild from the start](reset.md).
 
 ## A streamlet does not roll after a change
 

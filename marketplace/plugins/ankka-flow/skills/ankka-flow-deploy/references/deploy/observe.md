@@ -1,40 +1,79 @@
 # Observe a pipeline
 
-> Read a running pipeline's phase, events, sidecar logs, consumer lag and stall warnings with kubectl and Prometheus.
+> Read a running pipeline's phase, conditions, events, each inlet's consumer lag and every streamlet's logs, whatever its engine, with kubectl and flow mcp.
 
 Source: https://flow.ankka.cloud/deploy/observe/
-A pipeline reports at three levels: the `AnkkaFlow`'s status says whether the whole pipeline runs, the
-events on it say what the operator did and why, and each pod's sidecar says what one streamlet is doing
-through its log and its metrics.
+A pipeline reports at three levels: the `AnkkaFlow`'s status says whether the whole pipeline runs
+and how far behind each inlet is, the events on it say what the operator did and why, and each
+streamlet's pods say what it is doing through their logs.
 
 ## The phase
 
 ```bash
 kubectl -n shop get aflow
-kubectl -n shop get aflow cart -o wide -w
+kubectl -n shop get aflow carts -o wide -w
 ```
 
 ```text
-NAME   PIPELINE   PHASE   DETAIL   AGE
-cart   cart       Ready            4m
+NAME    PIPELINE   PHASE   DETAIL   AGE
+carts   carts      Ready            4m
 ```
 
 | phase | meaning |
 |---|---|
 | `Pending` | a streamlet is still rolling out |
-| `Ready` | every streamlet has all its pods ready and every topic exists |
-| `Degraded` | an unmanaged topic is missing or Kafka is unreachable, or a streamlet has fewer ready pods than desired |
+| `Ready` | every streamlet runs and every topic exists |
+| `Degraded` | an unmanaged topic is missing or Kafka is unreachable, a streamlet has fewer ready pods than desired, or a streamlet failed |
 | `Failed` | the operator refused the resource and applied nothing; `DETAIL` lists why |
 
-`DETAIL` joins the reasons with `;`, such as `topic 'shop.cart-events.v1' does not exist` or
-`router: 1 of 3 ready`. The full status, per streamlet and per topic:
+A Pekko Streams streamlet runs when its Deployment is rolled out with every pod ready. A Flink
+streamlet runs when its `FlinkDeployment` is `STABLE` with its job `RUNNING`; at `replicas = 0` its
+job is suspended and its status says so.
+
+`DETAIL` names what is not running, such as `topic 'shop.cart-events.v1' does not exist` or
+`cleaner: 1 of 3 ready`.
+
+## Conditions
+
+The status lists conditions as Kubernetes resources do. `Ready` is always there, `True` or `False`;
+each other condition is listed while it holds:
 
 ```bash
-kubectl -n shop get aflow cart -o jsonpath='{.status}' | jq .
+kubectl -n shop get aflow carts -o jsonpath='{.status.conditions}' | jq .
 ```
 
-A streamlet's pod is ready when its sidecar is: a conversation with the process is running and every
-inlet is subscribed to a topic that exists. The process container has no probes of its own.
+| Condition | Holds while |
+|---|---|
+| `FlinkOperatorMissing` | the pipeline has a Flink streamlet and the Flink Kubernetes Operator is not installed |
+| `StateStoreMissing` | the pipeline has a Flink streamlet and the Secret `flink-state` does not exist |
+| `TopicNotGranted` | the pipeline's machine holds no grant for a topic it reads or writes |
+| `MachineCredentialRefused` | ankka refuses the machine's credentials |
+| `StateUnreadable` | a Flink streamlet's new image cannot read the state the previous one left |
+
+Each is described, with its remedy, in [Troubleshooting](troubleshooting.md). The operator looks again
+at every pipeline every 30 seconds, so a condition appears, and clears, within a minute of its cause.
+
+## Lag
+
+The status holds every streamlet's inlets, whatever the engine, with the topic, the consumer group
+and the lag: how many records the group has yet to read, summed over the topic's partitions.
+
+```bash
+kubectl -n shop get aflow carts -o jsonpath='{.status.streamlets}' | jq '.[] | {name, inlets}'
+```
+
+```json
+{ "name": "cleaner", "inlets": [ { "name": "in", "topic": "shop.cart-events.v1", "group": "carts.cleaner.in", "lag": 0 } ] }
+{ "name": "counter", "inlets": [ { "name": "in", "topic": "carts.clean-carts", "group": "carts.counter.in", "lag": 12 } ] }
+```
+
+The operator asks each inlet's Kafka cluster every 30 seconds. `lag` is absent when the cluster could
+not be asked. A Flink streamlet commits its group on each checkpoint, so its lag trails by up to one
+checkpoint interval, and on a topic written in transactions a group that has read everything may show
+the few commit markers at the end. A lag that grows and does not fall is a streamlet that cannot keep
+up, or a record it fails on every time.
+
+`flow mcp`'s `pipeline_lag` tool reads the same rows from the status.
 
 ## Events
 
@@ -44,115 +83,34 @@ The operator records what it did on the `AnkkaFlow`:
 kubectl -n shop get events --field-selector involvedObject.kind=AnkkaFlow
 ```
 
-`TopicCreated`, `StreamletRolled`, `StreamletRemoved` and `ResetOffsets` are Normal. Every Warning names
-something to act on; each is described in [Troubleshooting](troubleshooting.md). Stalled partitions are
-recorded by the sidecar on its own pod:
+`TopicCreated`, `StreamletRolled`, `StreamletRemoved`, `ResetOffsets` and `StateDiscarded` are
+Normal. Every Warning names something to act on; each is described in
+[Troubleshooting](troubleshooting.md).
+
+A Flink streamlet's `FlinkDeployment` carries the Flink operator's own events, the job's exceptions
+among them:
 
 ```bash
-kubectl -n shop get events --field-selector reason=PartitionStalled
+kubectl -n shop get events --field-selector involvedObject.kind=FlinkDeployment
 ```
 
 ## Logs
 
-Every pod has two containers: `sidecar` and `process`.
+A Pekko Streams streamlet's pods have one container, `streamlet`. A Flink streamlet's job manager and
+task managers have Flink's `flink-main-container`. Every pod carries the labels
+`flow.ankka.thinkmorestupidless.com/pipeline` and `flow.ankka.thinkmorestupidless.com/streamlet`:
 
 ```bash
-kubectl -n shop logs deploy/flow-cart-router -c sidecar
-kubectl -n shop logs deploy/flow-cart-router -c process
+kubectl -n shop logs -l flow.ankka.thinkmorestupidless.com/streamlet=cleaner
+kubectl -n shop logs -l flow.ankka.thinkmorestupidless.com/streamlet=counter --all-containers
 ```
 
-The sidecar logs discovery, each conversation, partitions assigned and revoked, every stream failure with
-its cause, and every reconnect. When the sidecar refuses to start because the process does not match the
-deployed descriptor, the problems are in both logs: the sidecar sends them to the process before it
-exits. No record value is ever logged.
-
-## Lag and throughput
-
-Each sidecar serves Prometheus metrics on port 2050. Every Kafka client's id is
-`<pipeline>.<streamlet>.<port>`, so lag is attributed to one streamlet's inlet:
-
-```bash
-kubectl -n shop port-forward deploy/flow-cart-router 2050 &
-curl -s localhost:2050/metrics | grep records_lag
-```
-
-```text
-kafka_consumer_consumer_fetch_manager_metrics_records_lag{client_id="cart.router.in",partition="0",topic="shop_cart-events_v1"} 0.0
-```
-
-Kafka writes topic names in these labels with dots replaced by underscores. The metrics worth watching:
-
-| metric | watch for |
-|---|---|
-| `kafka_consumer_consumer_fetch_manager_metrics_records_lag` | lag per inlet partition that grows and does not fall |
-| `kafka_consumer_consumer_fetch_manager_metrics_records_consumed_rate` | an inlet that stops reading |
-| `kafka_producer_producer_metrics_record_send_rate` | emits per outlet |
-| `ankka_flow_sidecar_stalled_seconds` | a partition that has not committed for a long time |
-| `ankka_flow_sidecar_in_flight` | a batch that stays with the process |
-
-Every metric is listed in [the sidecar reference](../reference/sidecar.md#metrics).
-
-## Scraping with Prometheus
-
-Streamlet pods carry `prometheus.io/scrape: "true"` and `prometheus.io/port: "2050"`, and the port is
-named `metrics`. A Prometheus that discovers pods by those annotations scrapes every sidecar without
-further configuration. With the Prometheus Operator, a PodMonitor selecting
-`app.kubernetes.io/managed-by: ankka-flow` on port `metrics` does the same:
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: ankka-flow
-  namespace: shop
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/managed-by: ankka-flow
-  podMetricsEndpoints:
-    - port: metrics
-```
-
-Pods also carry `flow.ankka.thinkmorestupidless.com/pipeline` and
-`flow.ankka.thinkmorestupidless.com/streamlet` labels, which a relabelling rule can turn into series
+`flow mcp`'s `pipeline_logs` tool reads the last lines of every container of every pod with those
 labels.
 
-## Stalled partitions
+A Flink streamlet also has Flink's web interface on its job manager, for checkpoints, back pressure
+and the job's exceptions:
 
-A batch the process fails is redelivered from the last commit, indefinitely; nothing is skipped. A batch
-that fails every time therefore stalls its partition. It shows three ways: that partition's lag grows,
-`ankka_flow_sidecar_stalled_seconds` rises, and after `FLOW_STALL_WARNING_AFTER` (five minutes by default)
-the sidecar records one `PartitionStalled` Warning on its pod, naming the inlet, the partition and the
-last error. The fix is in the streamlet's code: skip the record by acknowledging without emitting, or
-correct what makes it fail. See [Delivery and failure](../concepts/delivery.md).
-
-The stall is measured from the first attempt at the batch, across the sidecar's reconnects, so the
-warning appears even though every failure tears the stream down and starts it again.
-
-## A built-in stage
-
-A built-in streamlet's pod, such as the [Neo4j merge sink](../reference/neo4j-merge-sink.md), exports
-every inlet metric, plus four counters of its own per inlet partition:
-
-| Metric | Meaning |
-|---|---|
-| `ankka_flow_stage_deltas_written_total` | deltas applied to the graph |
-| `ankka_flow_stage_deltas_stale_total` | deltas found stale: folded away within a batch, or older than what the graph holds |
-| `ankka_flow_stage_batches_failed_total` | batches whose transaction failed or whose records could not be read |
-| `ankka_flow_stage_delete_markers_total` | records with no value, which remove a key from a compacted topic, passed over |
-
-A rising written count with lag near zero is a healthy sink. A replay from the start, or a burst of
-redelivery, shows as stale deltas rather than written ones: nothing in the graph changed. Failed
-batches beside growing lag mean the database is refusing or not answering, or a delta is unreadable or
-wrongly keyed; the sidecar's log and the `PartitionStalled` note carry the reason. Delete markers are
-counted on their own and are never a failure. During a
-[rebuild from the delta topic](rebuild-a-graph.md) the written count rises until the lag is zero.
-
-A sink whose credentials may not create the uniqueness constraint it needs records one
-`ConstraintNotCreated` Warning on its pod each time it opens, and keeps going. Merges then scan the
-graph instead of looking elements up, so throughput falls as the graph grows. Create the constraint
-with an account that may:
-
-```cypher
-CREATE CONSTRAINT element_id IF NOT EXISTS FOR (n:Element) REQUIRE n.id IS UNIQUE
+```bash
+kubectl -n shop port-forward svc/flow-carts-counter-rest 8081
 ```
