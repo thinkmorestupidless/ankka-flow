@@ -8,8 +8,9 @@ import com.monovore.decline.*
 import com.thinkmorestupidless.ankka.flow.descriptor.Descriptor
 
 /**
- * `flow`: verify a blueprint, generate the resource the operator runs, request a reset. Exit codes:
- * 0 ok, 1 refused or failed (problems on stderr, one per line), 2 usage.
+ * `flow`: verify a blueprint, generate the resource the operator runs, write the settings of a
+ * laptop run, request a reset. Exit codes: 0 ok, 1 refused or failed (problems on stderr, one per
+ * line), 2 usage.
  */
 object Main:
 
@@ -27,6 +28,7 @@ object Main:
         out: Option[Path],
         deleteManagedTopics: Boolean
     )
+    case LocalCmd(req: Local.Request)
     case ResetCmd(pipeline: String, streamlets: List[String], namespace: Option[String])
     case VersionCmd
     case InitCmd(
@@ -73,6 +75,24 @@ object Main:
         )
         .orFalse
     ).mapN(Cmd.GenerateCmd.apply)
+  )
+
+  private val local = Opts.subcommand(
+    "local",
+    "Verify, then write each streamlet's streamlet.properties for a broker on this machine."
+  )(
+    (
+      inputs,
+      Opts.option[String]("bootstrap-servers", "The broker every topic is on, HOST:PORT."),
+      Opts
+        .option[Path]("output", "The directory to write <streamlet>/streamlet.properties in.", "o"),
+      Opts
+        .option[String](
+          "ankka-bootstrap-servers",
+          "The broker an ankka topic is on, HOST:PORT; needed when the blueprint has one."
+        )
+        .orNone
+    ).mapN(Local.Request.apply).map(Cmd.LocalCmd(_))
   )
 
   private val reset = Opts.subcommand(
@@ -160,7 +180,13 @@ object Main:
     )
 
   private val command = Command("flow", "Verify, generate and operate ankka-flow pipelines.")(
-    verify.orElse(generate).orElse(reset).orElse(init).orElse(mcpCommand).orElse(version)
+    verify
+      .orElse(generate)
+      .orElse(local)
+      .orElse(reset)
+      .orElse(init)
+      .orElse(mcpCommand)
+      .orElse(version)
   )
 
   def run(args: List[String], out: PrintStream, err: PrintStream): Int =
@@ -183,7 +209,13 @@ object Main:
                 )
                 0
           case g: Cmd.GenerateCmd => generateResource(g, out, err)
-          case i: Cmd.InitCmd     => initProject(i, out, err)
+          case Cmd.LocalCmd(req) =>
+            Local.run(req) match
+              case Left(problems) => refuse(err, problems)
+              case Right(written) =>
+                written.foreach(p => out.println(s"wrote $p"))
+                0
+          case i: Cmd.InitCmd => initProject(i, out, err)
           case Cmd.McpCmd =>
             val cluster = mcp.ProjectFile.read(Path.of(".").toAbsolutePath)
             val tools   = mcp.FlowTools(cluster)
