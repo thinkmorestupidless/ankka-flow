@@ -264,6 +264,8 @@ object Rendering:
 
     // ── 5. A reset request (FR-023) ───────────────────────────────────────────────────────────
     val reset = Reset.actions(resource, observed, byId)
+    // A FlinkDeployment a reset deletes is applied again by the next reconcile, at its new epoch.
+    val discarded = reset.collect { case Action.DeleteFlinkDeployment(_, name) => name }.toSet
 
     // ── 6. Finalizer, when managed topics are to go with the pipeline ────────────────────────
     val finalizer =
@@ -277,7 +279,10 @@ object Rendering:
           Action.EnsureRole(role),
           Action.EnsureRoleBinding(binding)
         ) ++
-        streamletActions ++ removed ++ reset :+ Action.SetStatus(status),
+        streamletActions.filterNot {
+          case Action.ApplyFlinkDeployment(d) => discarded.contains(d.getMetadata.getName)
+          case _                              => false
+        } ++ removed ++ reset :+ Action.SetStatus(status),
       topics,
       hashes
     )
