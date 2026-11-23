@@ -66,6 +66,23 @@ lists them; a new `-Dflow.*` switch that is not listed there silently does nothi
 A long run on a laptop: `caffeinate -i sbt test`. A sleeping Mac pauses Docker while deadlines keep
 counting, and the failure looks like the platform's.
 
+## CI
+
+As ankka's, so the two cost the same to reason about:
+
+- **Only pull requests are built.** `main` is protected: a pull request merges once `ci`'s checks pass
+  on a head up to date with `main`, so the merge commit is the tree that was tested, and nothing
+  rebuilds it. `workflow_dispatch` runs every job on demand.
+- **Only what a change can break.** `changes` maps the touched files onto jobs (dorny/paths-filter);
+  a skipped job counts as a pass. A job's filter names everything it reads, not only its directory.
+  `.github/ci-coverage.py` fails a tracked file no filter claims and a pattern that matches no file:
+  a new file goes in the filter of the job that reads it, or in `unchecked` with the reason.
+- **The k3s suite runs nightly on `main` and on demand** (`cluster.yml`, which can name a branch and
+  turn the soak on), never on a pull request. Dispatch it on a branch that changes the operator, the
+  CRD or the SDKs' runtime before merging.
+- **The site and everything else are published by a tag only** (`release.yml`).
+- **A push to a pull request cancels the run it supersedes.**
+
 ## Rules
 
 | Rule | What it means here |
@@ -95,8 +112,8 @@ counting, and the failure looks like the platform's.
 
 One tree, `docs/`, of plain Markdown with YAML frontmatter, built by ankka's docs tool (a `uv`
 dependency named in `tools/docs/pyproject.toml`, pinned by its `uv.lock`; the settings are
-`extra.docs` in `mkdocs.yml`): the MkDocs Material site at flow.ankka.cloud (GitHub Pages, from
-`main`, by `.github/workflows/docs.yml`), `llms.txt`, `llms-full.txt`, Markdown per page,
+`extra.docs` in `mkdocs.yml`): the MkDocs Material site at flow.ankka.cloud (GitHub Pages, published
+by a release's `docs` job, never from `main`), `llms.txt`, `llms-full.txt`, Markdown per page,
 `docs-index.json`, and four Agent Skills curated in `tools/docs/skill/<name>/SKILL.md` and rendered
 into `marketplace/plugins/ankka-flow/skills/` (committed; `docs check` fails when stale; a tag
 publishes the plugin to `thinkmorestupidless/ankka-marketplace`). The rules are ankka's, on

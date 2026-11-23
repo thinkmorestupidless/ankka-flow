@@ -1,41 +1,85 @@
+# Every check a pull request needs, in one workflow, as ankka's `ci` is built.
+#
+# Only what a change can break is built. The `changes` job maps the files a pull request touched onto
+# the jobs below, and a job whose inputs are untouched is skipped, which GitHub counts as a pass for a
+# required status check. The map errs towards running: a job's inputs are everything it reads or
+# builds, not only the directory named after it. The CLI's suites walk `docs/` and the native image
+# carries the pages (`flow mcp` serves them), so both JVM jobs read `docs/`; the `build` job's suites
+# read the sample's blueprints, descriptors and manifests. `.github/ci-coverage.py` refuses a tracked
+# file no filter claims and a pattern that matches no file, so the map cannot silently fall behind
+# the tree. A change to this file runs everything.
+#
+# Pushes to `main` are not built. The branch is protected: a pull request merges only when these
+# checks have passed on a head that is up to date with `main`, so the merge commit's tree is the tree
+# that was tested, and a second run of it would be the same minutes spent on the same answer. What
+# `main` does get is the k3s suite, nightly (`cluster.yml`); the documentation site is published by
+# a release, so the pages describe what a reader can install. `workflow_dispatch` runs every job
+# regardless of what changed, for a full build on demand.
+#
+# A push to a pull request cancels the run it supersedes: its answer is about a head nobody will merge.
 name: ci
-
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
-
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
-  # Maps changed paths onto jobs. An untouched job is skipped, which GitHub counts as a pass.
   changes:
     runs-on: ubuntu-24.04
     outputs:
-      scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name != 'pull_request' }}
-      features: ${{ steps.filter.outputs.features == 'true' || github.event_name != 'pull_request' }}
-      cli-native: ${{ steps.filter.outputs.cli-native == 'true' || github.event_name != 'pull_request' }}
+      scala: ${{ steps.filter.outputs.scala == 'true' || github.event_name == 'workflow_dispatch' }}
+      cli-native: ${{ steps.filter.outputs.cli-native == 'true' || github.event_name == 'workflow_dispatch' }}
+      features: ${{ steps.filter.outputs.features == 'true' || github.event_name == 'workflow_dispatch' }}
+      docs: ${{ steps.filter.outputs.docs == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v7
+      # The map below is only as good as its coverage: a tracked file no filter claims is a file whose
+      # change runs nothing, and a pattern that matches no file can never fire. Both would pass
+      # silently, so this refuses both before the map is used.
+      - run: python3 .github/ci-coverage.py
+      # On a pull request the action lists the changed files through the API against the base
+      # branch; on a manual run there is no diff and every output is true.
       - uses: dorny/paths-filter@v4
-        id: filter
         if: github.event_name == 'pull_request'
+        id: filter
         with:
           filters: |
             workflow: &workflow
               - '.github/workflows/ci.yml'
-            scala:
-              - *workflow
+              - '.github/ci-coverage.py'
+            # What the CLI is built from and what its suites read back out of the tree.
+            cli-build: &cli-build
               - 'build.sbt'
               - 'project/**'
-              - '.scalafmt.conf'
               - 'descriptor/**'
               - 'blueprint/**'
               - 'crd/**'
-              - 'operator/**'
               - 'cli/**'
+              # The CRD the `crd` module reads is a symlink into the canonical manifests.
               - 'kustomization/**'
+              # The pages built into `flow` for `flow mcp`, which McpServerSuite walks.
+              - 'docs/**'
+              # The sample's blueprints, descriptors, declarations, images and schemas, which the
+              # CLI's suites verify, generate and run; not the streamlets' code.
+              - 'samples/cart-pipeline/*.conf'
+              - 'samples/cart-pipeline/flow/**'
+              - 'samples/cart-pipeline/ankka/**'
+              - 'samples/cart-pipeline/schemas/**'
+            # Everything `sbt compile test` builds, and everything a suite reads.
+            scala:
+              - *workflow
+              - *cli-build
+              - '.scalafmt.conf'
+              - 'operator/**'
               - 'sdks/**'
-              - 'samples/cart-pipeline/**'
+              - 'samples/**'
+            # The CLI as a native binary: a change to any of its inputs can change what the image
+            # must carry.
+            cli-native:
+              - *workflow
+              - *cli-build
+              - 'cli/native-smoke.sh'
             # The living features, the glossary their steps are written in, the specs that name
             # their scenarios, and the extension that checks them against each other.
             features:
@@ -45,18 +89,37 @@ jobs:
               - 'GLOSSARY.md'
               - 'specs/**'
               - '.specify/extensions/bdd/**'
-            # The CLI and what it is built from; a change to any of them can change what the
-            # native image must carry.
-            cli-native:
+            # Pages, the tool, the samples they include, the rendered skills, and the files outside
+            # docs/ whose links and includes the check holds to the site.
+            docs:
               - *workflow
-              - 'build.sbt'
-              - 'project/**'
-              - 'descriptor/**'
-              - 'sdks/**'
-              - 'blueprint/**'
-              - 'crd/**'
-              - 'cli/**'
-              - 'samples/cart-pipeline/**'
+              - 'docs/**'
+              - 'tools/docs/**'
+              - 'mkdocs.yml'
+              - 'marketplace/**'
+              - 'README.md'
+              - 'samples/**'
+            # What deliberately needs no job here, and why. Not used by any job: listed so the
+            # coverage check knows these were left out on purpose.
+            unchecked:
+              # Run by a tag or a schedule; a change to one is proved by its next run.
+              - '.github/workflows/release.yml'
+              - '.github/workflows/cluster.yml'
+              - '.github/cluster-sampler.py'
+              # The formula's template, written by the release's `homebrew` job.
+              - 'homebrew/**'
+              # Records, not inputs: spec-kit's own files and skills, notes, licence and notice.
+              - '.specify/**'
+              - '.claude/**'
+              - 'notes/**'
+              - 'LICENSE'
+              - 'NOTICE'
+              - 'CLAUDE.md'
+              - 'Justfile'
+              - '.gitignore'
+              # The developer's own hook and the laptop walkthrough's single Kafka.
+              - '.githooks/**'
+              - 'docker-compose.yml'
 
   # The living features, in the glossary's words, and the specs that name their scenarios, checked
   # against each other by speckit-bdd: an undefined word, a refused synonym, two scenarios that give
@@ -69,40 +132,46 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: .github/features-check.sh
 
+  # Everything but the k3s suite (nightly, `cluster.yml`), in one sbt run: the format, the build, every
+  # suite, the mutation the commit-after-write suite must fail under, and the sample's committed
+  # descriptors against what its streamlets declare. One start of sbt rather than three.
   build:
     needs: changes
     if: needs.changes.outputs.scala == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # sbt-dynver derives the version from tags; a shallow clone sees none
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
           cache: sbt
       - uses: sbt/setup-sbt@v1
-      - run: sbt -Dflow.cluster.tests=off scalafmtCheckAll scalafmtSbtCheck compile test
-      - run: sbt mutationCheck
-      # The sample's committed descriptors are what its streamlets declare.
-      - run: sbt cartCleaner/descriptorCheck cartCounter/descriptorCheck
+      - run: >-
+          sbt -Dflow.cluster.tests=off
+          scalafmtCheckAll scalafmtSbtCheck compile test mutationCheck
+          cartCleaner/descriptorCheck cartCounter/descriptorCheck
 
   # The CLI as a native binary, on one platform: the image built, the CLI's own suite run against
   # the binary instead of in process, and the smoke script with its byte-for-byte diff against the
-  # JVM build. The other three platforms are built at a release; a reachability entry missing from
+  # JVM build. ankka builds a macOS leg on every pull request too; here the release builds the other
+  # three platforms, as macOS minutes cost ten times Linux's. A reachability entry missing from
   # cli/src/main/resources/META-INF/native-image is found here, not at the tag.
   cli-native:
     needs: changes
     if: needs.changes.outputs.cli-native == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04   # as the release builds: the binary links the build machine's glibc
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # sbt-dynver derives the version from tags; a shallow clone sees none
       - uses: graalvm/setup-graalvm@v1
         with:
           java-version: "25"
@@ -110,7 +179,28 @@ jobs:
           cache: sbt
           github-token: ${{ github.token }}
       - uses: sbt/setup-sbt@v1
-      - run: sbt cli/stage cli/GraalVMNativeImage/packageBin
-      - run: sbt 'cli/test' -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow"
+      - run: >-
+          sbt cli/stage cli/GraalVMNativeImage/packageBin
+          "-Dflow.cli.binary=$PWD/cli/target/graalvm-native-image/flow" cli/test
       - run: cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
 
+  # The documentation: every page's rules, every included sample against its source, the rendered
+  # skills, and a strict site build; then the README's includes, which the docs tool does not read.
+  # The site itself is published by a release (`release.yml`), never from a pull request or `main`.
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the tags: the pages name the newest release
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - run: uv run --project tools/docs docs build
+      - run: uv run --project tools/docs python tools/docs/readme_includes.py --check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: docs-site
+          path: target/docs-site
