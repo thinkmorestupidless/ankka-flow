@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A cart event",
+  "description": "Something that happened to a shopper's cart.",
+  "type": "object",
+  "required": ["cartId", "seq", "total", "at"],
+  "properties": {
+    "cartId": {"type": "string", "description": "The cart the event happened to."},
+    "seq": {"type": "integer", "minimum": 1, "description": "The event's number within its cart."},
+    "total": {"type": "integer", "minimum": 0, "description": "The cart's total after the event, in pence."},
+    "at": {"type": "integer", "description": "When the event happened, in milliseconds since the epoch."}
+  }
+}

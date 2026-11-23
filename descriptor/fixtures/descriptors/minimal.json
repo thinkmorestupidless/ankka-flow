@@ -1,0 +1,27 @@
+{
+  "descriptor_version": "2.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "engine": "pekko-streams",
+    "inlets": [
+      {
+        "contract": {
+          "name": "minimal.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "minimal",
+    "outlets": [
+      {
+        "contract": {
+          "name": "minimal.v1"
+        },
+        "name": "out"
+      }
+    ]
+  }
+}

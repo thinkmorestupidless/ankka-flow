@@ -12,7 +12,7 @@ object Dependencies {
      */
     val scalaLts = "3.3.8"
 
-    val pekko      = "1.7.0"
+    val pekko      = "1.7.1"
     val pekkoKafka = "1.2.0"
 
     /** pekko-connectors-kafka 1.2.0's own line; pinned so every module agrees (research R8). */
@@ -32,17 +32,47 @@ object Dependencies {
     /** The Kafka image every Kafka test, the compose files and the k3s suite run. */
     val kafkaImage = "apache/kafka:3.9.1"
 
-    /** The Prometheus JMX exporter agent baked into the sidecar image (research R7). */
-    val jmxExporter = "1.0.1"
-
-    /** The Neo4j Java driver the graph merge sink writes with (feature 002, research R7). */
-    val neo4jDriver = "5.28.5"
+    /**
+     * Flink streamlets (feature 009, research R1): Flink 2.2, the newest line with a Kafka
+     * connector, on Java 17 by `--release`. The connector brings kafka-clients 4.2.0, on a
+     * classpath no Pekko Streams module shares.
+     */
+    val flink      = "2.2.1"
+    val flinkKafka = "5.0.0-2.2"
 
     /**
-     * The Neo4j the graph merge sink is tested against: 5.26 LTS, the first with dynamic labels in
-     * MERGE, which the sink's statements need.
+     * kafka-clients 4.2's OAUTHBEARER login needs it on the classpath and declares it provided
+     * (V2).
      */
-    val neo4jImage = "neo4j:5.26-community"
+    val jose4j = "0.9.6"
+
+    /** The slf4j API line Flink 2.2 is built on, for a binding on a laptop's `run` only. */
+    val flinkSlf4j = "1.7.36"
+
+    /** The Flink Kubernetes Operator a cluster runs Flink streamlets with (research R10). */
+    val flinkOperator = "1.16.1"
+
+    /**
+     * The operator's image, as the chart at `flinkOperator` names it (a commit tag): what the
+     * cluster suite imports into k3s for `operator/src/test/resources/flink-operator.yaml`.
+     */
+    val flinkOperatorImage = "ghcr.io/apache/flink-kubernetes-operator:1c895a3"
+
+    /**
+     * The state store of the cluster suite and the local overlay. MinIO's own images are no longer
+     * published; Chainguard's build, pinned by digest (research V4), with its client for the
+     * bucket.
+     */
+    val minioImage =
+      "cgr.dev/chainguard/minio@sha256:548147b5fc95a67e3e45285dff7e0e50326c3eb1977c6218039461771156c5e7"
+    val minioClientImage =
+      "cgr.dev/chainguard/minio-client@sha256:328ad584835c07ff4b28418aa54d9d9a83893b86bc543436c910359cca76ce19"
+
+    /** The image a Flink streamlet's image is built `FROM`, and the cluster suite runs. */
+    val flinkImage = "flink:2.2.1-java17"
+
+    /** JUnit for the Java modules, at the version sbt-jupiter-interface runs (research V10). */
+    val junit = "6.1.3"
   }
 
   private def pekko(m: String) = "org.apache.pekko" %% s"pekko-$m" % V.pekko
@@ -68,14 +98,12 @@ object Dependencies {
   val logback = "ch.qos.logback" % "logback-classic" % V.logback
   // The CLI's logging: none. It prints its own messages; what fabric8 would log through slf4j is
   // noise beside them, and a logging framework is one more thing a native image must be told about.
-  val slf4jNop            = "org.slf4j"          % "slf4j-nop"         % V.slf4j
-  val slf4jApi            = "org.slf4j"          % "slf4j-api"         % V.slf4j
-  val slf4jSimple         = "org.slf4j"          % "slf4j-simple"      % V.slf4j
-  val munit               = "org.scalameta"     %% "munit"             % V.munit
-  val testcontainersKafka = "org.testcontainers" % "kafka"             % V.testcontainers
-  val testcontainersK3s   = "org.testcontainers" % "k3s"               % V.testcontainers
-  val testcontainersNeo4j = "org.testcontainers" % "neo4j"             % V.testcontainers
-  val neo4jDriver         = "org.neo4j.driver"   % "neo4j-java-driver" % V.neo4jDriver
+  val slf4jNop            = "org.slf4j"          % "slf4j-nop"    % V.slf4j
+  val slf4jApi            = "org.slf4j"          % "slf4j-api"    % V.slf4j
+  val slf4jSimple         = "org.slf4j"          % "slf4j-simple" % V.slf4j
+  val munit               = "org.scalameta"     %% "munit"        % V.munit
+  val testcontainersKafka = "org.testcontainers" % "kafka"        % V.testcontainers
+  val testcontainersK3s   = "org.testcontainers" % "k3s"          % V.testcontainers
 
   val fabric8 = "io.fabric8" % "kubernetes-client" % V.fabric8
   // The CLI's fabric8 over the JDK's own HTTP client instead of the default Vert.x one: Netty is
@@ -88,15 +116,17 @@ object Dependencies {
   val jacksonScala      = "com.fasterxml.jackson.module" %% "jackson-module-scala"      % V.jackson
   val jacksonYaml = "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % V.jackson
 
-  // grpc-java with ScalaPB, not pekko-grpc (research R1): versions come from the compiler plugin
-  // so generated code and runtime can never disagree.
-  val scalapbRuntime: ModuleID =
-    "com.thesamet.scalapb" %% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion
-  val scalapbRuntimeGrpc: ModuleID =
-    "com.thesamet.scalapb" %% "scalapb-runtime-grpc" % scalapb.compiler.Version.scalapbVersion
-  val grpcNettyShaded: ModuleID =
-    "io.grpc" % "grpc-netty-shaded" % scalapb.compiler.Version.grpcJavaVersion
-  val grpcStub: ModuleID = "io.grpc" % "grpc-stub" % scalapb.compiler.Version.grpcJavaVersion
+  // Flink (feature 009). Provided: the image's distribution supplies them; the connector is not
+  // in the distribution and goes into the image's usrlib beside the streamlet's jar.
+  val flinkStreaming      = "org.apache.flink"           % "flink-streaming-java"  % V.flink
+  val flinkClients        = "org.apache.flink"           % "flink-clients"         % V.flink
+  val flinkConnectorBase  = "org.apache.flink"           % "flink-connector-base"  % V.flink
+  val flinkConnectorKafka = "org.apache.flink"           % "flink-connector-kafka" % V.flinkKafka
+  val jose4j              = "org.bitbucket.b_c"          % "jose4j"                % V.jose4j
+  val flinkSlf4jSimple    = "org.slf4j"                  % "slf4j-simple"          % V.flinkSlf4j
+  val jacksonDatabind     = "com.fasterxml.jackson.core" % "jackson-databind"      % V.jackson
+  val junitJupiter        = "org.junit.jupiter"          % "junit-jupiter"         % V.junit
+  val jupiterInterface    = "com.github.sbt.junit"       % "jupiter-interface"     % "0.20.0"
 
   val commonTest: Seq[ModuleID] = Seq(munit % Test, logback % Test)
 }

@@ -1,7 +1,9 @@
-# The local kind cluster: the CRD, the operator and a development Kafka. `just up` applies this.
+# The local kind cluster: the CRD, the operator, a development Kafka and MinIO as the state store
+# of Flink streamlets. `just up` applies this; deploy-local.sh adds the Flink operator.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 components:
   - ../../components/crd
   - ../../components/operator
   - ../../components/kafka
+  - ../../components/minio

@@ -4,39 +4,56 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
 
 import com.thinkmorestupidless.ankka.flow.crd.{FlowSerialization, StreamletSpec}
-import com.thinkmorestupidless.ankka.flow.protocol.{DescriptorJson, Json}
+import com.thinkmorestupidless.ankka.flow.descriptor.{
+  Delivery,
+  Descriptor,
+  DescriptorJson,
+  Engine,
+  InletSettings,
+  Json,
+  OutletSettings,
+  Settings as FlowSettings
+}
 
 /**
- * The two files the sidecar reads (contracts/sidecar.md): the deployed descriptor, and
- * `streamlet.conf` with every port's topic, group, client id and resolved connection. Their hash is
- * the pod template's config-hash annotation, so a change to either rolls the streamlet and nothing
- * else does (FR-024a). For a built-in streamlet the hash also covers the version of the Secret its
- * stage reads, so a rotated credential rolls it; the Secret's values are never in either file.
+ * A streamlet's `streamlet.properties` (contracts/streamlet-settings.md): its parameters, and the
+ * topic, group, client id and resolved connection of each of its own ports, and no other's (R6).
+ * The hash covers the file and the descriptor, and is the pod template's config-hash annotation, so
+ * a change to either rolls the streamlet and nothing else does.
  */
-final case class StreamletFiles(
-    descriptorJson: String,
-    streamletConf: String,
-    secretVersion: Option[String] = None
-):
+final case class StreamletFiles(properties: String, descriptorJson: String):
   def hash: String =
     MessageDigest
       .getInstance("SHA-256")
-      .digest(
-        (descriptorJson + "\n---\n" + streamletConf + secretVersion.fold("")(v =>
-          s"\n---\nsecret:$v"
-        ))
-          .getBytes(UTF_8)
-      )
+      .digest((descriptorJson + "\n---\n" + properties).getBytes(UTF_8))
       .map(b => f"$b%02x")
       .mkString
 
 object StreamletFiles:
 
+  /** The key of the file in the streamlet's Secret. */
+  val Key: String = FlowSettings.FileName
+
+  /** A Flink outlet's transaction timeout: the broker's default maximum (R13). */
+  val TransactionTimeoutMs = "900000"
+
+  /**
+   * `flow.<namespace>.<pipeline>.<streamlet>.<outlet>.e<epoch>`: unique to the job's state (R13).
+   */
+  def transactionalIdPrefix(
+      namespace: String,
+      pipeline: String,
+      streamlet: String,
+      outlet: String,
+      epoch: Int
+  ): String = s"flow.$namespace.$pipeline.$streamlet.$outlet.e$epoch"
+
   def render(
       pipeline: String,
+      namespace: String,
       s: StreamletSpec,
       topics: Map[String, ResolvedTopic],
-      secretVersion: Option[String] = None
+      epoch: Int = 1
   ): Either[String, StreamletFiles] =
     for
       streamlet <- Json
@@ -44,88 +61,83 @@ object StreamletFiles:
         .flatMap(DescriptorJson.streamletFromJson)
         .left
         .map(e => s"streamlet '${s.name}': its descriptor does not parse: $e")
-      spec = ankka.flow.v1.discovery.Spec(
-        protocolVersion =
-          com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion.Current.toString,
-        sdk = None,
-        streamlet = Some(streamlet)
-      )
+      parameters <- sequence(streamlet.parameters.map { p =>
+        s.config
+          .get(p.key)
+          .map(text)
+          .orElse(p.default)
+          .map(p.key -> _)
+          .toRight(s"streamlet '${s.name}': parameter '${p.key}' has no default and no value")
+      })
       inlets  <- ports(s.name, s.inlets, topics)
       outlets <- ports(s.name, s.outlets, topics)
     yield
-      val config = Json.compact(
-        Json.Obj(
-          s.config.toVector
-            .sortBy(_._1)
-            .map((k, v) => k -> Json.parse(v.toString).getOrElse(Json.Str(v.asText)))
-        )
+      val settings = FlowSettings(
+        pipeline = pipeline,
+        streamlet = s.name,
+        namespace = namespace,
+        local = false,
+        parameters = parameters.toMap,
+        inlets = inlets.map { (port, t) =>
+          // Records a transaction aborted are never read: a managed topic may have a Flink writer.
+          val committed =
+            if t.managed then Map("isolation.level" -> "read_committed") else Map.empty
+          InletSettings(
+            port,
+            t.name,
+            Names.group(pipeline, s.name, port, t.groupPrefix),
+            Names.clientId(pipeline, s.name, port),
+            t.connectionConfig ++ t.consumerConfig ++
+              Map("bootstrap.servers" -> t.bootstrapServers) ++ committed
+          )
+        },
+        outlets = outlets.map { (port, t) =>
+          val kafka =
+            t.connectionConfig ++ t.producerConfig ++ Map("bootstrap.servers" -> t.bootstrapServers)
+          // A Flink streamlet writes a managed topic in transactions; any other topic, at least
+          // once, as ankka renders no transactional id rule for a machine (R13).
+          if streamlet.engine == Engine.Flink && t.managed then
+            OutletSettings(
+              port,
+              t.name,
+              Names.clientId(pipeline, s.name, port),
+              Delivery.ExactlyOnce,
+              Some(transactionalIdPrefix(namespace, pipeline, s.name, port, epoch)),
+              kafka ++ Map("transaction.timeout.ms" -> TransactionTimeoutMs)
+            )
+          else
+            OutletSettings(
+              port,
+              t.name,
+              Names.clientId(pipeline, s.name, port),
+              Delivery.AtLeastOnce,
+              None,
+              kafka
+            )
+        }
       )
-      val in = inlets.map { (port, t) =>
-        val id = Names.clientId(pipeline, s.name, port)
-        s"""    ${q(port)} {
-           |      topic = ${q(t.name)}
-           |      group = ${q(Names.group(pipeline, s.name, port))}
-           |      client-id = ${q(id)}
-           |      bootstrap.servers = ${q(t.bootstrapServers)}
-           |      connection-config ${block(t.connectionConfig)}
-           |      consumer-config ${block(t.consumerConfig)}
-           |      batch { max-records = ${t.batch.maxRecords}, max-bytes = ${t.batch.maxBytes} }
-           |    }""".stripMargin
-      }
-      val out = outlets.map { (port, t) =>
-        s"""    ${q(port)} {
-           |      topic = ${q(t.name)}
-           |      client-id = ${q(Names.clientId(pipeline, s.name, port))}
-           |      bootstrap.servers = ${q(t.bootstrapServers)}
-           |      connection-config ${block(t.connectionConfig)}
-           |      producer-config ${block(t.producerConfig)}
-           |    }""".stripMargin
-      }
-      // A built-in streamlet's stage reads its credentials from the mounted Secret, never from here.
-      val stage =
-        if !s.builtin then ""
-        else s"""
-             |  stage {
-             |    name = ${q(streamlet.name)}
-             |    neo4j { credentials-dir = ${q(BuiltinStages.CredentialsDir)} }
-             |  }""".stripMargin
-      val conf =
-        s"""# Rendered by the ankka-flow operator for ${q(s.name)} of pipeline ${q(
-            pipeline
-          )}. Do not edit.
-           |flow {
-           |  pipeline = ${q(pipeline)}
-           |  streamlet = ${q(s.name)}
-           |  config = $config$stage
-           |  inlets {
-           |${in.mkString("\n")}
-           |  }
-           |  outlets {
-           |${out.mkString("\n")}
-           |  }
-           |}
-           |""".stripMargin
-      StreamletFiles(DescriptorJson.write(spec), conf, secretVersion)
+      StreamletFiles(
+        FlowSettings.write(settings),
+        DescriptorJson.write(Descriptor(Descriptor.Version, None, streamlet))
+      )
+
+  /** A parameter's value as the file carries it: the text of its type. */
+  private def text(v: com.fasterxml.jackson.databind.JsonNode): String =
+    if v.isTextual then v.asText else v.toString
+
+  private def sequence[A](es: Vector[Either[String, A]]): Either[String, Vector[A]] =
+    es.collectFirst { case Left(e) => e }.toLeft(es.collect { case Right(a) => a })
 
   private def ports(
       streamlet: String,
       bindings: Map[String, String],
       topics: Map[String, ResolvedTopic]
   ): Either[String, Vector[(String, ResolvedTopic)]] =
-    val resolved = bindings.toVector.sortBy(_._1).map { (port, id) =>
+    sequence(bindings.toVector.sortBy(_._1).map { (port, id) =>
       topics
         .get(id)
         .map(port -> _)
         .toRight(
           s"streamlet '$streamlet': port '$port' names topic '$id', which the resource does not declare"
         )
-    }
-    resolved.collectFirst { case Left(e) => e }.toLeft(resolved.collect { case Right(p) => p })
-
-  /** A string as a HOCON-safe quoted value (JSON string syntax is valid HOCON). */
-  private def q(s: String): String = Json.compact(Json.Str(s))
-
-  /** Kafka properties as a HOCON block of quoted keys, so dots stay part of the key. */
-  private def block(m: Map[String, String]): String =
-    if m.isEmpty then "{}"
-    else m.toVector.sortBy(_._1).map((k, v) => s"${q(k)} = ${q(v)}").mkString("{ ", ", ", " }")
+    })

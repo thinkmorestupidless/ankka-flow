@@ -21,7 +21,7 @@ import java.util.Properties
 
 import scala.jdk.CollectionConverters.*
 
-import com.thinkmorestupidless.ankka.flow.crd.{BatchSpec, TopicSpec}
+import com.thinkmorestupidless.ankka.flow.crd.TopicSpec
 
 /** A Kafka cluster: a `kafka-cluster-<name>` Secret in the operator's clusters namespace (R12). */
 final case class KafkaCluster(
@@ -31,8 +31,23 @@ final case class KafkaCluster(
     producerConfig: Map[String, String] = Map.empty,
     consumerConfig: Map[String, String] = Map.empty,
     partitions: Option[Int] = None,
-    replicas: Option[Int] = None
+    replicas: Option[Int] = None,
+    /** The ankka machine this cluster's credentials are, when the Secret names one. */
+    machine: Option[Machine] = None
 )
+
+/** An ankka machine, `<organization>/<name>`: ankka admits its groups under its own prefix only. */
+final case class Machine(organization: String, name: String):
+  def groupPrefix: String       = s"ankka.machine.$organization.$name."
+  override def toString: String = s"$organization/$name"
+
+object Machine:
+  private val Part    = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+  private val Pattern = s"($Part)/($Part)".r
+
+  def parse(value: String): Option[Machine] = value.trim match
+    case Pattern(org, name) => Some(Machine(org, name))
+    case _                  => None
 
 object KafkaCluster:
   /**
@@ -45,8 +60,18 @@ object KafkaCluster:
         p.load(new StringReader(text))
         p.asScala.toMap
       }
+    val machine = data
+      .get("machine")
+      .map(m =>
+        Machine
+          .parse(m)
+          .toRight(
+            s"Secret '${Names.kafkaClusterSecret(name)}' has machine '$m', which is not <organization>/<name>"
+          )
+      )
     data.get("bootstrap.servers").filter(_.trim.nonEmpty) match
-      case None => Left(s"Kafka cluster '$name' has no bootstrap.servers")
+      case None                          => Left(s"Kafka cluster '$name' has no bootstrap.servers")
+      case _ if machine.exists(_.isLeft) => Left(machine.get.left.toOption.get)
       case Some(bootstrap) =>
         Right(
           KafkaCluster(
@@ -56,7 +81,8 @@ object KafkaCluster:
             props("producer-config"),
             props("consumer-config"),
             data.get("partitions").flatMap(_.trim.toIntOption),
-            data.get("replicas").flatMap(_.trim.toIntOption)
+            data.get("replicas").flatMap(_.trim.toIntOption),
+            machine.flatMap(_.toOption)
           )
         )
 
@@ -72,8 +98,12 @@ final case class ResolvedTopic(
     partitions: Option[Int],
     replicas: Option[Int],
     topicConfig: Map[String, String],
-    batch: BatchSpec
+    /** The ankka machine the topic's cluster is, if any. */
+    machine: Option[Machine] = None
 ):
+  /** The prefix every group reading this topic has: its machine's, if any. */
+  def groupPrefix: Option[String] = machine.map(_.groupPrefix)
+
   /** The key the Admin client cache uses: same brokers and credentials, same client. */
   def connectionKey: (String, Map[String, String]) = bootstrapServers -> connectionConfig
 
@@ -90,8 +120,14 @@ object TopicResolution:
       topic: TopicSpec,
       clusters: Map[String, KafkaCluster]
   ): Either[String, ResolvedTopic] =
+    // An ankka topic is ankka's: never the pipeline's to create, size or delete.
+    val managed = topic.managed && topic.ankka.isEmpty
     val clusterName =
-      topic.cluster.orElse(Option.when(topic.bootstrapServers.isEmpty)(Names.DefaultCluster))
+      topic.cluster.orElse(
+        Option.when(topic.bootstrapServers.isEmpty)(
+          if topic.ankka.isDefined then Names.AnkkaCluster else Names.DefaultCluster
+        )
+      )
     val cluster = clusterName match
       case None => Right(None)
       case Some(n) =>
@@ -107,7 +143,7 @@ object TopicResolution:
       val replicas   = topic.replicas.orElse(c.flatMap(_.replicas))
       bootstrap match
         case None => Left(s"topic '${topic.id}' names no bootstrap.servers and no Kafka cluster")
-        case Some(_) if topic.managed && (partitions.isEmpty || replicas.isEmpty) =>
+        case Some(_) if managed && (partitions.isEmpty || replicas.isEmpty) =>
           Left(
             s"managed topic '${topic.id}' has no ${
                 if partitions.isEmpty then "partitions" else "replicas"
@@ -118,7 +154,7 @@ object TopicResolution:
             ResolvedTopic(
               id = topic.id,
               name = topic.name,
-              managed = topic.managed,
+              managed = managed,
               bootstrapServers = b,
               connectionConfig =
                 c.fold(Map.empty[String, String])(_.connectionConfig) ++ topic.connectionConfig,
@@ -126,10 +162,10 @@ object TopicResolution:
                 c.fold(Map.empty[String, String])(_.producerConfig) ++ topic.producerConfig,
               consumerConfig =
                 c.fold(Map.empty[String, String])(_.consumerConfig) ++ topic.consumerConfig,
-              partitions = if topic.managed then partitions else None,
-              replicas = if topic.managed then replicas else None,
+              partitions = if managed then partitions else None,
+              replicas = if managed then replicas else None,
               topicConfig = topic.topicConfig,
-              batch = topic.batch
+              machine = c.flatMap(_.machine)
             )
           )
     }

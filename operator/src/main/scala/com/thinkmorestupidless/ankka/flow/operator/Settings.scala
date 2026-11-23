@@ -7,13 +7,16 @@ import scala.concurrent.duration.*
  * environment variable, then default, as ankka's.
  */
 final case class Settings(
-    sidecarImage: Option[String],
     clustersNamespace: String,
     resyncInterval: FiniteDuration,
     retryMinBackoff: FiniteDuration,
     retryMaxBackoff: FiniteDuration,
     maxConcurrentReconciles: Int,
-    reportingInstance: String
+    reportingInstance: String,
+    /** The service account a `FlinkDeployment` runs as: one the Flink operator's chart made. */
+    flinkServiceAccount: String = "flink",
+    /** How often every pipeline is reconciled for what no informer sees: lag, grants, Flink. */
+    observeInterval: FiniteDuration = 30.seconds
 ):
   def backoffFor(attempt: Int): FiniteDuration =
     val grown = retryMinBackoff * math.pow(2, (attempt - 1).min(20)).toLong
@@ -35,7 +38,6 @@ object Settings:
     def seconds(key: String, default: Int) =
       get(key).flatMap(_.toIntOption).getOrElse(default).seconds
     Settings(
-      sidecarImage = get("FLOW_SIDECAR_IMAGE"),
       clustersNamespace = get("FLOW_KAFKA_CLUSTERS_NAMESPACE")
         .orElse(env.get("FLOW_OPERATOR_NAMESPACE"))
         .getOrElse("ankka-flow"),
@@ -44,5 +46,7 @@ object Settings:
       retryMaxBackoff = seconds("FLOW_OPERATOR_RETRY_MAX_BACKOFF_SECONDS", 300),
       maxConcurrentReconciles =
         get("FLOW_OPERATOR_MAX_CONCURRENT_RECONCILES").flatMap(_.toIntOption).getOrElse(4),
-      reportingInstance = env.getOrElse("HOSTNAME", "ankka-flow-operator")
+      reportingInstance = env.getOrElse("HOSTNAME", "ankka-flow-operator"),
+      flinkServiceAccount = get("FLOW_FLINK_SERVICE_ACCOUNT").getOrElse("flink"),
+      observeInterval = seconds("FLOW_OPERATOR_OBSERVE_SECONDS", 30)
     )

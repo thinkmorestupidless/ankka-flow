@@ -11,30 +11,31 @@ A blueprint is a HOCON file, conventionally `blueprint.conf`, that names the str
 uses and the topics that connect their ports. `flow verify` and `flow generate` read it together with a
 directory of streamlet descriptors.
 
+<!-- include: samples/cart-pipeline/blueprint.conf -->
 ```hocon
+# The sample pipeline: the shop's cart events, cleaned, then counted per cart in windows of time.
 blueprint {
-  name = cart
+  name = carts
   streamlets {
-    router = cart-router
-    sink   = sink
+    cleaner = cart-cleaner
+    counter = cart-counter
   }
   topics {
     cart-events {
       managed    = false
       topic.name = "shop.cart-events.v1"
       cluster    = shop
-      consumers  = [router.in]
+      consumers  = [cleaner.in]
       consumer-config { auto.offset.reset = earliest }
     }
-    valid-carts {
-      producers  = [router.valid]
-      consumers  = [sink.in]
-      partitions = 6
-      replicas   = 1
-      topic { retention.ms = 86400000 }
+    clean-carts {
+      producers  = [cleaner.out]
+      consumers  = [counter.in]
+      partitions = 3
     }
-    review-carts {
-      producers = [router.review]
+    cart-counts {
+      producers  = [counter.out]
+      partitions = 3
     }
   }
 }
@@ -55,33 +56,16 @@ value is the name of the descriptor it runs, the `streamlet.name` in one of the 
 
 ```hocon
 streamlets {
-  router    = cart-router
-  router-eu = cart-router     # the same descriptor, a second streamlet
+  cleaner    = cart-cleaner
+  cleaner-eu = cart-cleaner     # the same descriptor, a second streamlet
 }
 ```
 
 A streamlet name is a DNS label: at most 63 characters of `a-z`, `0-9` and `-`, not starting or ending
 with `-`. Two streamlets may not share a name.
 
-A value of the form `builtin/<name>` names a descriptor the platform ships instead of one an SDK
-wrote. Its logic runs inside the sidecar, so it needs no descriptor file, no image and no process
-container. The built-ins are:
-
-| Built-in | What it does |
-|---|---|
-| `builtin/neo4j-merge-sink` | merges [graph deltas](graph-deltas.md) into Neo4j; see [Neo4j merge sink](neo4j-merge-sink.md) |
-
-```hocon
-streamlets {
-  mapper = checkout-graph
-  graph  = builtin/neo4j-merge-sink
-}
-```
-
-A built-in is found only by its `builtin/` name, and a descriptor file only by its bare name, so a
-descriptor file named `neo4j-merge-sink` neither replaces the built-in nor is replaced by it. A
-built-in that this version of the CLI does not have is refused:
-`Streamlet 'graph' names built-in descriptor 'builtin/nope', which this version does not have; the built-ins are: neo4j-merge-sink.`
+The descriptor says the streamlet's engine; the blueprint never does, so streamlets of different
+engines share one blueprint and one topic.
 
 ## `blueprint.topics`
 
@@ -92,6 +76,7 @@ Each key is a topic id. Each value is an object with these keys, all optional:
 | `producers` | list of port paths | outlets that write to the topic |
 | `consumers` | list of port paths | inlets that read from the topic |
 | `managed` | boolean, default `true` | `false`: the topic belongs to something else and is only read |
+| `ankka` | `"<project>/<name>"` | the topic is that ankka project's; see [ankka topics](#ankka-topics) |
 | `topic.name` | string | the Kafka topic name; defaults to `<pipeline>.<id>` for a managed topic and `<id>` for an unmanaged one |
 | `cluster` | string | the Kafka cluster, a `kafka-cluster-<name>` Secret beside the operator |
 | `bootstrap.servers` | string | brokers, instead of or over the cluster's |
@@ -100,9 +85,9 @@ Each key is a topic id. Each value is an object with these keys, all optional:
 | `topic` | object | Kafka topic configuration for a managed topic, such as `retention.ms` |
 | `connection-config` | object | Kafka client properties for every client of the topic, such as `security.protocol` |
 | `producer-config` | object | Kafka producer properties for the topic's producers |
-| `consumer-config` | object | Kafka consumer properties for the topic's consumers, and the batch limits |
+| `consumer-config` | object | Kafka consumer properties for the topic's consumers |
 
-A port path is `<streamlet>.<port>`: `router.valid` is the `valid` port of the streamlet named `router`
+A port path is `<streamlet>.<port>`: `cleaner.out` is the `out` port of the streamlet named `cleaner`
 in `blueprint.streamlets`.
 
 Nested objects are flattened into Kafka property names, so `topic { retention.ms = 86400000 }` and
@@ -112,59 +97,21 @@ Kafka cluster is on [Topics and Kafka clusters](../concepts/topics.md).
 A topic with no producers and no consumers is ignored: it does not reach the resource and no Kafka
 topic is created for it.
 
-### Delta topics
+### ankka topics
 
-A **delta topic** is a topic with at least one port, producing or consuming, of the graph delta
-contract `ankka.graph-delta.v1`. Its latest record per element is the graph, so a managed delta topic
-is compacted by default: when neither the blueprint nor a `--conf` file sets `cleanup.policy` for it,
-`flow generate` writes `cleanup.policy: compact` into the topic's configuration in the resource, and
-the operator creates it compacted. `flow verify` and `flow generate` say what was decided in a note
-on stderr, which does not change the exit code:
-
-| Topic | Note |
-|---|---|
-| managed, no `cleanup.policy` set, or set to `compact` | `note: Topic '<id>' carries graph deltas and is compacted (cleanup.policy = compact).` |
-| managed, a policy with both `compact` and `delete` | `note: Topic '<id>' carries graph deltas and sets cleanup.policy = compact,delete; records older than its retention are gone from a rebuild.` |
-| managed, a policy without `compact` | `note: Topic '<id>' carries graph deltas and sets cleanup.policy = <policy>; it will not hold the whole graph and cannot be relied on to rebuild it.` |
-| unmanaged | `note: Topic '<id>' carries graph deltas and is not managed; whether it is compacted is its owner's.` |
-
-A blueprint sets a policy like any topic setting, and a policy that names both must be quoted, because
-an unquoted comma ends a HOCON value:
-
-```hocon
-graph-deltas {
-  producers = [mapper.deltas]
-  consumers = [graph.in]
-  topic { cleanup.policy = "compact,delete", retention.ms = 2592000000 }
-}
-```
-
-A `--conf` file overrides it: `flow.topics.graph-deltas { topic { cleanup.policy = delete } }`. A
-topic with no port of the delta contract is written exactly as the blueprint says, with no default
-added. What a compacted delta topic makes possible is on
-[Rebuild a graph from its delta topic](../deploy/rebuild-a-graph.md).
-
-### Batch limits
-
-The sidecar sends an inlet's records to the process in batches: whatever arrived on one partition
-while that partition's previous batch was in flight, capped by two limits set under the topic's
-`consumer-config`:
-
-```hocon
-consumer-config {
-  flow.batch.max-records = 100      # the default
-  flow.batch.max-bytes   = 1 MiB    # the default
-}
-```
-
-The `flow.` keys are the platform's and never reach Kafka; every other `consumer-config` key is passed
-to the consumer.
+A topic with `ankka = "<project>/<name>"` is a topic the ankka project declares. Its Kafka name is
+`<project>.<name>`; it is unmanaged, so the operator never creates, alters or deletes it; it may have
+producers as well as consumers; and it is on the Kafka cluster `ankka` unless it names another with
+`cluster`, or deploy-time configuration names one with `flow.ankka.cluster`. It takes neither
+`managed = true`, `topic.name` nor `bootstrap.servers`. `--ankka-topics` checks its ports' contracts
+against the project's declarations; [Read and write ankka topics](../build/ankka-topics.md) covers
+it end to end.
 
 ## Deploy-time overrides
 
 Everything under `blueprint.topics.<id>` except `producers`, `consumers`, `managed` and `topic.name`
 can be overridden at deploy time under `flow.topics.<id>` in a `--conf` file, and a streamlet's
-replicas and parameters under `flow.streamlets.<name>`.
+replicas, parameters and engine settings under `flow.streamlets.<name>`.
 [Configure at deploy time](../deploy/configuration.md) describes them.
 
 ## Verification rules
@@ -175,8 +122,8 @@ blueprint is refused when:
 - the file is not valid HOCON, has no `blueprint.streamlets` section, or names no streamlets;
 - it has a `blueprint.connections` section, an older format: connect ports through
   `blueprint.topics`;
-- the descriptor directory holds no descriptors, a descriptor is invalid, or two descriptors declare
-  the same streamlet;
+- the descriptor directory holds no descriptors, a descriptor is invalid, names no engine or one
+  `flow` does not know, or two descriptors declare the same streamlet;
 - a streamlet name is not a DNS label, or two streamlets share a name;
 - a streamlet names a descriptor that no descriptor declares;
 - a port path is not of the form `<streamlet>.<port>`;
@@ -185,23 +132,30 @@ blueprint is refused when:
 - a producer is an inlet, or a consumer is an outlet;
 - a port is bound to more than one topic;
 - an inlet is connected to no topic;
-- two ports on one topic have different contracts (the message names both ports and both contracts);
-- a port's contract has a format other than `json`;
+- two ports on one topic have different contracts, whatever their engines (the message names both
+  ports and both contracts);
 - a topic's Kafka name has characters other than `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, or is longer
   than 249 characters;
 - a cluster name is not a DNS label;
-- an unmanaged topic has producers, or names neither `bootstrap.servers` nor `cluster`;
+- an unmanaged topic that is not an ankka topic has producers, or names neither `bootstrap.servers`
+  nor `cluster`;
+- an ankka topic is not `<project>/<name>`, or also sets `managed = true`, `topic.name` or
+  `bootstrap.servers`;
+- with `--ankka-topics`, an ankka topic its project does not declare, declares with no contract, or
+  declares with a contract a port on it does not carry;
+- a topic sets `consumer-config.flow.batch`, which is no longer a setting;
 - a parameter has no default in its descriptor and no value in `--conf`, or a value that is not its
   type;
 - a `--conf` file names a topic or streamlet the blueprint does not, or a parameter the streamlet does
-  not declare, or gives a replica count that is negative or not a number.
+  not declare, gives a replica count that is negative or not a number, gives a Flink streamlet
+  `replicas` other than 0 or 1, or gives a Pekko Streams streamlet `parallelism` or `flink`.
 
 `flow generate` also refuses when a streamlet has no image or the pipeline id is not valid.
 
-An outlet connected to no topic is allowed: `flow verify` prints it as a note and carries on. A
-[delta topic](#delta-topics) gets a note saying whether it is compacted.
+An outlet connected to no topic is allowed: `flow verify` prints it as a note and carries on. So
+is an ankka topic whose project's declarations were not given:
 
 ```text
-note: Outlet router.review is not connected.
-note: Topic 'graph-deltas' carries graph deltas and is compacted (cleanup.policy = compact).
+note: Outlet cleaner.audit is not connected.
+note: ankka topics of project 'checkout' were not checked: pass --ankka-topics checkout=<file>
 ```

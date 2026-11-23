@@ -1,26 +1,50 @@
 ---
 title: Build ankka-flow from source
-description: Build the flow CLI, the images and the native binary from a clone of the repository, run the suite against the binary, and regenerate the native image's reachability metadata.
+description: The modules of the build, the JVM build of the flow CLI, the images, the native binary and its checks, and the test suites, from a clone of the repository.
 kind: contributing
-related: [get-started/install.md, reference/cli.md, contributing/documentation.md, contributing/language-sdks.md]
+related: [get-started/install.md, reference/cli.md, contributing/documentation.md, contributing/engines.md]
 ---
 
 # Build ankka-flow from source
 
 [Install the tools](../get-started/install.md) installs a released `flow` and pulls released images.
 This page is for changing ankka-flow itself, or for a platform the release does not build for: the
-JVM build of the CLI, the images, the native binary, and the checks that prove a native build carries
-everything it needs. Commands run from the root of a clone of the repository.
+modules, the JVM build of the CLI, the images, the native binary and the checks that prove a native
+build carries everything it needs, and the test suites. Commands run from the root of a clone of the
+repository.
 
 ## What you need
 
 | Tool | Used for |
 |---|---|
-| JDK 21 or later, and sbt | every module; the JVM build of the CLI |
+| JDK 21 or later, and sbt | every module; the JVM build of the CLI. The Java modules compile with `--release 17` |
 | Docker | the images, and the Kafka and Kubernetes containers the test suites start |
 | GraalVM 25, community edition | the native binary, and the tracing agent that regenerates its metadata |
-| uv, with Python 3.12 or later | the Python SDK and the samples |
-| just (optional) | short names for the commands below; `just --list` prints them |
+| uv | the documentation build and the living features' checker |
+| just (optional) | short names for the commands on this page; `just --list` prints them |
+
+## The modules
+
+One sbt build holds every module. The sbt project id is the name to use in a command, such as
+`sbt pekkoSdk/test`.
+
+| Project | Directory | What it is | Depends on |
+|---|---|---|---|
+| `descriptor` | `descriptor/` | the descriptor model, its canonical JSON, its validation and fixtures, contract fingerprints, and the streamlet settings file; published as `ankka-flow-descriptor` | nothing of ours |
+| `pekkoSdk` | `sdks/pekko-streams/` | the Pekko Streams SDK and its harness, in Scala; published as `ankka-flow-pekko-streams` | `descriptor` |
+| `flinkSdk` | `sdks/flink/` | the Flink SDK, in Java with no Scala on its classpath; published as `ankka-flow-flink` | nothing of ours |
+| `flinkTestkit` | `sdks/flink-testkit/` | the Flink SDK's harness; published as `ankka-flow-flink-testkit` | `flinkSdk` |
+| `blueprint` | `blueprint/` | reading and verifying a blueprint against descriptors, and deploy-time configuration | `descriptor` |
+| `crd` | `crd/` | the `AnkkaFlow` resource model | fabric8 and Jackson only |
+| `operator` | `operator/` | the Kubernetes operator: rendering for both engines, its executors, and the cluster suite | `crd`, `blueprint`, `descriptor` |
+| `cli` | `cli/` | the `flow` CLI, including `flow mcp` | `blueprint`, `crd`, `descriptor` |
+| `cartCleaner` | `samples/cart-pipeline/cleaner/` | the sample's Pekko Streams streamlet; image `sample-cart-cleaner` | `pekkoSdk` |
+| `cartCounter` | `samples/cart-pipeline/counter/` | the sample's Flink streamlet, in Java; image `sample-cart-counter` | `flinkSdk`, and `flinkTestkit` in tests |
+
+`descriptor` and `pekkoSdk` compile with the Scala 3 LTS line, so any Scala 3.3 or later project can
+depend on what they publish; the other Scala modules use the build's own Scala version. `flinkSdk`,
+`flinkTestkit` and `cartCounter` are Java, compiled for Java 17, and take Flink's own modules as
+`provided`.
 
 ## The JVM build of the CLI
 
@@ -38,16 +62,20 @@ platform outside the four released ones uses.
 ## The images
 
 ```bash
-sbt docker:publishLocal sampleImage
+sbt operator/docker:publishLocal cartCleaner/docker:publishLocal cartCounter/image
 ```
 
-This builds `ankka-flow-sidecar`, `ankka-flow-operator` and `sample-cart-router` into your local Docker,
-each tagged with the build's version and with `latest`. The version comes from the nearest git tag; a
-snapshot version contains a `+`, which a Docker tag may not, so the tag has a `-` in its place.
-`just images` is the same command, and `sbt sidecar/docker:publishLocal` builds the sidecar alone.
+This builds `ankka-flow-operator`, `sample-cart-cleaner` and `sample-cart-counter` into your local
+Docker, each tagged with the build's version. The version comes from the nearest git tag; a snapshot
+version contains a `+`, which a Docker tag may not, so the tag has a `-` in its place. The operator's
+and the cleaner's images are tagged `latest` as well.
 
-`just up` builds the three images, loads them into a kind cluster and installs the platform there,
-which is how [Deploy to a local cluster](../get-started/deploy-locally.md) runs code you have changed.
+`cartCounter/image` stages the counter's jar as `usrlib/streamlet.jar`, with every dependency Flink
+does not provide beside it, and builds the sample's `Dockerfile` from Flink's own image.
+[Build an image](../build/images.md) describes both kinds of image.
+
+`just up` builds the images, loads them into a kind cluster and installs the platform there, which is
+how [Deploy to a local cluster](../get-started/deploy-locally.md) runs code you have changed.
 
 ## The native binary
 
@@ -79,10 +107,10 @@ sbt cli/test -Dflow.cli.binary="$PWD/cli/target/graalvm-native-image/flow"
 ### The smoke script
 
 `cli/native-smoke.sh` runs a binary and asks it for each thing the image has to carry: its version, its
-usage, a verification read from disk, a resource written as YAML, and a reset that reaches the
-Kubernetes client. Given a JVM-built `flow` as well, it diffs every `verify` and `generate` output
-against it byte for byte. It never touches your own cluster: it points `KUBECONFIG` at a file that
-does not exist.
+usage, a verification of each sample read from disk, a resource written as YAML, and a reset that
+reaches the Kubernetes client. Given a JVM-built `flow` as well, it diffs every `verify` and `generate`
+output against it byte for byte. It never touches your own cluster: it points `KUBECONFIG` at a file
+that does not exist.
 
 ```bash
 cli/native-smoke.sh cli/target/graalvm-native-image/flow "" cli/target/universal/stage/bin/flow
@@ -94,7 +122,7 @@ release's build passes the tag's version, so a binary that reports the wrong ver
 `just cli-native` does all of it: the JVM build, the native build, the suite against the binary, and
 the smoke script against the JVM build.
 
-## Regenerating the reachability metadata
+### Regenerating the reachability metadata
 
 `reachability-metadata.json` is generated, not written by hand. GraalVM's tracing agent watches the
 CLI's suite run and records every class, resource and serialized type the CLI reached by name:
@@ -110,8 +138,7 @@ server, the test resources, and the `.tasty` files jackson-module-scala looks fo
 Java classes and never finds. Prune those before copying the file into
 `cli/src/main/resources/META-INF/native-image/com.thinkmorestupidless/ankka-flow-cli/`; the `README.md`
 beside it says what to drop, and lists the entries that were added by hand, each with the case that
-needed it. A charset, for example, is not reflection, so the agent cannot record it; the image is
-told to carry every charset in `native-image.properties` instead.
+needed it.
 
 Regenerate the metadata when:
 
@@ -124,49 +151,36 @@ Then rebuild the binary and run both checks again. Continuous integration builds
 one platform for every change under `cli/`, runs the suite against it and runs the smoke script, so a
 missing entry is found at the pull request rather than at the tag.
 
-## The templates of `flow init`
-
-`flow init` writes projects from templates carried inside the CLI, the native binary included:
-
-- `cli/src/main/templates/common/` holds what both languages share: the blueprint, the sidecar's
-  configuration, the compose file, the cluster configuration and `.gitignore`;
-- `cli/src/main/templates/scala/` and `cli/src/main/templates/python/` hold each language's own files.
-
-The build copies `common/` and then a language's directory into the CLI's jar under
-`ankka-flow/templates/<language>/`, with the ankka-flow plugin's rendered skills as `.claude/skills/`,
-and writes an `index.txt` listing every file, because a directory inside a jar or a native image cannot
-be listed. Hidden files are copied too, and a path written twice fails the build.
-
-Rendering is exact token replacement in every path and file: `{{name}}`, `{{class}}`, `{{package}}`,
-`{{package_path}}`, `{{module}}`, `{{fingerprint}}`, `{{flow_version}}`, `{{sdk_version}}`,
-`{{image_version}}`, `{{protocol_version}}`, `{{scala_version}}`, `{{sbt_version}}` and
-`{{native_packager_version}}`; the last three come from this build, so a generated Scala project uses
-the sbt, sbt-native-packager and Scala 3 LTS this repository is proven with. Nothing else is expanded:
-GitHub's `${{ … }}` passes through. The skills are copied as they are, never rendered, because their
-pages show tokens of their own. Each template's `flow/descriptor.json` is a template too.
-
-The template suite renders each language's project through the CLI and builds it against this
-repository's SDK — the Scala SDK published locally, the Python SDK by path — running the project's
-tests, its descriptor check and its image build, and `flow verify` on its blueprint:
+## The test suites
 
 ```bash
-sbt 'cli/testOnly *TemplateSuite'                              # both languages
-sbt 'cli/testOnly *TemplateSuite' -Dflow.template.tests=python  # one; `off` for none
+sbt test                                      # everything, including the cluster suite
+sbt -Dflow.cluster.tests=off test             # everything but the cluster suite
+sbt descriptor/test blueprint/test crd/test   # the pure modules, in seconds
+sbt pekkoSdk/test                             # the harness, and commit after write on a real Kafka
+sbt mutationCheck                             # the commit-after-write suite must fail with the commit moved first
+sbt flinkSdk/test flinkTestkit/test           # the descriptor bytes, and the harness on a local Flink
+sbt cartCleaner/test cartCounter/test         # the sample's tests, which the documentation includes
+sbt cartCleaner/descriptorCheck cartCounter/descriptorCheck
+sbt cli/test                                  # verify, generate, local, reset and mcp
+sbt -Dflow.cluster.tests=off operator/test    # rendering for both engines, reset and conditions
+sbt operator/test                             # the same, and the cluster suite
+sbt scalafmtAll scalafmtSbt                   # format; `just hooks` installs the pre-commit check
 ```
 
-A change to a template is checked by that suite, and is a documentation change: the tutorial and the
-CLI reference describe what the projects hold. After changing a template's streamlet, render a project,
-run its descriptor command, and copy the result back with its tokens.
+The cluster suite, `FlowClusterSuite`, needs Docker. It starts k3s in a container, builds and imports
+the operator's and the sample's images, installs the Flink Kubernetes Operator and MinIO, and deploys
+the sample pipeline, taking about fifteen minutes. `-Dflow.cluster.tests=off` skips it and the images
+it needs; `-Dflow.flink.tests=off` keeps it but skips its Flink cases. A long run on a laptop is best
+kept awake, as `just test-all` does: a sleeping machine pauses Docker while the suite's deadlines keep
+counting.
 
-## Everything else
-
-```bash
-sbt test                                    # everything, including the Kubernetes suite and the sample image it needs
-sbt -Dflow.cluster.tests=off test           # everything but the Kubernetes suite
-sbt scalafmtAll scalafmtSbt                 # format; `just hooks` installs the pre-commit check
-cd sdks/python && uv sync && uv run python scripts/proto.py && uv run mypy && uv run pytest -q && uv run conformance
-```
+`mutationCheck` runs the Pekko Streams SDK's commit-after-write suite with the commit moved ahead of
+the write, and fails the build if that suite still passes.
 
 The test suites run one at a time on purpose: the ones that start containers contend when they
-overlap. [Writing documentation](documentation.md) covers the docs build, and [Adding a language
-SDK](language-sdks.md) what an SDK in another language must pass.
+overlap. A `-Dflow.*` switch reaches the forked test JVM only when `forwardedTestSwitches` in
+`build.sbt` lists it.
+
+[Writing documentation](documentation.md) covers the documentation build, and [Adding an
+engine](engines.md) what a third engine would take.

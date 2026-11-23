@@ -9,7 +9,7 @@ import java.util.concurrent.{
 }
 import java.util.concurrent.atomic.AtomicBoolean
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.*
 import scala.util.control.NonFatal
 
 import org.slf4j.LoggerFactory
@@ -26,6 +26,7 @@ trait Reconciler:
  * arrives mid-reconcile runs it again after, and a failure backs off per ref.
  */
 final class WorkQueue(settings: Settings, reconcile: PipelineRef => Option[FiniteDuration]):
+  import WorkQueue.*
 
   private val log      = LoggerFactory.getLogger(classOf[WorkQueue])
   private val pending  = new LinkedBlockingQueue[PipelineRef]()
@@ -34,6 +35,8 @@ final class WorkQueue(settings: Settings, reconcile: PipelineRef => Option[Finit
   private val dirty    = ConcurrentHashMap.newKeySet[PipelineRef]()
   private val attempts = new ConcurrentHashMap[PipelineRef, Integer]()
   private val running  = new AtomicBoolean(false)
+  // What each worker is reconciling and since when: the watchdog's view.
+  private val started = new ConcurrentHashMap[PipelineRef, (Thread, Long)]()
 
   private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor {
     r =>
@@ -51,9 +54,37 @@ final class WorkQueue(settings: Settings, reconcile: PipelineRef => Option[Finit
   def enqueueAfter(ref: PipelineRef, delay: FiniteDuration): Unit =
     scheduler.schedule((() => enqueue(ref)): Runnable, delay.toMillis, TimeUnit.MILLISECONDS): Unit
 
+  /** Runs `pass` every `interval` until stopped; a failing pass is logged and the next one runs. */
+  def every(interval: FiniteDuration)(pass: () => Unit): Unit =
+    val task: Runnable = () =>
+      try pass()
+      catch case NonFatal(e) => log.warn("observe pass failed", e)
+    scheduler.scheduleWithFixedDelay(
+      task,
+      interval.toMillis,
+      interval.toMillis,
+      TimeUnit.MILLISECONDS
+    ): Unit
+
   def start(): Unit =
     if running.compareAndSet(false, true) then
       (1 to settings.maxConcurrentReconciles).foreach(_ => workers.submit((() => loop()): Runnable))
+      every(WatchdogInterval)(() => watchdog())
+
+  /**
+   * A reconcile that runs long holds its pipeline: every change to it waits behind it. Each one
+   * past `SlowReconcile` is logged with where its thread is, once per interval, so a hang names
+   * itself.
+   */
+  private def watchdog(): Unit =
+    val now = System.nanoTime()
+    started.forEach { (ref, entry) =>
+      val (thread, since) = entry
+      val running         = (now - since).nanos
+      if running > SlowReconcile then
+        val where = thread.getStackTrace.take(40).map(f => s"\n    at $f").mkString
+        log.warn(s"reconcile of $ref has run for ${running.toSeconds}s; its thread:$where")
+    }
 
   def stop(): Unit =
     if running.compareAndSet(true, false) then
@@ -68,6 +99,7 @@ final class WorkQueue(settings: Settings, reconcile: PipelineRef => Option[Finit
           queued.remove(ref)
           inFlight.add(ref): Unit
         }
+        started.put(ref, (Thread.currentThread(), System.nanoTime()))
         try
           val again = reconcile(ref)
           attempts.remove(ref)
@@ -79,8 +111,13 @@ final class WorkQueue(settings: Settings, reconcile: PipelineRef => Option[Finit
             log.warn(s"reconcile of $ref failed (attempt $attempt); retrying in $delay", failure)
             enqueueAfter(ref, delay)
         finally
+          started.remove(ref)
           synchronized {
             inFlight.remove(ref)
             if dirty.remove(ref) then enqueue(ref)
           }
       catch case _: InterruptedException => Thread.currentThread().interrupt()
+
+object WorkQueue:
+  private val WatchdogInterval: FiniteDuration = 30.seconds
+  private val SlowReconcile: FiniteDuration    = 2.minutes

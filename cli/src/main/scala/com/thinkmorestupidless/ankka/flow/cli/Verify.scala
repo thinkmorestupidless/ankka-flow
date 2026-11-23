@@ -5,7 +5,7 @@ import java.nio.file.{Files, Path}
 import scala.util.Try
 
 import com.thinkmorestupidless.ankka.flow.blueprint.*
-import com.thinkmorestupidless.ankka.flow.protocol.{Builtins, Json}
+import com.thinkmorestupidless.ankka.flow.descriptor.Json
 import com.typesafe.config.ConfigFactory
 
 /**
@@ -14,8 +14,13 @@ import com.typesafe.config.ConfigFactory
  */
 object Verify:
 
-  /** `descriptors` is absent when the blueprint uses only built-in descriptors. */
-  final case class Inputs(blueprint: Path, descriptors: Option[Path], conf: List[Path])
+  /** `descriptors` is optional on the command line; without it every streamlet is unknown. */
+  final case class Inputs(
+      blueprint: Path,
+      descriptors: Option[Path],
+      conf: List[Path],
+      ankkaTopics: List[String] = Nil
+  )
 
   final case class Verified(
       blueprint: VerifiedBlueprint,
@@ -23,6 +28,8 @@ object Verify:
       overrides: Overrides,
       parameters: Map[String, Vector[(String, Json)]],
       replicas: Map[String, Int],
+      parallelism: Map[String, Option[Int]],
+      flink: Map[String, Option[FlinkOverrides]],
       notes: Vector[String],
       blueprintFile: Path
   )
@@ -46,41 +53,45 @@ object Verify:
           .map(c =>
             Blueprint.parseConfig(
               c,
-              loaded.byName.values.toVector.map(s => StreamletDescriptor(s.getStreamlet)) ++
-                Builtins.all.map(s => StreamletDescriptor(s.getStreamlet, builtin = true))
+              loaded.byName.values.toVector.sortBy(_.streamlet.name).map(StreamletDescriptor(_))
             )
           )
 
     val blueprintProblems = parsed.fold(identity, _.problems.map(BlueprintProblem.toMessage))
+    val verified          = parsed.toOption.flatMap(_.verified.toOption)
+    val declarations      = in.ankkaTopics.toVector.map(AnkkaDeclarations.load)
+    val (ankkaProblems, ankkaNotes) =
+      verified.fold((Vector.empty[String], Vector.empty[String]))(v =>
+        AnkkaDeclarations.check(v, declarations.collect { case Right(d) => d })
+      )
     val notes =
-      parsed.toOption.toVector.flatMap(_.notes.map(n => s"note: ${BlueprintProblem.toMessage(n)}"))
-    val verified = parsed.toOption.flatMap(_.verified.toOption)
+      parsed.toOption.toVector.flatMap(
+        _.notes.map(n => s"note: ${BlueprintProblem.toMessage(n)}")
+      ) ++ ankkaNotes
 
     val overrideProblems = (overrides, verified) match
       case (Left(ps), _) => ps
       case (Right(o), Some(v)) =>
-        o.unknownNames(v) ++ v.streamlets.flatMap(s =>
-          o.parameters(s).left.toSeq.flatten ++ o.replicas(s.name).left.toSeq
-        )
+        (o.unknownNames(v) ++ o.settingProblems(v) ++ v.streamlets.flatMap(s =>
+          o.parameters(s).left.toSeq.flatten ++ o.replicas(s).left.toSeq ++
+            o.parallelism(s).left.toSeq ++ o.flink(s).left.toSeq
+        )).distinct
       case _ => Vector.empty
 
-    val problems = loaded.problems ++ blueprintProblems ++ overrideProblems
+    val problems = loaded.problems ++ blueprintProblems ++ overrideProblems ++
+      declarations.collect { case Left(p) => p } ++ ankkaProblems
     (verified, overrides) match
       case (Some(v), Right(o)) if problems.isEmpty =>
-        // What becomes of each delta topic's cleanup policy, decided on its deploy-time settings.
-        val deltaNotes = v.topics.flatMap { t =>
-          DeltaTopics
-            .decide(t, TopicSettings.fromConfig(o.topicConfig(t)).topicConfig)
-            .map(d => s"note: ${DeltaTopics.note(t, d)}")
-        }
         Right(
           Verified(
             v,
             loaded,
             o,
             v.streamlets.map(s => s.name -> o.parameters(s).toOption.get).toMap,
-            v.streamlets.map(s => s.name -> o.replicas(s.name).toOption.get).toMap,
-            notes ++ deltaNotes,
+            v.streamlets.map(s => s.name -> o.replicas(s).toOption.get).toMap,
+            v.streamlets.map(s => s.name -> o.parallelism(s).toOption.get).toMap,
+            v.streamlets.map(s => s.name -> o.flink(s).toOption.get).toMap,
+            notes,
             in.blueprint
           )
         )

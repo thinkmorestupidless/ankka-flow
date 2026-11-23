@@ -1,0 +1,75 @@
+{
+  "descriptor_version": "2.0",
+  "sdk": {
+    "name": "fixture",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "engine": "pekko-streams",
+    "inlets": [
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "in-a"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "in-b"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "in-c"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "in-d"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "in-e"
+      }
+    ],
+    "name": "many-ports",
+    "outlets": [
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "out-1"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "out-2"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "out-3"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "out-4"
+      },
+      {
+        "contract": {
+          "name": "many.v1"
+        },
+        "name": "out-5"
+      }
+    ]
+  }
+}

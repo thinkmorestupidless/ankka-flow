@@ -1,8 +1,5 @@
 package com.thinkmorestupidless.ankka.flow.cli.mcp
 
-import java.net.URI
-import java.net.http.{HttpClient, HttpRequest, HttpResponse}
-
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
@@ -63,7 +60,7 @@ private[cli] final class Cluster(
       val status = Option(flow.getStatus)
       val spec   = flow.getSpec
       val streamlets = spec.streamlets
-        .map(s => s"  ${s.name}: image ${s.image}, replicas ${s.replicas}")
+        .map(s => s"  ${s.name}: engine ${s.engine}, image ${s.image}, replicas ${s.replicas}")
         .mkString("\n")
       val statusText = status.fold("  (no status yet)") { st =>
         val ss = st.streamlets
@@ -80,8 +77,15 @@ private[cli] final class Cluster(
               }${if t.detail.nonEmpty then s" — ${t.detail}" else ""}"
           )
           .mkString("\n")
+        val cs = st.conditions
+          .map(c =>
+            s"    ${c.`type`}: ${c.status}${if c.message.nonEmpty then s" — ${c.message}" else ""}"
+          )
+          .mkString("\n")
         s"  phase: ${st.phase}${
             if st.detail.nonEmpty then s"\n  detail: ${st.detail}" else ""
+          }\n  conditions:\n${
+            if cs.isEmpty then "    (none)" else cs
           }\n  streamlets:\n$ss\n  topics:\n$ts"
       }
       // The namespace's events, filtered here: a field selector on involvedObject is not something
@@ -124,9 +128,11 @@ private[cli] final class Cluster(
       .toVector
       .sortBy(_.getMetadata.getName)
 
-  def logs(name: String, streamlet: String, container: String, lines: Int): String =
-    if !Set("process", "sidecar")(container) then
-      throw IllegalArgumentException(s"container '$container' is not process or sidecar")
+  /**
+   * The last lines of every container of every pod carrying the streamlet's labels: a Pekko Streams
+   * streamlet's pods, or a Flink streamlet's job manager and task managers.
+   */
+  def logs(name: String, streamlet: String, lines: Int): String =
     withClient { client =>
       val flow = pipelineOrFail(client, name)
       if !flow.getSpec.streamlets.exists(_.name == streamlet) then
@@ -135,43 +141,41 @@ private[cli] final class Cluster(
       if found.isEmpty then s"no pod of streamlet '$streamlet' in pipeline '$name' yet"
       else
         found
-          .map { pod =>
-            val log = client.pods
-              .inNamespace(named.namespace)
-              .withName(pod.getMetadata.getName)
-              .inContainer(container)
-              .tailingLines(lines)
-              .getLog
-            s"--- ${pod.getMetadata.getName} [$container]\n$log"
+          .flatMap { pod =>
+            val containers =
+              Option(pod.getSpec).toVector.flatMap(_.getContainers.asScala.map(_.getName))
+            containers.map { container =>
+              val log = client.pods
+                .inNamespace(named.namespace)
+                .withName(pod.getMetadata.getName)
+                .inContainer(container)
+                .tailingLines(lines)
+                .getLog
+              s"--- ${pod.getMetadata.getName} [$container]\n$log"
+            }
           }
           .mkString("\n")
     }
 
+  /**
+   * Each streamlet's inlets with their topic, group and lag, as the operator last wrote them on the
+   * status: nothing is port-forwarded or asked of Kafka here.
+   */
   def lag(name: String): String =
     withClient { client =>
-      val flow  = pipelineOrFail(client, name)
-      val found = pods(client, flow, None)
-      if found.isEmpty then s"no pods of pipeline '$name' yet"
-      else
-        val rows = found.flatMap { pod =>
-          val streamlet =
-            Option(pod.getMetadata.getLabels).flatMap(l => Option(l.get(Streamlet))).getOrElse("?")
-          Using.resource(
-            client.pods
-              .inNamespace(named.namespace)
-              .withName(pod.getMetadata.getName)
-              .portForward(2050)
-          ) { forward =>
-            val metrics = Cluster.get(s"http://127.0.0.1:${forward.getLocalPort}/metrics")
-            Lag
-              .parse(metrics)
-              .map(l =>
-                s"$streamlet  ${pod.getMetadata.getName}  ${l.clientId}  ${l.topic}  ${l.partition}  ${l.lag}"
-              )
-          }
+      val flow     = pipelineOrFail(client, name)
+      val reported = Option(flow.getStatus).toList.flatMap(_.streamlets).map(s => s.name -> s).toMap
+      val rows = flow.getSpec.streamlets.flatMap { s =>
+        val inlets = reported.get(s.name).map(_.inlets).getOrElse(Nil).map(i => i.name -> i).toMap
+        s.inlets.toList.sortBy(_._1).map { (inlet, topicId) =>
+          inlets.get(inlet) match
+            case Some(i) =>
+              s"${s.name}  ${s.engine}  $inlet  ${i.topic}  ${i.group}  ${i.lag.fold("unknown")(_.toString)}"
+            case None => s"${s.name}  ${s.engine}  $inlet  $topicId  -  unknown"
         }
-        if rows.isEmpty then "no inlet lag reported yet"
-        else ("streamlet  pod  client_id  topic  partition  lag" +: rows).mkString("\n")
+      }
+      if rows.isEmpty then s"pipeline '$name' has no inlets"
+      else ("streamlet  engine  inlet  topic  group  lag" +: rows).mkString("\n")
     }
 
   /** Creates the pipeline or updates it in place, as `kubectl apply` does. */
@@ -198,39 +202,3 @@ private[cli] object Cluster:
       )
     config.setNamespace(named.namespace)
     config
-
-  private lazy val http =
-    HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(5)).build()
-
-  def get(url: String): String =
-    val response = http.send(
-      HttpRequest
-        .newBuilder(URI.create(url))
-        .timeout(java.time.Duration.ofSeconds(10))
-        .GET()
-        .build(),
-      HttpResponse.BodyHandlers.ofString()
-    )
-    if response.statusCode != 200 then
-      throw IllegalArgumentException(s"$url answered ${response.statusCode}")
-    response.body
-
-/** One `records_lag` sample of a sidecar's metrics. */
-final case class LagSample(clientId: String, topic: String, partition: String, lag: Double)
-
-object Lag:
-  private val Sample =
-    """kafka_consumer_consumer_fetch_manager_metrics_records_lag\{([^}]*)\}\s+([0-9.eE+-]+|NaN)""".r
-  private val Label = """(\w+)="([^"]*)"""".r
-
-  /** The lag samples of a `/metrics` text, in the order written. */
-  def parse(metrics: String): Vector[LagSample] =
-    metrics.linesIterator.collect { case Sample(labels, value) =>
-      val l = Label.findAllMatchIn(labels).map(m => m.group(1) -> m.group(2)).toMap
-      LagSample(
-        l.getOrElse("client_id", ""),
-        l.getOrElse("topic", ""),
-        l.getOrElse("partition", ""),
-        value.toDoubleOption.getOrElse(Double.NaN)
-      )
-    }.toVector

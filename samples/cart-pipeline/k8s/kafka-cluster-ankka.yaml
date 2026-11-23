@@ -1,0 +1,22 @@
+# The Kafka cluster an ankka topic is reached through: ankka's external listener, as the machine
+# affiliates/network. It lives in the operator's namespace. The values in angle brackets are the
+# installation's and the machine's; the secret is shown once, by ankka machines make. Never commit
+# a real one.
+# docs:start kafka-cluster-ankka
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-cluster-ankka
+  namespace: ankka-flow
+  labels:
+    flow.ankka.thinkmorestupidless.com/kafka-cluster: ankka
+stringData:
+  bootstrap.servers: broker.<base domain>:9094
+  machine: affiliates/network
+  connection-config: |
+    security.protocol=SASL_SSL
+    sasl.mechanism=OAUTHBEARER
+    sasl.login.callback.handler.class=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginCallbackHandler
+    sasl.oauthbearer.token.endpoint.url=https://api.<base domain>/oauth/token
+    sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="machine:affiliates/network" clientSecret="<the machine's secret>";
+# docs:end kafka-cluster-ankka

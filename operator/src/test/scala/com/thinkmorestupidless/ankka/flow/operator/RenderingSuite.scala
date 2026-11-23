@@ -20,85 +20,123 @@ class RenderingSuite extends munit.FunSuite:
   private def status(r: Rendering.Rendered) = r.actions.collect { case Action.SetStatus(s) =>
     s
   }.last
-  private def router(r: Rendering.Rendered): Deployment =
-    deployments(r).find(_.getMetadata.getName == "flow-cart-router").get
+  private def cleaner(r: Rendering.Rendered): Deployment =
+    deployments(r).find(_.getMetadata.getName == "flow-cart-cleaner").get
 
-  test(
-    "two containers: the sidecar with env, config mount, token, metrics port and exec probes (S3.2)"
-  ) {
-    val pod     = router(render()).getSpec.getTemplate.getSpec
-    val sidecar = pod.getContainers.asScala.find(_.getName == "sidecar").get
-    assertEquals(sidecar.getImage, "ankka-flow-sidecar:test")
-    val env = sidecar.getEnv.asScala.map(e => e.getName -> Option(e.getValue)).toMap
-    assertEquals(env("FLOW_PROCESS_ADDRESS"), Some("127.0.0.1:9010"))
-    assertEquals(env("FLOW_CONFIG_DIR"), Some("/etc/flow/config"))
-    assert(env.contains("FLOW_POD_NAME") && env.contains("FLOW_POD_NAMESPACE"))
+  test("one container, the streamlet's image, its settings mounted 0440, file probes, no token") {
+    val pod = cleaner(render()).getSpec.getTemplate.getSpec
+    assertEquals(pod.getContainers.asScala.map(_.getName).toList, List("streamlet"))
+    val c = pod.getContainers.get(0)
+    assertEquals(c.getImage, "ghcr.io/example/cart-cleaner:0.6.0")
     assertEquals(
-      sidecar.getPorts.asScala.map(p => p.getName -> p.getContainerPort.intValue).toList,
-      List("metrics" -> 2050)
+      c.getEnv.asScala.map(e => e.getName -> e.getValue).toList,
+      List("FLOW_CONFIG_DIR" -> "/etc/flow/config")
     )
-    assertEquals(sidecar.getVolumeMounts.asScala.map(_.getName).toSet, Set("config", "api-token"))
-    assert(sidecar.getVolumeMounts.asScala.forall(_.getReadOnly))
     assertEquals(
-      sidecar.getReadinessProbe.getExec.getCommand.asScala.toList,
+      c.getVolumeMounts.asScala
+        .map(m => (m.getName, m.getMountPath, m.getReadOnly.booleanValue))
+        .toList,
+      List(("config", "/etc/flow/config", true))
+    )
+    val volume = pod.getVolumes.asScala.find(_.getName == "config").get.getSecret
+    assertEquals(volume.getSecretName, "flow-cart-cleaner")
+    assertEquals(volume.getDefaultMode.intValue, Rendering.SecretFileMode)
+    assertEquals(pod.getVolumes.size, 1, "no token volume")
+    assertEquals(
+      c.getReadinessProbe.getExec.getCommand.asScala.toList,
       List("test", "-f", "/tmp/flow/ready")
     )
-    assert(sidecar.getLivenessProbe.getExec.getCommand.asScala.last.contains("/tmp/flow/alive"))
-  }
-
-  test(
-    "the process container has its port variable and nothing else: no ports, probes, mounts or secrets (S3.2, FR-021)"
-  ) {
-    val pod     = router(render()).getSpec.getTemplate.getSpec
-    val process = pod.getContainers.asScala.find(_.getName == "process").get
-    assertEquals(process.getImage, "ghcr.io/example/cart-router:0.3.1")
-    assertEquals(
-      process.getEnv.asScala.map(e => e.getName -> e.getValue).toList,
-      List("FLOW_PROCESS_PORT" -> "9010")
-    )
-    assert(
-      process.getPorts.isEmpty && process.getReadinessProbe == null && process.getLivenessProbe == null
-    )
-    assert(process.getVolumeMounts.isEmpty && process.getEnvFrom.isEmpty)
+    assert(c.getLivenessProbe.getExec.getCommand.asScala.last.contains("/tmp/flow/alive"))
+    assert(c.getPorts.isEmpty && c.getEnvFrom.isEmpty)
     assertEquals(
       pod.getAutomountServiceAccountToken,
       java.lang.Boolean.FALSE,
-      "the token would be mounted into every container"
+      "a Pekko Streams pod gets no service account token"
+    )
+  }
+
+  private def refusedFor(o: Observed, kind: String, message: String) =
+    val rendered = render(cartWithCounter(), o)
+    val st       = status(rendered)
+    assertEquals(st.phase, AnkkaFlowStatus.Failed)
+    val c = st.conditions.find(_.`type` == kind).getOrElse(fail(s"no $kind in ${st.conditions}"))
+    assertEquals((c.status, c.message), (Condition.True, message))
+    assertEquals(
+      st.conditions.find(_.`type` == Condition.Ready).map(_.status),
+      Some(Condition.False)
+    )
+    assert(events(rendered).exists(e => e.reason == kind && e.note == message), events(rendered))
+    // none of its streamlets, of either engine, is started; nothing else is touched
+    assertEquals(
+      rendered.actions.filterNot(a =>
+        a.isInstanceOf[Action.RecordEvent] || a.isInstanceOf[Action.SetStatus]
+      ),
+      Vector.empty
+    )
+
+  test("a pipeline with a Flink streamlet is refused where the cluster lacks the Flink operator") {
+    refusedFor(
+      flinkObserved.copy(flinkCrd = false),
+      Condition.FlinkOperatorMissing,
+      Conditions.FlinkOperatorMissingMessage
+    )
+  }
+
+  test("a pipeline with a Flink streamlet is refused where the cluster lacks a state store") {
+    refusedFor(
+      flinkObserved.copy(stateStore = None),
+      Condition.StateStoreMissing,
+      "create the Secret flink-state in namespace ankka-flow with a dir key"
+    )
+  }
+
+  test("lacking both, both conditions are listed") {
+    val st = status(render(cartWithCounter(), observed))
+    assertEquals(
+      st.conditions.map(_.`type`),
+      List(Condition.FlinkOperatorMissing, Condition.StateStoreMissing, Condition.Ready)
+    )
+  }
+
+  test(
+    "with the Flink operator and a state store, neither condition; without Flink, neither needed"
+  ) {
+    val withBoth = status(render(cartWithCounter(), flinkObserved))
+    assert(
+      !withBoth.conditions.exists(c =>
+        c.`type` == Condition.FlinkOperatorMissing || c.`type` == Condition.StateStoreMissing
+      ),
+      withBoth.conditions
+    )
+    assertNotEquals(withBoth.phase, AnkkaFlowStatus.Failed)
+    assertNotEquals(status(render(cart(), observed)).phase, AnkkaFlowStatus.Failed)
+  }
+
+  test("a condition that still holds keeps the time it was first reported") {
+    val o     = flinkObserved.copy(flinkCrd = false)
+    val first = status(Rendering.render(cartWithCounter(), settings, o, "2026-11-22T10:00:00Z"))
+    val r     = cartWithCounter()
+    r.setStatus(first)
+    val second = status(Rendering.render(r, settings, o, "2026-11-22T10:05:00Z"))
+    assertEquals(
+      second.conditions.map(_.lastTransitionTime).distinct,
+      List("2026-11-22T10:00:00Z")
     )
   }
 
   test(
     "a rolling update that never drops below the desired count, owned by the resource, labelled for its pipeline"
   ) {
-    val d = router(render(cart(routerReplicas = 3)))
+    val d = cleaner(render(cart(cleanerReplicas = 3)))
     assertEquals(d.getSpec.getReplicas.intValue, 3)
     assertEquals(d.getSpec.getStrategy.getRollingUpdate.getMaxUnavailable.getIntVal.intValue, 0)
     assertEquals(d.getMetadata.getOwnerReferences.asScala.map(_.getUid).toList, List("uid-1"))
     assertEquals(d.getMetadata.getLabels.get(Labels.PipelineKey), "cart")
     assertEquals(
       d.getSpec.getSelector.getMatchLabels.asScala.toMap,
-      Map(Labels.PipelineKey -> "cart", Labels.StreamletKey -> "router")
+      Map(Labels.PipelineKey -> "cart", Labels.StreamletKey -> "cleaner")
     )
-    assertEquals(d.getSpec.getTemplate.getMetadata.getAnnotations.get("prometheus.io/port"), "2050")
-  }
-
-  test("nothing about the sidecar image comes from the resource (FR-020)") {
-    val other = render(s = settings.copy(sidecarImage = Some("registry/sidecar:9")))
-    assert(
-      deployments(other).forall(
-        _.getSpec.getTemplate.getSpec.getContainers.asScala
-          .find(_.getName == "sidecar")
-          .get
-          .getImage == "registry/sidecar:9"
-      )
-    )
-  }
-
-  test("no sidecar image: refused with that reason, one event, nothing created (S3.6, FR-024)") {
-    val r = render(s = settings.copy(sidecarImage = None))
-    assertEquals(r.actions.size, 2)
-    assertEquals(events(r).map(_.reason), Vector("SidecarImageMissing"))
-    assertEquals(status(r).phase, AnkkaFlowStatus.Failed)
+    assert(!d.getSpec.getTemplate.getMetadata.getAnnotations.containsKey("prometheus.io/port"))
   }
 
   test(
@@ -114,17 +152,17 @@ class RenderingSuite extends munit.FunSuite:
         .getAnnotations
         .get(Labels.ConfigHash)
     val before = render()
-    val after  = render(cart(threshold = 250))
-    assertNotEquals(hash(before, "flow-cart-router"), hash(after, "flow-cart-router"))
+    val after  = render(cart(maxTotal = 250))
+    assertNotEquals(hash(before, "flow-cart-cleaner"), hash(after, "flow-cart-cleaner"))
     assertEquals(hash(before, "flow-cart-sink"), hash(after, "flow-cart-sink"))
     assertEquals(
-      hash(render(), "flow-cart-router"),
-      hash(before, "flow-cart-router"),
+      hash(render(), "flow-cart-cleaner"),
+      hash(before, "flow-cart-cleaner"),
       "rendering is deterministic"
     )
     assertEquals(
-      hash(render(cart(routerReplicas = 5)), "flow-cart-router"),
-      hash(before, "flow-cart-router"),
+      hash(render(cart(cleanerReplicas = 5)), "flow-cart-cleaner"),
+      hash(before, "flow-cart-cleaner"),
       "replicas do not roll"
     )
   }
@@ -133,30 +171,30 @@ class RenderingSuite extends munit.FunSuite:
     val current = Rendering.render(cart(), settings, observed, "t").hashes
     val seen = observed.copy(
       deployments = Map(
-        "router" -> DeploymentState(
-          current("router"),
-          "ghcr.io/example/cart-router:0.3.1",
+        "cleaner" -> DeploymentState(
+          current("cleaner"),
+          "ghcr.io/example/cart-cleaner:0.6.0",
           1,
           1,
           1,
           1,
           1
         ),
-        "sink" -> DeploymentState(current("sink"), "ghcr.io/example/cart-sink:0.3.1", 1, 1, 1, 1, 1)
+        "sink" -> DeploymentState(current("sink"), "ghcr.io/example/cart-sink:0.6.0", 1, 1, 1, 1, 1)
       ),
-      labelledStreamlets = Set("router", "sink")
+      labelledStreamlets = Set("cleaner", "sink")
     )
     assertEquals(
-      events(render(cart(threshold = 250), seen))
+      events(render(cart(maxTotal = 250), seen))
         .filter(_.reason == "StreamletRolled")
-        .map(_.note.contains("'router'")),
+        .map(_.note.contains("'cleaner'")),
       Vector(true)
     )
     assertEquals(events(render(cart(), seen)).filter(_.reason == "StreamletRolled"), Vector.empty)
   }
 
   test("a streamlet removed from the spec loses its Deployment and Secret") {
-    val seen = observed.copy(labelledStreamlets = Set("router", "sink", "auditor"))
+    val seen = observed.copy(labelledStreamlets = Set("cleaner", "sink", "auditor"))
     val r    = render(cart(), seen)
     assert(r.actions.contains(Action.DeleteDeployment("shop", "flow-cart-auditor")))
     assert(r.actions.contains(Action.DeleteSecret("shop", "flow-cart-auditor")))
@@ -172,7 +210,7 @@ class RenderingSuite extends munit.FunSuite:
     assert(ensure >= 0 && ensure < deploy)
     assertEquals(
       r.actions.collect { case Action.EnsureTopic(t) => t.name }.toSet,
-      Set("cart.valid-carts", "cart.review-carts")
+      Set("cart.clean-carts", "cart.cart-counts")
     )
   }
 
@@ -181,8 +219,8 @@ class RenderingSuite extends munit.FunSuite:
   ) {
     val seen = observed.copy(topics =
       Map(
-        "cart.valid-carts"    -> TopicState.Exists(5, 1, Map("retention.ms" -> "1000")),
-        "cart.review-carts"   -> TopicState.Exists(3, 1, Map.empty),
+        "cart.clean-carts"    -> TopicState.Exists(5, 1, Map("retention.ms" -> "1000")),
+        "cart.cart-counts"    -> TopicState.Exists(3, 1, Map.empty),
         "shop.cart-events.v1" -> TopicState.Exists(3, 1, Map.empty)
       )
     )
@@ -199,12 +237,12 @@ class RenderingSuite extends munit.FunSuite:
 
   test("topic settings resolve from the resource, then the cluster (S3.4, FR-021)") {
     val r      = render()
-    val review = r.resolved.find(_.id == "review-carts").get
+    val review = r.resolved.find(_.id == "cart-counts").get
     assertEquals(
       (review.partitions, review.replicas, review.bootstrapServers),
       (Some(3), Some(1), "kafka.kafka.svc:9092")
     )
-    val valid = r.resolved.find(_.id == "valid-carts").get
+    val valid = r.resolved.find(_.id == "clean-carts").get
     assertEquals(valid.partitions, Some(6))
     val events = r.resolved.find(_.id == "cart-events").get
     assertEquals(events.bootstrapServers, "shop-kafka:9092")
@@ -222,7 +260,7 @@ class RenderingSuite extends munit.FunSuite:
     val r0  = bad.getSpec.streamlets.head
     bad.setSpec(
       bad.getSpec.copy(streamlets =
-        List(r0.copy(outlets = r0.outlets - "review" + ("audit" -> "review-carts")))
+        List(r0.copy(outlets = r0.outlets - "out" + ("audit" -> "clean-carts")))
       )
     )
     val detail = status(render(bad)).detail
@@ -236,18 +274,18 @@ class RenderingSuite extends munit.FunSuite:
     )
   }
 
-  test("the Secret holds the descriptor and streamlet.conf, owned by the resource") {
+  test("the Secret holds only streamlet.properties, owned by the resource") {
     val secret = render().actions.collect {
-      case Action.EnsureSecret(s) if s.getMetadata.getName == "flow-cart-router" => s
+      case Action.EnsureSecret(s) if s.getMetadata.getName == "flow-cart-cleaner" => s
     }.head
     assertEquals(
       secret.getStringData.keySet.asScala.toSet,
-      Set("descriptor.json", "streamlet.conf")
+      Set("streamlet.properties")
     )
     assertEquals(secret.getMetadata.getOwnerReferences.asScala.head.getName, "cart")
   }
 
-  test("the sidecars' service account may create events, and nothing else") {
+  test("the pipeline's service account may create events, and nothing else") {
     val role = render().actions.collect { case Action.EnsureRole(r) => r }.head
     assertEquals(
       role.getRules.asScala
@@ -269,7 +307,7 @@ class RenderingSuite extends munit.FunSuite:
     val gone = render(del).actions
     assertEquals(
       gone.collect { case Action.DeleteTopic(t) => t.name }.toSet,
-      Set("cart.valid-carts", "cart.review-carts")
+      Set("cart.clean-carts", "cart.cart-counts")
     )
     assertEquals(gone.last, Action.RemoveFinalizer)
   }
@@ -283,16 +321,16 @@ class RenderingSuite extends munit.FunSuite:
     val hashes = render().hashes
     val settled = observed.copy(
       deployments = Map(
-        "router" -> DeploymentState(
-          hashes("router"),
-          "ghcr.io/example/cart-router:0.3.1",
+        "cleaner" -> DeploymentState(
+          hashes("cleaner"),
+          "ghcr.io/example/cart-cleaner:0.6.0",
           1,
           1,
           1,
           2,
           2
         ),
-        "sink" -> DeploymentState(hashes("sink"), "ghcr.io/example/cart-sink:0.3.1", 1, 1, 1, 2, 2)
+        "sink" -> DeploymentState(hashes("sink"), "ghcr.io/example/cart-sink:0.6.0", 1, 1, 1, 2, 2)
       ),
       topics = Map("shop.cart-events.v1" -> TopicState.Exists(3, 1, Map.empty))
     )
@@ -303,212 +341,74 @@ class RenderingSuite extends munit.FunSuite:
     assertEquals(status(render(cart(), short)).phase, AnkkaFlowStatus.Degraded)
   }
 
-  // ── Built-in streamlets (feature 002) ─────────────────────────────────────────────────────────
+  // ── engines ───────────────────────────────────────────────────────────────────────────────
 
-  private def sinkOf(r: Rendering.Rendered): Deployment =
-    deployments(r).find(_.getMetadata.getName == "flow-checkouts-graph").get
-
-  private def refusals(r: Rendering.Rendered): Vector[String] =
-    events(r).filter(_.reason == "Refused").map(_.note)
-
-  test(
-    "a built-in streamlet's pod has only the sidecar, with the Secret mounted and no process address"
-  ) {
-    val r   = render(graph(), graphObserved)
-    val pod = sinkOf(r).getSpec.getTemplate.getSpec
-    assertEquals(pod.getContainers.asScala.map(_.getName).toList, List("sidecar"))
-    val sidecar = pod.getContainers.get(0)
-    val env     = sidecar.getEnv.asScala.map(_.getName).toSet
-    assert(!env.contains("FLOW_PROCESS_ADDRESS"), env.toString)
-    assert(env.contains("FLOW_CONFIG_DIR") && env.contains("FLOW_POD_NAME"), env.toString)
-    val mounts = sidecar.getVolumeMounts.asScala.map(m => m.getName -> m.getMountPath).toMap
-    assertEquals(mounts.keySet, Set("config", "api-token", "neo4j"))
-    assertEquals(mounts("neo4j"), "/etc/flow/neo4j")
-    assert(sidecar.getVolumeMounts.asScala.forall(_.getReadOnly))
-    val volume = pod.getVolumes.asScala.find(_.getName == "neo4j").get
-    assertEquals(volume.getSecret.getSecretName, "neo4j-shop")
-    assertEquals(volume.getSecret.getDefaultMode.intValue, Integer.parseInt("440", 8))
-    assert(sidecar.getReadinessProbe != null && sidecar.getLivenessProbe != null)
-  }
-
-  test("the mapper beside a built-in keeps its two containers and no stage Secret") {
-    val r      = render(graph(), graphObserved)
-    val mapper = deployments(r).find(_.getMetadata.getName == "flow-checkouts-mapper").get
-    val pod    = mapper.getSpec.getTemplate.getSpec
-    assertEquals(pod.getContainers.asScala.map(_.getName).toList, List("sidecar", "process"))
-    assert(!pod.getVolumes.asScala.exists(_.getName == "neo4j"))
-    assert(!events(r).exists(_.reason == "Refused"), events(r).toString)
-  }
-
-  test("the stage's config names the mounted directory and never the password") {
-    val r = render(graph(), graphObserved)
-    val conf = r.actions.collect {
-      case Action.EnsureSecret(s) if s.getMetadata.getName == "flow-checkouts-graph" =>
-        s.getStringData.get("streamlet.conf")
-    }.head
-    assert(conf.contains("stage {"), conf)
-    assert(conf.contains("name = \"neo4j-merge-sink\""), conf)
-    assert(conf.contains("credentials-dir = \"/etc/flow/neo4j\""), conf)
-    assert(!conf.contains("password"), conf)
-  }
-
-  test("a missing Secret is refused with nothing applied") {
-    val r = render(graph(), observed)
-    assertEquals(r.actions.size, 2)
-    assertEquals(
-      refusals(r),
-      Vector(
-        "streamlet 'graph' names Secret 'neo4j-shop', which does not exist in namespace 'shop'"
-      )
-    )
-    assertEquals(status(r).phase, AnkkaFlowStatus.Failed)
-  }
-
-  test("a Secret without a required key is refused, one message per missing key") {
-    val r = render(
-      graph(),
-      observed.copy(secrets = Map("neo4j-shop" -> SecretState("1", Set("uri"))))
-    )
-    assertEquals(r.actions.size, 3)
-    assertEquals(
-      refusals(r),
-      Vector(
-        "streamlet 'graph': Secret 'neo4j-shop' has no key 'username'",
-        "streamlet 'graph': Secret 'neo4j-shop' has no key 'password'"
-      )
-    )
-  }
-
-  test("an image on a built-in streamlet, no secret parameter, or an unknown built-in is refused") {
-    assertEquals(
-      refusals(render(graph(sinkImage = "registry/x:1"), graphObserved)),
-      Vector("streamlet 'graph' is built in and takes no image")
-    )
-    assertEquals(
-      refusals(render(graph(sinkConfig = Map.empty), graphObserved)),
-      Vector("streamlet 'graph' is built in and names no Secret in its 'secret' parameter")
-    )
-    val renamed = neo4jMergeSink.deepCopy[com.fasterxml.jackson.databind.node.ObjectNode]()
-    renamed.put("name", "graph-writer")
-    assertEquals(
-      refusals(render(graph(sinkDescriptor = renamed), graphObserved)),
-      Vector("streamlet 'graph' names built-in 'graph-writer', which this operator does not know")
-    )
-  }
-
-  test("a new version of the stage's Secret changes only the sink's config hash") {
-    val before = render(graph(), graphObserved).hashes
-    val after = render(
-      graph(),
-      observed.copy(secrets = Map("neo4j-shop" -> neo4jSecret.copy(resourceVersion = "42")))
-    ).hashes
-    assertNotEquals(before("graph"), after("graph"))
-    assertEquals(before("mapper"), after("mapper"))
-  }
-
-  test("a built-in streamlet settles with an empty image on both sides") {
-    val hashes = render(graph(), graphObserved).hashes
-    val settled = graphObserved.copy(
-      deployments = Map(
-        "mapper" -> DeploymentState(
-          hashes("mapper"),
-          "ghcr.io/example/checkout-graph:0.1.0",
-          1,
-          1,
-          1,
-          2,
-          2
-        ),
-        "graph" -> DeploymentState(hashes("graph"), "", 1, 1, 1, 2, 2)
-      ),
-      topics = Map("cart-checkouts" -> TopicState.Exists(3, 1, Map.empty))
-    )
-    val r = render(graph(), settled)
-    assertEquals(status(r).phase, AnkkaFlowStatus.Ready)
-    assert(!events(r).exists(_.reason == "StreamletRolled"), events(r).toString)
-  }
-
-  // ── feature 003: delta topics ────────────────────────────────────────────────────────────
-
-  /** The graph pipeline as the CLI now generates it: its delta topic asks to be compacted. */
-  private def compactedGraph(
-      deltaConfig: Map[String, String] = Map("cleanup.policy" -> "compact")
-  ) =
-    val r = graph()
+  private def withDescriptor(edit: String => String): AnkkaFlow =
+    val r       = cart()
+    val cleaner = r.getSpec.streamlets.head
+    val edited  = FlowSerialization.mapper().readTree(edit(cleaner.descriptor.toString))
     r.setSpec(
-      r.getSpec.copy(topics =
-        r.getSpec.topics.map(t =>
-          if t.id == "graph-deltas" then t.copy(topicConfig = deltaConfig) else t
-        )
-      )
+      r.getSpec.copy(streamlets = cleaner.copy(descriptor = edited) :: r.getSpec.streamlets.tail)
     )
     r
 
-  private def existing(deltaConfigs: Map[String, String]): Observed =
-    graphObserved.copy(topics =
+  private def refusedWith(r: Rendering.Rendered, fragment: String): Unit =
+    assertEquals(status(r).phase, AnkkaFlowStatus.Failed)
+    assert(
+      events(r).exists(e => e.reason == "Refused" && e.note.contains(fragment)),
+      events(r).toString
+    )
+    assertEquals(deployments(r), Vector.empty)
+
+  test("a descriptor that names no engine is refused, saying it must name one") {
+    refusedWith(
+      render(withDescriptor(_.replace("\"engine\":\"pekko-streams\",", ""))),
+      "streamlet 'cleaner': a descriptor must name an engine (pekko-streams, flink)"
+    )
+  }
+
+  test("a descriptor naming an engine flow does not know is refused, naming it and the known ones") {
+    refusedWith(
+      render(withDescriptor(_.replace("\"engine\":\"pekko-streams\"", "\"engine\":\"spark\""))),
+      "streamlet 'cleaner': engine 'spark' is not one flow knows (pekko-streams, flink)"
+    )
+  }
+
+  test("a resource whose engine differs from its descriptor's is refused") {
+    val r       = cart()
+    val cleaner = r.getSpec.streamlets.head
+    r.setSpec(
+      r.getSpec.copy(streamlets = cleaner.copy(engine = "flink") :: r.getSpec.streamlets.tail)
+    )
+    refusedWith(render(r), "the resource says engine 'flink' and its descriptor 'pekko-streams'")
+  }
+
+  // ── Lag on the status, whatever the engine ───────────────────────────────────────────────
+
+  test("each streamlet's inlets carry their topic, group and lag on the status, for both engines") {
+    val o  = flinkObserved.copy(lag = Map("cart.cleaner.in" -> 7L, "cart.counter.in" -> 12L))
+    val st = status(Rendering.render(cartWithCounter(), settings, o, "t"))
+    assertEquals(
+      st.streamlets.map(s => s.name -> s.inlets).toMap,
       Map(
-        "cart-checkouts"         -> TopicState.Exists(3, 1, Map.empty),
-        "checkouts.graph-deltas" -> TopicState.Exists(3, 1, deltaConfigs)
+        "cleaner" -> List(InletStatus("in", "shop.cart-events.v1", "cart.cleaner.in", Some(7L))),
+        "counter" -> List(InletStatus("in", "cart.clean-carts", "cart.counter.in", Some(12L)))
       )
     )
-
-  test("an existing delta topic that is not compacted is reported, and left as it is") {
-    val r = render(compactedGraph(), existing(Map("cleanup.policy" -> "delete")))
-    assertEquals(r.actions.collect { case Action.EnsureTopic(t) => t.name }, Vector.empty)
-    val warned = events(r).filter(_.reason == "TopicNotCompacted")
-    assertEquals(warned.map(_.eventType), Vector(Events.Warning))
-    assertEquals(
-      warned.head.note,
-      "topic 'checkouts.graph-deltas' exists and is not compacted (cleanup.policy = delete); the resource asks for compact. Left as it is: it will not hold the whole graph. To compact it, alter or recreate the topic."
-    )
-    // said once: not also as a setting that was not applied
-    assert(!events(r).exists(_.reason == "TopicSettingsIgnored"), events(r).toString)
+    val unknown = status(Rendering.render(cartWithCounter(), settings, flinkObserved, "t"))
+    assertEquals(unknown.streamlets.flatMap(_.inlets).map(_.lag), List(None, None))
   }
 
-  test("another setting that differs on the same topic is still reported, without the policy") {
-    val r = render(
-      compactedGraph(Map("cleanup.policy" -> "compact", "retention.ms" -> "86400000")),
-      existing(Map("cleanup.policy" -> "delete", "retention.ms" -> "1000"))
-    )
-    assert(events(r).exists(_.reason == "TopicNotCompacted"))
-    assertEquals(
-      events(r).filter(_.reason == "TopicSettingsIgnored").map(_.note),
-      Vector(
-        "topic 'checkouts.graph-deltas' exists; changed settings retention.ms were not applied"
+  test("a changed lag alone is a different report, so the status is written again") {
+    def at(lag: Long) =
+      status(
+        Rendering.render(
+          cartWithCounter(),
+          settings,
+          flinkObserved.copy(lag = Map("cart.counter.in" -> lag)),
+          "t"
+        )
       )
-    )
-  }
-
-  test("an existing delta topic that is already compacted is never reported as not compacted") {
-    Seq("compact", "compact,delete", "delete, compact").foreach { policy =>
-      val r       = render(compactedGraph(), existing(Map("cleanup.policy" -> policy)))
-      val reasons = events(r).map(_.reason)
-      assert(!reasons.contains("TopicNotCompacted"), s"$policy: $reasons")
-      // compact,delete is not what the resource asked for: an ordinary setting that differs
-      assertEquals(reasons.contains("TopicSettingsIgnored"), policy != "compact", policy)
-    }
-  }
-
-  test("a resource asking for compact,delete names that policy in the warning") {
-    val r = render(
-      compactedGraph(Map("cleanup.policy" -> "compact,delete")),
-      existing(Map("cleanup.policy" -> "delete"))
-    )
-    val warned = events(r).filter(_.reason == "TopicNotCompacted").map(_.note)
-    assert(warned.exists(_.contains("the resource asks for compact,delete")), warned.toString)
-    assert(!events(r).exists(_.reason == "TopicSettingsIgnored"), events(r).toString)
-  }
-
-  test("a missing delta topic is created with the resource's cleanup policy") {
-    val r = render(compactedGraph(), graphObserved)
-    assertEquals(
-      r.actions.collect { case Action.EnsureTopic(t) if t.id == "graph-deltas" => t.topicConfig },
-      Vector(Map("cleanup.policy" -> "compact"))
-    )
-    assert(!events(r).exists(_.reason == "TopicNotCompacted"))
-  }
-
-  test("a topic the resource does not ask to compact is never reported as not compacted") {
-    val r = render(graph(), existing(Map("cleanup.policy" -> "delete")))
-    assert(!events(r).exists(_.reason == "TopicNotCompacted"), events(r).toString)
+    assert(at(3L).sameReport(at(3L)))
+    assert(!at(3L).sameReport(at(4L)))
   }

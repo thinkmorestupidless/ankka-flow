@@ -18,15 +18,16 @@ package com.thinkmorestupidless.ankka.flow.blueprint
 
 import scala.collection.immutable
 
+import com.thinkmorestupidless.ankka.flow.descriptor.{Contract, Engine}
+
 /**
  * Everything verification can find wrong, carried from Cloudflow's
  * `cloudflow.blueprint.BlueprintProblem`
  * (core/cloudflow-blueprint/src/main/scala/cloudflow/blueprint/BlueprintProblem.scala). Class
  * names, volume mounts and config-parameter validation are gone: a streamlet is named by its
- * descriptor, has no volumes, and its parameters are validated with the descriptor (protocol
- * `DescriptorValidation`). New: formats this version does not support, unmanaged topics with
- * producers or without brokers, streamlets without an image, and unconnected outlets reported as
- * notes, not refusals.
+ * descriptor, has no volumes, and its parameters are validated with the descriptor
+ * (`DescriptorValidation`). New: unmanaged topics with producers or without brokers, streamlets
+ * without an image, a removed setting, and unconnected outlets reported as notes, not refusals.
  */
 sealed trait BlueprintProblem
 
@@ -45,10 +46,12 @@ object BlueprintProblem:
         s"The streamlet descriptor list is empty."
       case EmptyStreamlets =>
         s"The application blueprint is empty."
-      case IncompatibleSchema(path, otherPath, schema, otherSchema) =>
-        s"'$path' ($schema) is not compatible with '$otherPath' ($otherSchema)."
-      case UnsupportedFormat(path, format) =>
-        s"'$path' uses format '$format', which this version does not support; the only contract format is json."
+      case IncompatibleContract(path, otherPath, contract, otherContract) =>
+        s"'$path' (contract ${PortDescriptor.show(contract)}) is not compatible with '$otherPath' (contract ${PortDescriptor.show(otherContract)})."
+      case EngineSettingNotAllowed(streamlet, key, engine) =>
+        s"Streamlet '$streamlet' runs on ${engine.id}, which takes no '$key'; it is a setting of flink streamlets."
+      case BatchSettingRemoved(topic) =>
+        s"Topic '$topic' sets ${Blueprint.ConsumerConfigKey}.flow.batch, which is no longer a setting; remove it."
       case InvalidPortPath(path) =>
         s"'$path' is not a valid path to an outlet or an inlet."
       case InvalidTopicName(topicName) =>
@@ -73,15 +76,28 @@ object BlueprintProblem:
         s"Streamlet '$streamletRef' names descriptor '$descriptorName', which no descriptor declares."
       case UnmanagedTopicHasProducers(topic, paths) =>
         s"Topic '$topic' is not managed but has producers ${paths.mkString(", ")}; the platform only reads topics it does not own."
+      case AnkkaTopicManaged(topic) =>
+        s"Topic '$topic' is an ankka topic, and an ankka topic is the ankka project's: a pipeline never creates it."
+      case AnkkaTopicNamesKafka(topic, key) =>
+        s"Topic '$topic' is an ankka topic and names $key; ankka names its Kafka topic and its brokers."
+      case InvalidAnkkaTopic(topic, value) =>
+        s"Topic '$topic' names ankka topic '$value', which is not <project>/<name>."
+      case AnkkaTopicNotDeclared(ref, declared) =>
+        s"ankka topic $ref is not declared; project ${ref.project} declares: ${
+            if declared.isEmpty then "no topics" else declared.mkString(", ")
+          }"
+      case AnkkaTopicWithoutContract(ref) =>
+        s"ankka topic $ref declares no contract: declare one with ankka projects topics set ${ref.name} --contract … --schema …"
+      case AnkkaContractMismatch(port, contract, ref, declared) =>
+        s"$port declares contract ${PortDescriptor.show(contract)} and ankka topic $ref declares ${PortDescriptor.show(declared)}"
+      case AnkkaTopicsNotChecked(project) =>
+        s"ankka topics of project '$project' were not checked: pass --ankka-topics $project=<file>"
+      case AnkkaProjectNotInBlueprint(project) =>
+        s"--ankka-topics names project '$project', which no topic of the blueprint does"
       case UnmanagedTopicWithoutBrokers(topic) =>
         s"Topic '$topic' is not managed and names no bootstrap.servers or cluster."
       case MissingImage(streamlet) =>
         s"Streamlet '$streamlet' has no image."
-      case UnknownBuiltin(streamletRef, descriptorName, known) =>
-        val list = if known.isEmpty then "none" else known.mkString(", ")
-        s"Streamlet '$streamletRef' names built-in descriptor '$descriptorName', which this version does not have; the built-ins are: $list."
-      case BuiltinHasImage(streamlet) =>
-        s"Streamlet '$streamlet' is built in and takes no image."
       case UnconnectedInlets(unconnectedInlets) =>
         val list = unconnectedInlets.map(ui => s"${ui.streamletRef}.${ui.port.name}").mkString(",")
         if unconnectedInlets.size > 1 then s"Inlets ($list) are not connected."
@@ -101,13 +117,19 @@ final case class BlueprintFormatError(reason: String) extends BlueprintProblem
 sealed trait PortProblem extends BlueprintProblem:
   def path: VerifiedPortPath
 
-final case class IncompatibleSchema(
+final case class IncompatibleContract(
     path: VerifiedPortPath,
     otherPath: VerifiedPortPath,
-    schema: SchemaDescriptor,
-    otherSchema: SchemaDescriptor
+    contract: Contract,
+    otherContract: Contract
 ) extends PortProblem
-final case class UnsupportedFormat(path: VerifiedPortPath, format: String) extends PortProblem
+
+/** A deploy-time setting one engine takes, given to a streamlet of another. */
+final case class EngineSettingNotAllowed(streamlet: String, key: String, engine: Engine)
+    extends BlueprintProblem
+
+/** A topic that sets `consumer-config.flow.batch`, a setting of version one's streamlets. */
+final case class BatchSettingRemoved(topic: String) extends BlueprintProblem
 
 final case class InvalidTopicName(topicName: String) extends BlueprintProblem
 
@@ -136,17 +158,16 @@ final case class StreamletDescriptorNotFound(streamletRef: String, descriptorNam
 final case class UnmanagedTopicHasProducers(topic: String, paths: immutable.IndexedSeq[String])
     extends BlueprintProblem
 final case class UnmanagedTopicWithoutBrokers(topic: String) extends BlueprintProblem
-final case class MissingImage(streamlet: String)             extends BlueprintProblem
 
-/** A `builtin/<name>` this version does not ship; `known` lists the built-ins that exist. */
-final case class UnknownBuiltin(
-    streamletRef: String,
-    descriptorName: String,
-    known: immutable.IndexedSeq[String]
-) extends BlueprintProblem
+/** An ankka topic declared `managed = true`. */
+final case class AnkkaTopicManaged(topic: String) extends BlueprintProblem
 
-/** An image given for a streamlet whose descriptor is built in: its pod has only the sidecar. */
-final case class BuiltinHasImage(streamlet: String) extends BlueprintProblem
+/** An ankka topic that also sets `topic.name` or `bootstrap.servers`. */
+final case class AnkkaTopicNamesKafka(topic: String, key: String) extends BlueprintProblem
+
+/** An `ankka` value that is not `<project>/<name>`. */
+final case class InvalidAnkkaTopic(topic: String, value: String) extends BlueprintProblem
+final case class MissingImage(streamlet: String)                 extends BlueprintProblem
 
 sealed trait UnconnectedPorts extends BlueprintProblem:
   def nonEmpty: Boolean
@@ -157,3 +178,24 @@ final case class UnconnectedPort(streamletRef: String, port: PortDescriptor)
 final case class UnconnectedOutlets(unconnectedOutlets: immutable.IndexedSeq[UnconnectedPort])
     extends UnconnectedPorts:
   def nonEmpty: Boolean = unconnectedOutlets.nonEmpty
+
+/** An ankka topic its project's declarations do not list. */
+final case class AnkkaTopicNotDeclared(ref: AnkkaTopicRef, declared: Vector[String])
+    extends BlueprintProblem
+
+/** An ankka topic whose project declares it with no contract. */
+final case class AnkkaTopicWithoutContract(ref: AnkkaTopicRef) extends BlueprintProblem
+
+/** A port on an ankka topic whose contract is not the one ankka declares for it. */
+final case class AnkkaContractMismatch(
+    port: String,
+    contract: Contract,
+    ref: AnkkaTopicRef,
+    declared: Contract
+) extends BlueprintProblem
+
+/** A project the blueprint names whose declarations were not given: a note, not a refusal. */
+final case class AnkkaTopicsNotChecked(project: String) extends BlueprintProblem
+
+/** Declarations given for a project no topic of the blueprint names. */
+final case class AnkkaProjectNotInBlueprint(project: String) extends BlueprintProblem

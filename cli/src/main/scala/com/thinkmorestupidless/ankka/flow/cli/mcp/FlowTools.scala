@@ -3,7 +3,7 @@ package com.thinkmorestupidless.ankka.flow.cli.mcp
 import java.nio.file.Path
 
 import com.thinkmorestupidless.ankka.flow.cli.{BuildInfo, Generate, Verify}
-import com.thinkmorestupidless.ankka.flow.protocol.{Json, ProtocolVersion}
+import com.thinkmorestupidless.ankka.flow.descriptor.{Descriptor, Json}
 
 import JsonText.*
 
@@ -55,7 +55,7 @@ private[cli] final class FlowTools(
   private val blueprintArgs = Seq(
     "blueprint" -> string("Path of the blueprint (blueprint.conf)."),
     "descriptors" -> string(
-      "Directory of descriptor files (*.json); optional when every streamlet is built in."
+      "Directory of descriptor files (*.json), one per streamlet the blueprint uses."
     ),
     "conf" -> strings("Deploy-time configuration files (HOCON); later files win.")
   )
@@ -127,12 +127,12 @@ private[cli] final class FlowTools(
     },
     Tool(
       "flow_version",
-      "The CLI and protocol versions",
-      "What `flow version` prints: this CLI's version and the streamlet protocol version it writes.",
+      "The CLI and descriptor versions",
+      "What `flow version` prints: this CLI's version and the descriptor version it reads and writes.",
       schema(Nil),
       readOnly = true,
       idempotent = true
-    )(_ => ToolResult(s"flow ${BuildInfo.version}, protocol ${ProtocolVersion.Current}\n"))
+    )(_ => ToolResult(s"flow ${BuildInfo.version}, descriptor ${Descriptor.Version}\n"))
   )
 
   // ── The named cluster ───────────────────────────────────────────────────
@@ -157,7 +157,7 @@ private[cli] final class FlowTools(
     Tool(
       "get_pipeline",
       "Describe a pipeline",
-      s"One pipeline: its streamlets and images, its status (phase, detail, streamlets, topics) and the recent events on it, including stalled partitions. $onNamedCluster",
+      s"One pipeline: its streamlets with their engines and images, its status (phase, detail, conditions, streamlets, topics) and the recent events on it. $onNamedCluster",
       schema(Seq("name"), "name" -> string("The pipeline's name.")),
       readOnly = true,
       idempotent = true,
@@ -166,13 +166,12 @@ private[cli] final class FlowTools(
     Tool(
       "pipeline_logs",
       "Read a streamlet's logs",
-      s"The recent log lines of one streamlet's process container, or of its sidecar. $onNamedCluster",
+      s"The recent log lines of every pod of one streamlet, every container of each: a Pekko Streams streamlet's pods, or a Flink streamlet's job manager and task managers. $onNamedCluster",
       schema(
         Seq("name", "streamlet"),
         "name"      -> string("The pipeline's name."),
         "streamlet" -> string("The streamlet's name in the pipeline."),
-        "container" -> string("process (the default) or sidecar."),
-        "lines"     -> integer("How many lines from the end (default 200).")
+        "lines"     -> integer("How many lines from the end of each container (default 200).")
       ),
       readOnly = true,
       idempotent = true,
@@ -183,7 +182,6 @@ private[cli] final class FlowTools(
           c.logs(
             required(args, "name"),
             required(args, "streamlet"),
-            args.string("container").getOrElse("process"),
             args.int("lines").getOrElse(200)
           )
         )
@@ -192,7 +190,7 @@ private[cli] final class FlowTools(
     Tool(
       "pipeline_lag",
       "Read a pipeline's consumer lag",
-      s"The consumer lag of every inlet partition of every streamlet, read from each sidecar's metrics. $onNamedCluster",
+      s"Every streamlet's inlets, whatever its engine, with the topic, the consumer group and its lag (records behind, summed over partitions) as the operator last wrote them on the pipeline's status; `unknown` where it has not. $onNamedCluster",
       schema(Seq("name"), "name" -> string("The pipeline's name.")),
       readOnly = true,
       idempotent = true,
@@ -289,7 +287,7 @@ private[cli] final class FlowTools(
     )
 
   val instructions: String =
-    s"""Tools for ankka-flow, streaming pipelines of streamlets wired by a blueprint over Kafka topics, with a sidecar owning Kafka beside each streamlet.
+    s"""Tools for ankka-flow, streaming pipelines of streamlets wired by a blueprint over Kafka topics, each streamlet run by its engine, Pekko Streams or Apache Flink.
        |
        |`verify_blueprint`, `generate_resource` and `flow_version` do what the `flow` commands do and touch no cluster. The cluster tools act only on ${cluster
         .fold(

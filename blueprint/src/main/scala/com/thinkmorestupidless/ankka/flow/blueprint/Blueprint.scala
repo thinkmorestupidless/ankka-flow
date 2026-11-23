@@ -38,6 +38,7 @@ object Blueprint:
   val ProducersKey                     = "producers"
   val ConsumersKey                     = "consumers"
   val ClusterKey                       = "cluster"
+  val AnkkaKey                         = "ankka"
 
   // kafka config items
   val BootstrapServersKey = "bootstrap.servers"
@@ -78,10 +79,12 @@ object Blueprint:
               val producers = getStringListOrEmpty(config, s"$base.$ProducersKey")
               val consumers = getStringListOrEmpty(config, s"$base.$ConsumersKey")
               val cluster   = getStringOrEmpty(config, s"$base.$ClusterKey")
+              val ankka     = getStringOrEmpty(config, s"$base.$AnkkaKey")
               val kafkaConfig = getConfigOrEmpty(config, base)
                 .withoutPath(ProducersKey)
                 .withoutPath(ConsumersKey)
                 .withoutPath(ClusterKey)
+                .withoutPath(AnkkaKey)
               // validate at least that the config sections are objects and the sizes are numbers.
               if kafkaConfig.hasPath(ConnectionConfigKey) then
                 kafkaConfig.getObject(ConnectionConfigKey): Unit
@@ -92,7 +95,7 @@ object Blueprint:
               if kafkaConfig.hasPath(PartitionsKey) then kafkaConfig.getInt(PartitionsKey): Unit
               if kafkaConfig.hasPath(ReplicasKey) then kafkaConfig.getInt(ReplicasKey): Unit
               if kafkaConfig.hasPath(ManagedKey) then kafkaConfig.getBoolean(ManagedKey): Unit
-              Topic(key, producers, consumers, cluster, kafkaConfig)
+              Topic(key, producers, consumers, cluster, kafkaConfig, ankka = ankka)
             }
           else Vector.empty[Topic]
 

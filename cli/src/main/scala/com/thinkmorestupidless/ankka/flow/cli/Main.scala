@@ -5,11 +5,12 @@ import java.nio.file.{Files, Path}
 
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.thinkmorestupidless.ankka.flow.protocol.ProtocolVersion
+import com.thinkmorestupidless.ankka.flow.descriptor.Descriptor
 
 /**
- * `flow`: verify a blueprint, generate the resource the operator runs, request a reset. Exit codes:
- * 0 ok, 1 refused or failed (problems on stderr, one per line), 2 usage.
+ * `flow`: verify a blueprint, generate the resource the operator runs, write the settings of a
+ * laptop run, request a reset. Exit codes: 0 ok, 1 refused or failed (problems on stderr, one per
+ * line), 2 usage.
  */
 object Main:
 
@@ -27,14 +28,9 @@ object Main:
         out: Option[Path],
         deleteManagedTopics: Boolean
     )
+    case LocalCmd(req: Local.Request)
     case ResetCmd(pipeline: String, streamlets: List[String], namespace: Option[String])
     case VersionCmd
-    case InitCmd(
-        name: String,
-        language: Init.Language,
-        dir: Option[Path],
-        packageName: Option[String]
-    )
     case McpCmd
     case McpInstallCmd(req: mcp.McpInstall.Request)
 
@@ -44,10 +40,16 @@ object Main:
       Opts
         .option[Path](
           "descriptors",
-          "Directory of descriptor files (*.json); optional when every streamlet is built in."
+          "Directory of descriptor files (*.json)."
         )
         .orNone,
-      Opts.options[Path]("conf", "Deploy-time configuration (HOCON); later files win.").orEmpty
+      Opts.options[Path]("conf", "Deploy-time configuration (HOCON); later files win.").orEmpty,
+      Opts
+        .options[String](
+          "ankka-topics",
+          "project=file: what `ankka projects topics list -p <project> -o json` prints; repeatable."
+        )
+        .orEmpty
     ).mapN(Verify.Inputs.apply)
 
   private val verify =
@@ -75,6 +77,24 @@ object Main:
     ).mapN(Cmd.GenerateCmd.apply)
   )
 
+  private val local = Opts.subcommand(
+    "local",
+    "Verify, then write each streamlet's streamlet.properties for a broker on this machine."
+  )(
+    (
+      inputs,
+      Opts.option[String]("bootstrap-servers", "The broker every topic is on, HOST:PORT."),
+      Opts
+        .option[Path]("output", "The directory to write <streamlet>/streamlet.properties in.", "o"),
+      Opts
+        .option[String](
+          "ankka-bootstrap-servers",
+          "The broker an ankka topic is on, HOST:PORT; needed when the blueprint has one."
+        )
+        .orNone
+    ).mapN(Local.Request.apply).map(Cmd.LocalCmd(_))
+  )
+
   private val reset = Opts.subcommand(
     "reset",
     "Request that a pipeline's streamlets reread their inputs from the start."
@@ -92,24 +112,7 @@ object Main:
   )
 
   private val version =
-    Opts.subcommand("version", "Print the CLI and protocol versions.")(Opts(Cmd.VersionCmd))
-
-  private val init = Opts.subcommand("init", "Write a new streamlet project, in Scala or Python.")(
-    (
-      Opts.argument[String]("name"),
-      Opts
-        .option[String]("language", "scala (the default) or python.", "l")
-        .withDefault("scala")
-        .mapValidated(s => Init.Language.parse(s).toValidatedNel),
-      Opts.option[Path]("dir", "Where to write the project (default: the name).").orNone,
-      Opts
-        .option[String](
-          "package",
-          "The Scala package or the Python module (default: from the name)."
-        )
-        .orNone
-    ).mapN(Cmd.InitCmd.apply)
-  )
+    Opts.subcommand("version", "Print the CLI and descriptor versions.")(Opts(Cmd.VersionCmd))
 
   private val mcpInstall = Opts.subcommand(
     "install",
@@ -160,7 +163,12 @@ object Main:
     )
 
   private val command = Command("flow", "Verify, generate and operate ankka-flow pipelines.")(
-    verify.orElse(generate).orElse(reset).orElse(init).orElse(mcpCommand).orElse(version)
+    verify
+      .orElse(generate)
+      .orElse(local)
+      .orElse(reset)
+      .orElse(mcpCommand)
+      .orElse(version)
   )
 
   def run(args: List[String], out: PrintStream, err: PrintStream): Int =
@@ -171,7 +179,7 @@ object Main:
       case Right(cmd) =>
         cmd match
           case Cmd.VersionCmd =>
-            out.println(s"flow ${BuildInfo.version}, protocol ${ProtocolVersion.Current}")
+            out.println(s"flow ${BuildInfo.version}, descriptor ${Descriptor.Version}")
             0
           case Cmd.VerifyCmd(in) =>
             Verify.run(in) match
@@ -183,7 +191,12 @@ object Main:
                 )
                 0
           case g: Cmd.GenerateCmd => generateResource(g, out, err)
-          case i: Cmd.InitCmd     => initProject(i, out, err)
+          case Cmd.LocalCmd(req) =>
+            Local.run(req) match
+              case Left(problems) => refuse(err, problems)
+              case Right(written) =>
+                written.foreach(p => out.println(s"wrote $p"))
+                0
           case Cmd.McpCmd =>
             val cluster = mcp.ProjectFile.read(Path.of(".").toAbsolutePath)
             val tools   = mcp.FlowTools(cluster)
@@ -215,31 +228,6 @@ object Main:
               case Right(id) =>
                 out.println(s"reset requested for '$pipeline': $id")
                 0
-
-  private def initProject(i: Cmd.InitCmd, out: PrintStream, err: PrintStream): Int =
-    val request  = Init.Request(i.name, i.language, i.dir.getOrElse(Path.of(i.name)), i.packageName)
-    val problems = Init.problems(request)
-    if problems.nonEmpty then
-      problems.foreach(err.println)
-      2
-    else
-      Scaffold.write(
-        request.dir,
-        Scaffold.files(i.language, Init.tokens(request, BuildInfo.version))
-      ) match
-        case Left(left) =>
-          left.foreach(err.println)
-          1
-        case Right(written) =>
-          val (test, check) = i.language match
-            case Init.Language.Scala  => ("sbt test", "sbt descriptorCheck")
-            case Init.Language.Python => ("uv run pytest -q", "uv run descriptor --check")
-          out.println(s"wrote ${written.size} files to ${request.dir}")
-          out.println(s"  cd ${request.dir}")
-          out.println(s"  $test")
-          out.println(s"  $check")
-          out.println("  flow verify blueprint.conf --descriptors flow")
-          0
 
   private def refuse(err: PrintStream, problems: Vector[String]): Int =
     problems.foreach(err.println)

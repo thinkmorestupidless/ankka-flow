@@ -1,182 +1,170 @@
 ---
 title: Test a streamlet
-description: Test a streamlet's logic with the SDK's Harness, in Scala or Python, which runs process over in-memory inlets and outlets with the protocol's rules and no Kafka, sidecar or gRPC.
+description: Test a Pekko Streams streamlet's stages with PekkoHarness and a Flink streamlet's job with FlinkHarness, each over records in memory with no Kafka and no cluster, and check the descriptor beside the tests.
 kind: guide
-languages: [scala, python]
-related: [build/scala-streamlet.md, build/python-streamlet.md, reference/scala-sdk.md, reference/python-sdk.md, concepts/delivery.md]
+languages: [scala, java]
+related: [build/pekko-streams-streamlet.md, build/flink-streamlet.md, reference/pekko-streams-sdk.md, reference/flink-sdk.md, concepts/delivery.md]
 ---
 
 # Test a streamlet
 
-Each SDK has a `Harness` that runs a streamlet's `process` over records held in memory: in Scala
-`com.thinkmorestupidless.ankka.flow.sdk.testkit.Harness`, in Python `ankka_flow.testkit.Harness`. It
-builds batches the way the sidecar would, one partition at a time and in offset order, applies the
-protocol's rules, and records what reached each outlet, which records were skipped, and which batches
-failed. There is no Kafka, no sidecar and no gRPC, so a test runs in milliseconds with the language's
-own test runner: munit or any other in Scala, `pytest` in Python. The two harnesses have the same
-members and the same rules.
+Each engine's SDK has a harness that runs a streamlet's own logic over records held in memory, with
+no broker and no cluster, from the language's own test runner:
 
-## Route and assert
+| Engine | Harness | What it runs |
+|---|---|---|
+| Pekko Streams | `PekkoHarness`, in `ankka-flow-pekko-streams` | each inlet's stage, record by record, returning what each outlet was written and which positions would be committed |
+| Flink | `FlinkHarness`, in `ankka-flow-flink-testkit` | the streamlet's whole job on a local Flink, over bounded inputs, returning what each outlet was given |
 
-/// tab | Scala
+Both pass every record through its port's codec on the way in and out, as a running streamlet would,
+so a test also proves the codecs. Both take parameter values as text, as the deployed settings carry
+them.
 
-<!-- include: samples/cart-router-scala/src/test/scala/cart/CartRouterSuite.scala#routes-by-total -->
+## A Pekko Streams streamlet
+
+This is the test of the sample's cleaner, which keeps the cart events within its maximum, keyed by
+their cart, and drops the rest:
+
+<!-- languages: scala; a Pekko Streams streamlet is written in Scala -->
+<!-- include: samples/cart-pipeline/cleaner/src/test/scala/cart/cleaner/CleanerSuite.scala#test -->
 ```scala
-test("routes by total") {
-  val h = Harness(new CartRouter, Map("review-threshold" -> "50"))
-  h.inlet("in")
-    .put(
-      event("cart-1", 10),
-      key = Some(bytes("cart-1")),
-      headers = Seq("ce_type" -> bytes("ItemAdded"))
+import com.thinkmorestupidless.ankka.flow.pekko.{PekkoHarness, Record}
+
+class CleanerSuite extends munit.FunSuite:
+
+  private def event(json: String) = Record(Some("ignored"), json.getBytes(UTF_8))
+
+  test("keeps cart events within the maximum, keyed by their cart, and drops the rest") {
+    val result = PekkoHarness(Cleaner, "max-total" -> "250").run(
+      Cleaner.in -> Seq(
+        event("""{"cartId":"c1","seq":1,"total":100,"at":1000}"""),
+        event("""{"cartId":"c2","seq":1,"total":900,"at":1001}"""), // above the maximum
+        event("""not a cart event"""),                              // does not decode
+        event("""{"cartId":"c1","seq":2,"total":250,"at":1002}""")
+      )
     )
-  h.inlet("in").put(event("cart-2", 99), key = Some(bytes("cart-2")))
-  h.run()
-  assertEquals(h.outlet("valid").records.flatMap(_.keyString), Vector("cart-1"))
-  assertEquals(h.outlet("review").records.flatMap(_.keyString), Vector("cart-2"))
-  assertEquals(
-    h.outlet("valid").records.head.headers.map((k, v) => k -> new String(v, UTF_8)),
-    Seq("ce_type" -> "ItemAdded")
-  )
+    assertEquals(
+      result(Cleaner.out),
+      Vector(
+        Record(Some("c1"), CleanCart("c1", 1, 100, 1000)),
+        Record(Some("c1"), CleanCart("c1", 2, 250, 1002))
+      )
+    )
+    // Every record is committed, the dropped ones too.
+    assertEquals(result.committed, Vector(0, 1, 2, 3))
+  }
+```
+
+- `PekkoHarness(streamlet, "key" -> "value", …)` sets parameters by their keys; a parameter left out
+  takes its default.
+- `run(inlet -> records, …)` runs each inlet's stage over its records, in order. A `Record` is an
+  optional key, a value of the inlet's type and optional headers.
+- `result(outlet)` is what the outlet was written, in order, as records with their keys and headers.
+- `result.committed` is the positions, counted from 0, whose offsets would be committed;
+  `result.committedOf(inlet)` gives one inlet's when several were run. A record whose stage produced
+  an element is committed, even an element that writes nothing (`None`, `Nil`); a record the stage
+  filters out is covered by the next record's commit.
+
+Assert on `committed` as well as on the outlets: a record committed before what it produced was
+written is a record lost on a restart.
+
+A run fails as the stream would:
+
+- An element that throws, or a value its codec cannot decode or encode, fails the run with
+  `PekkoHarness.Failed`, which carries the inlet, the position of the record that failed, the positions
+  committed before it, and the cause. Nothing after the failed record is committed.
+- A required parameter with no value, a value not of its parameter's type, and records for an inlet
+  the logic gives no stage for each fail with an `IllegalArgumentException` that names it.
+
+The harness runs one record at a time on one partition. It does not reproduce Kafka, partitions,
+rebalances or redelivery; the SDK's own suites run its commit after write against a real broker.
+
+## A Flink streamlet
+
+This is the test of the sample's counter, which counts each cart's events in windows of the time each
+event carries:
+
+<!-- languages: java; a Flink streamlet is written in Java -->
+<!-- include: samples/cart-pipeline/counter/src/test/java/cart/counter/CartCounterTest.java#counter-test -->
+```java
+import com.thinkmorestupidless.ankka.flow.flink.Record;
+import com.thinkmorestupidless.ankka.flow.flink.testkit.FlinkHarness;
+import java.util.Comparator;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class CartCounterTest {
+
+  static final long T0 = 1_767_225_600_000L; // 2026-01-01T00:00:00Z
+
+  static Record<CleanCart> event(String cart, long seq, long secondsIn) {
+    long at = T0 + secondsIn * 1000;
+    // the Kafka timestamp is the time the record was written, not the event's own time
+    return Record.of(cart, new CleanCart(cart, seq, 10, at), T0 + 3_600_000);
+  }
+
+  static List<CartCount> counts(List<Record<CartCount>> records) {
+    return records.stream().map(Record::value)
+        .sorted(Comparator.comparing(CartCount::cartId).thenComparing(CartCount::windowStart)).toList();
+  }
+
+  @Test
+  void countsEachCartsEventsInWindowsOfTheirOwnTime() {
+    CartCounter counter = new CartCounter();
+    var result = FlinkHarness.of(counter)
+        .input(counter.in, List.of(event("a", 1, 10), event("b", 1, 70), event("a", 2, 65), event("a", 3, 20)))
+        .run();
+    assertEquals(
+        List.of(
+            new CartCount("a", T0, T0 + 60_000, 2),
+            new CartCount("a", T0 + 60_000, T0 + 120_000, 1),
+            new CartCount("b", T0 + 60_000, T0 + 120_000, 1)),
+        counts(result.records(counter.out)));
+  }
+
+  @Test
+  void theWindowIsAParameter() {
+    CartCounter counter = new CartCounter();
+    var result = FlinkHarness.of(counter).parameter("window", "5m")
+        .input(counter.in, List.of(event("a", 1, 10), event("a", 2, 250)))
+        .run();
+    assertEquals(List.of(new CartCount("a", T0, T0 + 300_000, 2)), counts(result.records(counter.out)));
+  }
 }
 ```
 
-///
+- `FlinkHarness.of(streamlet)` makes a harness with every parameter at its default, and
+  `parameter(key, value)` sets one; a key the streamlet does not declare is refused at once, and a
+  value not of its type when the job runs.
+- `input(inlet, records)` gives an inlet its records; an inlet given none reads nothing. A `Record` is
+  a key, a value, headers and a timestamp: `Record.of(key, value, timestamp)` has no headers. The
+  timestamp is what Kafka's would be; a job whose windows use another time, as the counter's use the
+  event's own `at`, says so in the watermark strategy it reads its inlet with.
+- `run()` builds the streamlet's job on a local Flink with a parallelism of 1, runs it to the end of
+  its inputs, and returns a `Result`. The end of a bounded input closes every window still open, so
+  each window's result is in it.
+- `result.records(outlet)` is what the outlet was given, in the order it was given it. Sort before
+  comparing when the order across keys does not matter, as the counter's test does.
 
-/// tab | Python
+A job that throws fails the run with `FlinkHarness.Failed`, whose cause is what the streamlet threw;
+the job is not restarted.
 
-<!-- include: samples/cart-router/tests/test_router.py#routes-by-total -->
-```python
-def test_routes_by_total() -> None:
-    h = Harness(CartRouter(), config={"review-threshold": 50})
-    h.inlet("in").put(key=b"cart-1", value=event("cart-1", 10), headers=[("ce_type", b"ItemAdded")])
-    h.inlet("in").put(key=b"cart-2", value=event("cart-2", 99))
-    h.run()
-    assert [r.key for r in h.outlet("valid").records] == [b"cart-1"]
-    assert [r.key for r in h.outlet("review").records] == [b"cart-2"]
-    assert h.outlet("valid").records[0].headers == [("ce_type", b"ItemAdded")]
-```
+The harness takes no checkpoints and talks to no Kafka, so it proves the job's logic and its windows,
+not its state across a restart or a new image, nor its transactions. The cluster suite proves those
+for the sample's counter; [Write a Flink streamlet](flink-streamlet.md#state-and-a-new-image) says
+which changes a new image may make to its state.
 
-///
+## Check the descriptor beside the tests
 
-`event` is a helper in the test file that encodes a cart event as JSON bytes.
-
-- The harness is given the streamlet and its parameter values, as the sidecar's `Start` would give
-  them. A key the streamlet does not declare is refused; a parameter left out takes its default.
-- `inlet(name).put(...)` queues a record on a declared inlet: a value, and optionally a key and
-  headers. Naming an undeclared inlet or outlet is refused, listing the declared ones.
-- `run()` processes everything queued so far. It can be called again after more `put`s; offsets carry
-  on from where they stopped.
-- `outlet(name).records` lists the records emitted to that outlet, in order, as `Record` values.
-
-## Partitions and batch sizes
-
-By default every record goes to partition 0 and each partition's records form one batch. Two arguments
-to `run` change that, to test what a streamlet assumes about ordering:
-
-- `partitions` is a function from a key to a partition number. The hash partitioner
-  (`Harness.hashPartitioner(n)` in Scala, `hash_partitioner(n)` in Python) spreads keys over `n`
-  partitions by the CRC-32 of the key, as Kafka keeps one key on one partition. Both SDKs place a key
-  on the same partition.
-- The batch size cap (`maxRecords` in Scala, `max_records` in Python) bounds a batch, so one
-  partition's records arrive over several batches.
-
-/// tab | Scala
-
-<!-- include: samples/cart-router-scala/src/test/scala/cart/CartRouterSuite.scala#ordering -->
-```scala
-test("each cart stays in order") {
-  val h = Harness(new CartRouter)
-  (0 until 50).foreach { i =>
-    val cart = s"cart-${i % 10}"
-    h.inlet("in").put(event(cart, i * 5), key = Some(bytes(cart)))
-  }
-  h.run(partitions = Harness.hashPartitioner(3), maxRecords = Some(7))
-  assert(h.failures.isEmpty && h.skipped.isEmpty)
-  val everything = h.outlet("valid").records ++ h.outlet("review").records
-  assertEquals(everything.size, 50)
-  everything.groupBy(_.keyString).values.foreach { ofOneCart =>
-    val totals =
-      ofOneCart.map(r => Json.parse(r.valueString).toOption.flatMap(_.field("total")).get)
-    assertEquals(totals.distinct.size, totals.size)
-  }
-}
-```
-
-///
-
-/// tab | Python
-
-<!-- include: samples/cart-router/tests/test_router.py#ordering -->
-```python
-def test_each_cart_stays_in_order() -> None:
-    h = Harness(CartRouter())
-    for i in range(50):
-        cart = f"cart-{i % 10}"
-        h.inlet("in").put(key=cart.encode(), value=event(cart, i * 5))
-    h.run(partitions=hash_partitioner(3), max_records=7)
-    assert h.failures == [] and h.skipped == []
-    everything = h.outlet("valid").records + h.outlet("review").records
-    assert len(everything) == 50
-    for cart in {r.key for r in everything}:
-        totals = [json.loads(r.value)["total"] for r in everything if r.key == cart]
-        assert sorted(totals) == sorted(set(totals))
-```
-
-///
-
-The Harness runs batches one after another. It does not reproduce concurrency between partitions,
-rebalances or redelivery; those belong to the sidecar and are proven by the platform's own suites.
-
-## Skips and failures
-
-The Harness applies the same rules as a running pipeline:
-
-- A batch whose `process` throws or raises, or emits to an undeclared outlet, fails. Its emits are
-  discarded and a `Failure(batch, error)` is added to `failures`.
-- A record of a successful batch that no emit was derived from is added to `skipped`. An emit is
-  derived from a record when it was made from that record: `outlet.emit(record)`, or in Scala
-  `outlet.emit(record.copy(...))` and in Python `outlet.emit(record, ...)`. An emit built from a value
-  alone is not, so its source record counts as skipped.
-- `batches` lists every batch `process` was given, in order.
-
-Assert on `failures` and `skipped` as well as on the outlets, so that a record dropped or a batch
-failed by mistake does not pass unnoticed. For a Python streamlet meant to skip records it cannot
-decode:
-
-```python
-h.inlet("in").put(key=b"cart-3", value=b"not json")
-h.run()
-assert h.failures == []                       # skipped, not raised on
-assert [r.key for r in h.skipped] == [b"cart-3"]
-```
-
-The same test in Scala asserts `h.failures.isEmpty` and `h.skipped.flatMap(_.keyString) ==
-Vector("cart-3")`. Neither cart router is such a streamlet: both fail the batch on a value that is
-not JSON, so for them this test finds one failure.
-
-## Check the descriptor in CI
-
-A streamlet whose committed descriptor is stale will be refused by `flow verify` or by the sidecar.
-Run the check beside the tests:
-
-/// tab | Scala
+A streamlet whose committed descriptor differs from its declaration is refused by `flow verify`
+and the operator alike. Run the check in the same build as the tests: the streamlet's main, given
+`--descriptor-check <file>`, exits `1` with the difference. The sample's builds run it as a task:
 
 ```bash
-sbt test
-sbt "runMain com.thinkmorestupidless.ankka.flow.sdk.Descriptor cart.CartRouter flow/descriptor.json --check"
+sbt cartCleaner/test cartCleaner/descriptorCheck
+sbt cartCounter/test cartCounter/descriptorCheck
 ```
 
-In the ankka-flow repository the Scala sample has the two as tasks: `sbt cartRouterScala/test
-cartRouterScala/descriptorCheck`.
-
-///
-
-/// tab | Python
-
-```bash
-uv run pytest -q
-uv run descriptor --check     # exits 1 when flow/descriptor.json differs from the declaration
-```
-
-///
+`--descriptor <file>` rewrites the file from the declaration after a deliberate change to a port, a
+contract, a parameter or the name; [Descriptor](../reference/descriptor.md#writing-and-checking-it)
+shows both.

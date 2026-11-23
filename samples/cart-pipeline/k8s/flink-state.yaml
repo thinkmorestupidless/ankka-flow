@@ -1,0 +1,19 @@
+# The state store of the development cluster: MinIO as kustomization/components/minio installs it.
+# In the operator's namespace, beside the kafka-cluster Secrets. Credentials go in `env`, which
+# reaches only Flink's pods; `flink-config` is copied into every FlinkDeployment's spec.
+# docs:start flink-state
+apiVersion: v1
+kind: Secret
+metadata:
+  name: flink-state
+  namespace: ankka-flow
+stringData:
+  dir: s3://flow-state/local
+  flink-config: |
+    s3.endpoint=http://minio.minio.svc:9000
+    s3.path-style-access=true
+  env: |
+    AWS_ACCESS_KEY_ID=flow
+    AWS_SECRET_ACCESS_KEY=flow-state-password
+    ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-presto-2.2.1.jar
+# docs:end flink-state

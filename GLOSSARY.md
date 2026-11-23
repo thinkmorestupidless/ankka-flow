@@ -1,7 +1,6 @@
 # Glossary
 
-The words this project's features use, each in exactly one sense. A term marked has
-still to be settled by `/speckit-clarify`. Where `docs/reference/glossary.md` defines a word for the
+The words this project's features use, each in exactly one sense. Where `docs/reference/glossary.md` defines a word for the
 people who build on ankka-flow, the term here means the same.
 
 ## The platform
@@ -10,8 +9,8 @@ people who build on ankka-flow, the term here means the same.
 A set of streamlets wired by a blueprint over topics, deployed to a cluster as one resource.
 
 ### streamlet
-One stage of a pipeline: a process with typed inlets and outlets, or a stage built into the
-sidecar.
+One stage of a pipeline, with typed inlets and outlets: logic written against one engine's own
+API and run by that engine.
 
 ### blueprint
 The file that names a pipeline's streamlets and wires their inlets and outlets over topics.
@@ -37,9 +36,6 @@ A request that a pipeline, or one of its streamlets, read its topics again from 
 ### cluster
 The Kubernetes cluster a pipeline is deployed to.
 
-### protocol version
-The version of the streamlet protocol `flow` writes into a resource.
-
 ### note
 A line `flow` prints beside a verification saying what it decided, such as that a topic will be
 compacted.
@@ -53,7 +49,7 @@ An answer from `flow` that it will not do what was asked, saying why.
 The platform ankka-flow runs beside, whose CLI ships through the same tap.
 
 ### ankka-flow
-This project: the pipelines, the sidecar, the operator and `flow`.
+This project: the pipelines, the SDKs, the operator and `flow`.
 
 ### CLI
 A command a person runs on their own machine: `flow`, or ankka's.
@@ -77,7 +73,7 @@ silicon, macOS on Intel, Linux on x64, Linux on arm64.
 Avoid: target, architecture
 
 ### release
-What a tagged version of ankka-flow publishes: images, the Python SDK, the plugin, and
+What a tagged version of ankka-flow publishes: images, the SDKs, the plugin, and
 the archives.
 
 Avoid: drop, cut
@@ -131,42 +127,21 @@ A rendering of the documentation for a coding agent, published with the plugin.
 ## The SDKs
 
 ### SDK
-A library a streamlet is written against, which writes the streamlet's descriptor,
-serves it to the sidecar and ships a harness. One per language.
+A library a streamlet is written against, which writes the streamlet's descriptor, gives its
+logic its inlets and outlets as the engine's own sources and sinks, and ships a harness. One per
+engine.
 
 Avoid: library
-
-### Python SDK
-The SDK for streamlets written in Python, published to PyPI.
-
-### Scala SDK
-The SDK for streamlets written in Scala, published to Maven Central.
 
 ### streamlet author
 A person writing a streamlet against an SDK.
 
 Avoid: developer, user
 
-### process
-The method of a streamlet that takes one batch and returns the emits to make.
-
-Avoid: handler, callback
-
-### batch
-The records of one inlet partition that a streamlet processes in one call, in offset
-order.
-
-Avoid: chunk, micro-batch
-
 ### record
 What a topic holds and a streamlet sees: bytes, an optional key, and ordered headers.
 
 Avoid: message
-
-### emit
-A record a streamlet sends to one of its outlets while processing a batch.
-
-Avoid: produce, publish
 
 ### inlet
 A port a streamlet reads from.
@@ -190,101 +165,34 @@ One of the ordered parts of a topic; records with one key are in one partition.
 Avoid: shard
 
 ### harness
-An SDK's stand-in for Kafka and the sidecar in a test: it batches and partitions
-records as the sidecar does and records what a streamlet emits, fails or skips.
+An SDK's stand-in for Kafka and a cluster in a test: it feeds a streamlet's inlets and records
+what the streamlet writes to its outlets.
 
 Avoid: test harness, testkit
 
-### sidecar
-The container the platform runs beside every streamlet process, owning everything
-Kafka and driving the streamlet through the protocol.
-
-Avoid: proxy, ambassador
-
-### protocol
-The conversation between the sidecar and a streamlet process: discovery, start,
-batches, emits, acknowledgements, failures and stop.
-
-Avoid: gRPC, API
-
-### discovery
-The sidecar's first question to a process: what streamlet it is, answered with the
-descriptor.
-
-### process port
-The loopback port a streamlet process serves on, given to it by the platform.
-
-### descriptor fixtures
-The six declared streamlets whose descriptor bytes every SDK must reproduce.
-
-### fixture streamlet
-One of the six streamlets the descriptor fixtures describe.
-
-### conformance suite
-The repository's suite that drives a served streamlet through every conversation the
-sidecar can have with it.
-
-Avoid: compliance tests
-
-### reference streamlet
-The streamlet the conformance suite drives, behaving by each record's key.
-
-### cart router
-The sample streamlet: one inlet of cart events, two outlets, one parameter.
-
 ### cart event
-A record the cart router reads, keyed by cart id, carrying a total.
+A record the sample pipeline reads, keyed by cart id, carrying a total and the time it happened.
 
 ### laptop walkthrough
-The first-streamlet tutorial's run: Kafka and the sidecar in containers, the streamlet
-on the host, events produced and verified.
-
-### Maven Central
-The registry Scala and Java artifacts are published to and resolved from by version.
-
-### registry
-Where a release publishes images.
-
-### pre-release tag
-A tag with a hyphen in it, whose release publishes only the release page, the native
-binaries and the formula.
-
-### release tag
-A tag without a hyphen, whose release publishes everything.
+The first-streamlet tutorial's run: Kafka in a container, each streamlet a command on the
+host, records written and verified, with no cluster.
 
 ### CI
 The checks that run on every change to the repository.
-
-### docs build
-The command that checks every documentation page and builds the site.
 
 ### coding agent
 A model writing code with the skills as its documentation.
 
 ### project
-The directory flow init writes: a streamlet, its test, its descriptor, a blueprint, an
-image build, the laptop loop, deploy-time configuration, a README, a CI workflow and the skills.
+The directory a pipeline's code lives in, holding its streamlets, its blueprint and its project
+file. (An ankka project is its own term.)
 
 Avoid: scaffold, skeleton
 
-### template
-The files for one language that flow carries, with names to be replaced by a project's.
-
-Avoid: boilerplate
-
 ### image
-The container image a streamlet runs from, holding only its code and its SDK.
+The container image a streamlet runs from, holding its code, its SDK and what its engine needs.
 
 Avoid: docker image
-
-### package
-The namespace a project's streamlet code lives in: a Scala package or a Python module.
-Not an installable; a Homebrew installable is a formula.
-
-Avoid: ns
-
-### greeting
-The field the generated streamlet adds to each record, set to its parameter of the same name.
 
 ### tutorial
 A documentation page that takes a reader through a first task from the start.
@@ -297,7 +205,7 @@ Avoid: walkthrough
 The Model Context Protocol server "flow mcp" runs, serving the documentation and flow's abilities to
 one coding agent over standard input and output.
 
-Avoid: daemon, service
+Avoid: daemon
 
 ### tool
 One operation the server offers a coding agent, with a description, an input schema and whether it
@@ -320,10 +228,107 @@ touch.
 ### project file
 "flow.toml" in a project's root, naming the cluster the project's tools may touch.
 
-### connection file
-The file naming the server's command for a client: ".mcp.json" in a project, or the client's settings.
+## Engines and ankka
 
-Avoid: config
+### engine
+What runs a streamlet's logic: Flink or Pekko Streams. A descriptor names its
+streamlet's engine.
+
+Avoid: runtime, runner, backend
+
+### Flink streamlet
+A streamlet written against Flink's own API and run as a Flink job; the engine for a
+stage that needs windows or state.
+
+### Pekko Streams streamlet
+A streamlet written as a Pekko Streams flow; the engine for a stage that needs
+neither windows nor state.
+
+### Pekko Streams SDK
+The SDK for Pekko Streams streamlets, written against from Scala.
+
+### Flink SDK
+The SDK for Flink streamlets, written against from Java.
+
+### stage
+One step of a pipeline's work as a person thinks of it, before it is a streamlet or
+an ankka consumer.
+
+### state
+What a Flink streamlet remembers between records, kept by Flink in the cluster's
+state store.
+
+Avoid: checkpoint, savepoint
+
+### state store
+The durable storage a cluster gives Flink streamlets for their state.
+
+### window
+A span of time into which a Flink streamlet groups records, by the time each record
+carries.
+
+### Flink operator
+The Flink Kubernetes Operator, which a cluster must have before it runs a Flink
+streamlet. Not ankka-flow's own operator.
+
+### condition
+A line of a pipeline's status saying one thing that is true of it, such as what it
+lacks.
+
+### Ready
+The phase of a deployed pipeline whose every streamlet is running and reading.
+
+### lag
+How far a streamlet's reading of a topic is behind what has been written to it.
+
+### contract
+What a topic carries: a name and, where given, the fingerprint of a schema document.
+An inlet, an outlet and an ankka topic each declare one, and the sides of a topic must declare
+the same.
+
+Avoid: message shape
+
+### managed
+Of a topic: created by the pipeline that names it.
+
+### ankka project
+A project in ankka: the unit that declares topics.
+
+Avoid: ankka application
+
+### ankka topic
+A topic an ankka project declares, which a blueprint names by the project and the
+declared name, such as "checkout/cart-checkouts". A pipeline reads or writes it and never creates
+it.
+
+Avoid: ankka stream, service topic
+
+### ankka consumer
+A component of a service in an ankka project that reads one topic; what a stage is
+when it is one service reacting to one topic and not a pipeline.
+
+### declarations
+An ankka project's topics and their contracts, as a file a person exports from ankka
+and gives to flow.
+
+### machine
+The identity a pipeline has to ankka: a registered machine of an ankka organization,
+named by the pipeline's deploy-time configuration.
+
+Avoid: service account
+
+### grant
+An ankka project's permission for a machine to read or write one topic. Made in
+ankka, never by flow.
+
+### right
+What a grant permits: reading or writing.
+
+### engines page
+The documentation page that says which engine to choose for a stage.
+
+### limitations page
+The documentation page that says what ankka-flow does not do.
 
 ## Everyday words
 
@@ -356,3 +361,5 @@ wires, wired, routed, affect, round, trip, manual, fresh, project, naming, compi
 uploaded, upload, rest, equivalent, coordinates, named, looks, pass, change, build, drift,
 lines, line, written, writes, write, reads, read, shows, shown, show, learn, kept, sends, sent,
 once, twice, again, nothing, neither, nor, page, pages, registry, empty, schema, difference, reports, committed, keeps, sets, setting, traced, directory, itself, part, else, depends, own, capital, letter, tests, edited, language, differs, visible, input, output, problem, sixty-three, characters, holds, files, package, takes, opened, exposes, port, way, through, goes, see, longer, follows, object, set, JSON, starting, digit, may, id, client, initializes, initialized, session, newest, offered, schema, answers, answer, among, Markdown, continues, reached, phase, conditions, recent, container, asked, consumer, lag, created, updated, sent, draws, marked, read-only, settings, entry, dry, run, Claude, Code, touch, Protocol, Model, Context, abilities, kubectl, apply, applied, verified, verifies, calls, namespace, searches, title, exist, result, logs, lines, Desktop, connects, connected, speaks, description, generate, verify, reset, images, list, get, sets, up, kind,
+never, made, makes, registered, lacks, binds, method, carried, carries, delivery, between, pod, pods, knows, new, discarded,
+whatever, stopped, laptop, remembers,

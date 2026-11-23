@@ -23,7 +23,11 @@ object Reset:
       val unknown  = request.streamlets.filterNot(n => spec.streamlets.exists(_.name == n))
       val running = targets.flatMap { s =>
         val pods = observed.pods.getOrElse(s.name, 0)
+        // A Flink job is stopped once its FlinkDeployment reports it suspended, or is gone.
+        val job = observed.flinkDeployments.get(s.name).filter(_ => s.engine == "flink")
         if s.replicas != 0 then Some(s"${s.name} is not scaled to 0")
+        else if job.exists(!_.lifecycleState.contains("SUSPENDED")) then
+          Some(s"${s.name}'s Flink job is not yet suspended")
         else if pods > 0 then Some(s"${s.name} still has $pods pod(s)")
         else None
       }
@@ -45,16 +49,37 @@ object Reset:
           )
         )
       else
+        val namespace = resource.getMetadata.getNamespace
         val resets = targets.toVector.flatMap { s =>
-          s.inlets.toVector.sortBy(_._1).flatMap { (inlet, topicId) =>
+          val groups = s.inlets.toVector.sortBy(_._1).flatMap { (inlet, topicId) =>
             topics
               .get(topicId)
               .map(t =>
                 Action.ResetGroup(
-                  ResetTarget(s.name, inlet, ResetRequest.groupId(pipeline, s.name, inlet), t)
+                  ResetTarget(s.name, inlet, Names.group(pipeline, s.name, inlet, t.groupPrefix), t)
                 )
               )
           }
+          if s.engine != "flink" then groups
+          else
+            // Deleting the FlinkDeployment removes its high-availability metadata; the next epoch
+            // is in every state path, so the job that starts next finds no state. The previous
+            // epoch's files stay for the store's own lifecycle rule (R12).
+            val epoch = observed.epoch(s.name)
+            val left = observed.stateStore
+              .map(
+                _.paths(namespace, pipeline, s.name, epoch).checkpoints.stripSuffix("/checkpoints")
+              )
+              .getOrElse("the state store")
+            Vector(
+              Action.DeleteFlinkDeployment(namespace, Names.deployment(pipeline, s.name)),
+              Action.AdvanceStateEpoch(s.name)
+            ) ++ groups :+
+              Action.RecordEvent(
+                "StateDiscarded",
+                Events.Normal,
+                s"streamlet '${s.name}' starts at state epoch ${epoch + 1}; the state of epoch $epoch is left in $left"
+              )
         }
         resets :+ Action.MarkResetDone(request.id)
     }

@@ -31,7 +31,32 @@ final class PipelineReconciler(
         val base = k8s.observe(resource)
         val resolved =
           resource.getSpec.topics.flatMap(t => TopicResolution.resolve(t, base.clusters).toOption)
-        val observed = base.copy(topics = resolved.map(t => t.name -> kafka.describe(t)).toMap)
+        val byId     = resolved.map(t => t.id -> t).toMap
+        val pipeline = resource.getSpec.pipeline
+        val lag = (for
+          s              <- resource.getSpec.streamlets
+          (inlet, topic) <- s.inlets
+          t              <- byId.get(topic)
+          group = Names.group(pipeline, s.name, inlet, t.groupPrefix)
+          n <- kafka.lag(group, t)
+        yield group -> n).toMap
+        // What each topic on a machine's cluster needs: Read for an inlet, Write for an outlet.
+        val needs = resource.getSpec.streamlets
+          .flatMap(s =>
+            s.inlets.values.map(_ -> Grant.Right.Read) ++
+              s.outlets.values.map(_ -> Grant.Right.Write)
+          )
+          .groupMap(_._1)(_._2)
+        val grants = (for
+          t <- resolved if t.machine.isDefined
+          n <- needs.get(t.id)
+        yield t.id -> kafka.grants(t, n.toSet)).toMap
+        val observed =
+          base.copy(
+            topics = resolved.map(t => t.name -> kafka.describe(t)).toMap,
+            lag = lag,
+            grants = grants
+          )
         val rendered = Rendering.render(resource, settings, observed, Instant.now(clock).toString)
         rendered.actions.foreach { action =>
           log.debug("{}: {}", ref, action.describe)

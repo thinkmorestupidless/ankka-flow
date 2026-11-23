@@ -62,17 +62,31 @@ class CliResetSuite extends munit.FunSuite:
       AnkkaFlowSpec(
         pipeline = "cart",
         streamlets = List(
-          StreamletSpec("source", "i", 0, Map.empty, Map.empty, Map("out" -> "t0"), node),
           StreamletSpec(
-            "router",
-            "i",
-            routerReplicas,
-            Map.empty,
-            Map("in"  -> "t0"),
-            Map("out" -> "t1"),
-            node
+            name = "source",
+            image = "i",
+            engine = "pekko-streams",
+            replicas = 0,
+            outlets = Map("out" -> "t0"),
+            descriptor = node
           ),
-          StreamletSpec("sink", "i", sinkReplicas, Map.empty, Map("in" -> "t1"), Map.empty, node)
+          StreamletSpec(
+            name = "router",
+            image = "i",
+            engine = "pekko-streams",
+            replicas = routerReplicas,
+            inlets = Map("in" -> "t0"),
+            outlets = Map("out" -> "t1"),
+            descriptor = node
+          ),
+          StreamletSpec(
+            name = "sink",
+            image = "i",
+            engine = "pekko-streams",
+            replicas = sinkReplicas,
+            inlets = Map("in" -> "t1"),
+            descriptor = node
+          )
         )
       )
     )

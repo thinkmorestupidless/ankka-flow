@@ -1,56 +1,58 @@
 # Contracts
 
-> What a port's contract is — a format and a fingerprint — how two ports are matched by it before anything runs, and why the sidecar never decodes a record.
+> What a port's contract is — a name and, optionally, a schema's fingerprint, as ankka names one — and how two ports are matched by it before anything runs.
 
 Source: https://flow.ankka.cloud/concepts/contracts/
-Every port declares a **contract**: a format and a fingerprint. Two ports on one topic connect when
-their formats and fingerprints are equal, and never otherwise. The check happens when the blueprint is
-verified, before anything runs, and needs no language runtime: it compares the contracts written in
-the streamlets' descriptors.
+Every port declares a **contract**: what the records on it are, by name, as an ankka project names
+the contract of a topic. Two ports on one topic connect when their contracts agree, and never
+otherwise. The check happens when the blueprint is verified, before anything runs, and needs no
+engine: it compares the contracts written in the streamlets' descriptors.
 
-## JSON, by schema name
+## A name, and a schema's fingerprint
 
-The only format is `json`. A JSON contract names a schema, such as `cart-events.v1`. Its fingerprint
-is the Base64 of the SHA-256 of that name, so two ports connect exactly when they name the same
-schema.
+A contract is a name, such as `cart-events.v1`. It may also name a schema, a file on the
+streamlet's classpath, usually a JSON Schema; the descriptor then carries the schema's
+**fingerprint**: `sha256:` and the hex SHA-256 of the schema in RFC 8785 canonical form, as ankka
+computes it for a topic it declares.
 
 **Scala**
 
 ```scala
-val in    = inlet("in", schemaName = "cart-events.v1")
-val valid = outlet("valid", schemaName = "cart-events.v1")
+val in  = inlet("in", Contract("cart-events.v1", schema = "cart-events.v1.json"), Codec.bytes)
+val out = outlet("out", Contract("clean-carts.v1"), Codec.json[CleanCart])
 ```
 
-**Python**
+**Java**
 
-```python
-inlet = JsonInlet("in", schema_name="cart-events.v1")
-valid = JsonOutlet("valid", schema_name="cart-events.v1")
+```java
+final Inlet<CleanCart> in = inlet("in", Contract.of("clean-carts.v1"), Codec.json(CleanCart.class));
+final Outlet<CartCount> out = outlet("out", Contract.of("cart-counts.v1"), Codec.json(CartCount.class));
 ```
 
-The schema name is a promise between the streamlet that writes a topic and the streamlets that read
-it, not a file the platform reads: nothing checks a record against a schema. A new version of a
-contract is a new name, `cart-events.v2`, which no longer connects to readers of `cart-events.v1`
-until they move to it. That is the only form of schema evolution.
+Two contracts agree when their names are equal and, where both state a fingerprint, the
+fingerprints are equal too. A port that states no schema connects to any port of the same name.
+The streamlets on either side of a topic may run on different engines; the contract is all they
+share.
+
+The contract is a promise between the streamlet that writes a topic and those that read it.
+Nothing checks a record against its schema as it passes; the codec a port declares decodes it, and
+a record it cannot decode is the streamlet's to drop or fail on. A new version of a contract is a
+new name, `cart-events.v2`, which does not connect to readers of `cart-events.v1` until they move
+to it.
 
 `flow verify` refuses a topic whose ports disagree, naming both ports and both contracts:
 
 ```text
-'router.valid' (json cart-events.v1) is not compatible with 'sink.in' (json cart-events.v2).
+'cleaner.out' (contract clean-carts.v1) is not compatible with 'counter.in' (contract clean-carts.v2).
 ```
 
-## The sidecar never decodes
+## ankka's topics
 
-Records cross the protocol as bytes, exactly as Kafka holds them. The sidecar never reads a value;
-a contract is a format and a fingerprint to compare, never a type it understands. Decoding is the
-streamlet's job, which is why one sidecar serves every language.
-
-A record the streamlet cannot decode is the streamlet's decision: skip it by acknowledging the batch
-without emitting for it, or fail the batch. Failing it redelivers the batch indefinitely and stalls the
-partition until the code changes; [Delivery and failure](delivery.md) explains why.
+A topic an ankka project declares has a contract of its own, named and fingerprinted the same way.
+`flow verify --ankka-topics` checks every port on such a topic against the project's declaration;
+[Read and write ankka topics](../build/ankka-topics.md) shows how.
 
 ## What contracts do not do
 
-Avro and Protobuf contracts, schema registries, and compatibility rules between schema versions do
-not exist. A descriptor carries a `format` field for every contract so that other formats can be added
-without changing its shape; today any value but `json` is refused.
+Schema registries, Avro and Protobuf framing, and compatibility rules between versions of a
+schema are not part of a contract.

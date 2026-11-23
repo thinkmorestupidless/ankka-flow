@@ -2,16 +2,7 @@ package com.thinkmorestupidless.ankka.flow.blueprint
 
 import scala.jdk.CollectionConverters.*
 
-import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
-
-/**
- * Batching per inlet (research R10): `consumer-config.flow.batch.*` in a blueprint topic. A batch
- * is what arrived while the previous one was in flight, capped by these.
- */
-final case class BatchSettings(maxRecords: Int, maxBytes: Long)
-
-object BatchSettings:
-  val Default: BatchSettings = BatchSettings(100, 1024L * 1024)
+import com.typesafe.config.{Config, ConfigValueType}
 
 /**
  * A topic's settings as the blueprint (and deploy-time overrides) give them. Anything left unset is
@@ -24,8 +15,7 @@ final case class TopicSettings(
     connectionConfig: Map[String, String] = Map.empty,
     producerConfig: Map[String, String] = Map.empty,
     consumerConfig: Map[String, String] = Map.empty,
-    topicConfig: Map[String, String] = Map.empty,
-    batch: BatchSettings = BatchSettings.Default
+    topicConfig: Map[String, String] = Map.empty
 )
 
 object TopicSettings:
@@ -33,16 +23,14 @@ object TopicSettings:
   def fromConfig(c: Config): TopicSettings =
     def opt[A](key: String)(get: String => A): Option[A] =
       if c.hasPath(key) then Some(get(key)) else None
-    val consumer = props(c, Blueprint.ConsumerConfigKey)
     TopicSettings(
       partitions = opt(Blueprint.PartitionsKey)(c.getInt),
       replicas = opt(Blueprint.ReplicasKey)(c.getInt),
       bootstrapServers = opt(Blueprint.BootstrapServersKey)(c.getString),
       connectionConfig = props(c, Blueprint.ConnectionConfigKey),
       producerConfig = props(c, Blueprint.ProducerConfigKey),
-      consumerConfig = consumer.filterNot(_._1.startsWith("flow.")),
-      topicConfig = props(c, Blueprint.TopicConfigKey) - "name",
-      batch = batch(c)
+      consumerConfig = props(c, Blueprint.ConsumerConfigKey),
+      topicConfig = props(c, Blueprint.TopicConfigKey) - "name"
     )
 
   /** A HOCON block as flat Kafka properties (`security.protocol`, `retention.ms`, …). */
@@ -60,12 +48,3 @@ object TopicSettings:
                                          else v.render)
         }
         .toMap
-
-  private def batch(c: Config): BatchSettings =
-    val key = s"${Blueprint.ConsumerConfigKey}.flow.batch"
-    val b   = if c.hasPath(key) then c.getConfig(key) else ConfigFactory.empty()
-    val d   = BatchSettings.Default
-    BatchSettings(
-      maxRecords = if b.hasPath("max-records") then b.getInt("max-records") else d.maxRecords,
-      maxBytes = if b.hasPath("max-bytes") then b.getMemorySize("max-bytes").toBytes else d.maxBytes
-    )

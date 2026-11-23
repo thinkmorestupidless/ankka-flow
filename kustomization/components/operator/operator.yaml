@@ -33,14 +33,26 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list, watch]
+  # A Flink streamlet is a FlinkDeployment; whether the Flink operator is installed is its CRD.
+  - apiGroups: [flink.apache.org]
+    resources: [flinkdeployments]
+    verbs: [get, list, watch, create, patch, delete]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get]
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [roles, rolebindings]
     verbs: [get, list, watch, create, update, patch, delete]
-  # Its own events on pipelines, and the permission it grants the sidecars (RBAC forbids granting
-  # what the grantor does not hold).
+  # Its own events on pipelines, and the permission it grants each pipeline's service account
+  # (RBAC forbids granting what the grantor does not hold).
   - apiGroups: [events.k8s.io]
     resources: [events]
     verbs: [create, patch]
+  # The Flink operator's JobException events on FlinkDeployments: how a job that cannot restore
+  # its state shows it.
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -81,10 +93,12 @@ spec:
           image: ankka-flow-operator:latest
           imagePullPolicy: IfNotPresent
           env:
-            - name: FLOW_SIDECAR_IMAGE
-              value: ankka-flow-sidecar:latest
             - name: FLOW_KAFKA_CLUSTERS_NAMESPACE
               value: ankka-flow
+            # The service account FlinkDeployments run as: the one the Flink operator's chart
+            # made, which holds the rights Kubernetes high availability needs.
+            - name: FLOW_FLINK_SERVICE_ACCOUNT
+              value: flink
           resources:
             requests:
               cpu: 100m

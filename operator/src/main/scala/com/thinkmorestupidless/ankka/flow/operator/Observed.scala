@@ -16,17 +16,20 @@ final case class Observed(
     clusterProblems: Map[String, String] = Map.empty,
     /** Kafka topic name to what Kafka says about it; absent when not yet described. */
     topics: Map[String, TopicState] = Map.empty,
-    /**
-     * The Secrets built-in streamlets name in their `secret` parameter, by name, from the
-     * resource's namespace; absent when the Secret does not exist.
-     */
-    secrets: Map[String, SecretState] = Map.empty,
-    /** Problems reading those Secrets, by Secret name, reported as refusals. */
-    secretProblems: Map[String, String] = Map.empty
-)
-
-/** What rendering may know of a stage's Secret: its version and its keys, never its values. */
-final case class SecretState(resourceVersion: String, keys: Set[String])
+    /** The CRD `flinkdeployments.flink.apache.org` exists: the Flink operator is installed. */
+    flinkCrd: Boolean = false,
+    /** The Secret `flink-state`, when it exists with a `dir`. */
+    stateStore: Option[StateStore] = None,
+    /** Streamlet name to its `FlinkDeployment`'s state, for those labelled with this pipeline. */
+    flinkDeployments: Map[String, FlinkState] = Map.empty,
+    /** The `state-epochs` annotation: streamlet name to its state epoch; absent means 1. */
+    stateEpochs: Map[String, Int] = Map.empty,
+    /** Consumer group to its lag on its inlet's topic; absent when Kafka could not be asked. */
+    lag: Map[String, Long] = Map.empty,
+    /** Topic id to what its machine may do with it, for each topic on a machine's cluster. */
+    grants: Map[String, Grant] = Map.empty
+):
+  def epoch(streamlet: String): Int = stateEpochs.getOrElse(streamlet, 1)
 
 final case class DeploymentState(
     configHash: String,
@@ -38,6 +41,25 @@ final case class DeploymentState(
     observedGeneration: Long
 ):
   def rolledOut: Boolean = observedGeneration >= generation && updatedReplicas >= replicas
+
+/**
+ * A `FlinkDeployment` as the Flink operator reports it: what was applied (image, config hash, the
+ * job's desired state) and `status.lifecycleState`, `status.jobStatus.state`,
+ * `status.jobManagerDeploymentStatus` and `status.error`.
+ */
+final case class FlinkState(
+    image: String,
+    configHash: String,
+    desiredState: String = "running",
+    lifecycleState: Option[String] = None,
+    jobState: Option[String] = None,
+    jobManagerStatus: Option[String] = None,
+    error: Option[String] = None,
+    /** The image of `status.reconciliationStatus.lastStableSpec`: what last ran healthy. */
+    lastStableImage: Option[String] = None,
+    /** The message of the latest `JobException` event of the job running now. */
+    jobException: Option[String] = None
+)
 
 /** A topic as Kafka describes it. `configs` holds only the keys the resource sets. */
 enum TopicState:

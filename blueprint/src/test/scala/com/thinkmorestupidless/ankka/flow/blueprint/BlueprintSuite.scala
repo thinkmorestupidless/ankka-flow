@@ -22,7 +22,7 @@ import Builders.*
  * Carried from Cloudflow's BlueprintSpec
  * (core/cloudflow-blueprint/src/test/scala/cloudflow/blueprint/BlueprintSpec.scala) as munit: the
  * cases that verify a blueprint. The editing cases (update, remove, disconnect) tested tooling this
- * project does not have; the config-parameter cases are the protocol's descriptor validation now
+ * project does not have; the config-parameter cases are the descriptor's validation now
  * (DescriptorJsonSuite); volume mounts do not exist. An unconnected outlet is a note here, not a
  * problem (spec S2.2), so the expectations that listed UnconnectedOutlets as a problem now find it
  * among the notes.
@@ -110,7 +110,7 @@ class BlueprintSuite extends munit.FunSuite:
   }
 
   test(
-    "not fail verification with UnconnectedInlets for already reported IncompatibleSchema problems"
+    "not fail verification with UnconnectedInlets for already reported IncompatibleContract problems"
   ) {
     val i = ingress("foo.v1")
     val p = processor("foo.v1", "bar.v1")
@@ -134,7 +134,7 @@ class BlueprintSuite extends munit.FunSuite:
       case _                           => true
     }
     assertEquals(incompatible.size, 1)
-    val IncompatibleSchema(a, other, _, _) = incompatible.head: @unchecked
+    val IncompatibleContract(a, other, _, _) = incompatible.head: @unchecked
     assertEquals(Set(a.toString, other.toString), Set("ingress.out", "e2.in"))
   }
 

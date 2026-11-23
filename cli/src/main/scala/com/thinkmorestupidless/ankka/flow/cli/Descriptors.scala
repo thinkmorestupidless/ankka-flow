@@ -5,17 +5,12 @@ import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
-import ankka.flow.v1.discovery.Spec
-import com.thinkmorestupidless.ankka.flow.protocol.{
-  DescriptorJson,
-  DescriptorValidation,
-  ProtocolVersion
-}
+import com.thinkmorestupidless.ankka.flow.descriptor.{Descriptor, DescriptorValidation}
 
 /** Every `*.json` in a directory, read and validated as a descriptor (DESCRIPTOR.md). */
 object Descriptors:
 
-  final case class Loaded(byName: Map[String, Spec], problems: Vector[String])
+  final case class Loaded(byName: Map[String, Descriptor], problems: Vector[String])
 
   def load(dir: Path): Loaded =
     if !Files.isDirectory(dir) then
@@ -29,24 +24,19 @@ object Descriptors:
         val name = f.getFileName.toString
         val parsed = Try(new String(Files.readAllBytes(f), "UTF-8")).toEither.left
           .map(e => Vector(s"descriptor $name: ${e.getMessage}"))
-          .flatMap(t => DescriptorJson.read(t).left.map(e => Vector(s"descriptor $name: $e")))
-          .flatMap { spec =>
-            val problems =
-              DescriptorValidation.validate(spec) ++
-                ProtocolVersion.compatible(ProtocolVersion.Current, spec.protocolVersion).left.toSeq
-            if problems.isEmpty then Right(spec)
-            else Left(problems.distinct.map(p => s"descriptor $name: $p"))
-          }
+          .flatMap(t =>
+            DescriptorValidation.check(t).left.map(_.distinct.map(p => s"descriptor $name: $p"))
+          )
         name -> parsed
       }
-      val good = read.collect { case (_, Right(spec)) => spec }
+      val good = read.collect { case (_, Right(d)) => d }
       val duplicates = good
-        .groupBy(_.getStreamlet.name)
-        .collect { case (n, ss) if ss.size > 1 => s"${ss.size} descriptors declare streamlet '$n'" }
+        .groupBy(_.streamlet.name)
+        .collect { case (n, ds) if ds.size > 1 => s"${ds.size} descriptors declare streamlet '$n'" }
         .toVector
         .sorted
       val empty = Option.when(files.isEmpty)(s"descriptors: '$dir' holds no *.json files").toVector
       Loaded(
-        good.map(s => s.getStreamlet.name -> s).toMap,
+        good.map(d => d.streamlet.name -> d).toMap,
         empty ++ read.collect { case (_, Left(ps)) => ps }.flatten ++ duplicates
       )

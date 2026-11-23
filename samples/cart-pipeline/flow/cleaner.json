@@ -1,0 +1,37 @@
+{
+  "descriptor_version": "2.0",
+  "sdk": {
+    "name": "ankka-flow-pekko-streams",
+    "version": "0.0.0"
+  },
+  "streamlet": {
+    "config_parameters": [
+      {
+        "default_value": "10000",
+        "description": "Events whose total is above this are dropped.",
+        "key": "max-total",
+        "type": "INTEGER"
+      }
+    ],
+    "description": "Drops cart events that do not decode or whose total is above the maximum, and writes the rest clean.",
+    "engine": "pekko-streams",
+    "inlets": [
+      {
+        "contract": {
+          "fingerprint": "sha256:f19f4516ec394cb282c806a2b02b5ff3e9d4e99a6152cecffe9639c8453d36b8",
+          "name": "cart-events.v1"
+        },
+        "name": "in"
+      }
+    ],
+    "name": "cart-cleaner",
+    "outlets": [
+      {
+        "contract": {
+          "name": "clean-carts.v1"
+        },
+        "name": "out"
+      }
+    ]
+  }
+}

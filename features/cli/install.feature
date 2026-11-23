@@ -6,7 +6,7 @@ Feature: Installing flow
     Given a macOS or Linux machine with Homebrew and no Java virtual machine
     When the person installs "ankka-flow" from the tap
     Then "flow" is on the machine's path
-    And "flow version" prints the release's version and the protocol version
+    And "flow version" prints the release's version and the descriptor version
 
   Scenario: a release offers an archive and a checksum for each platform
     Given a tagged release

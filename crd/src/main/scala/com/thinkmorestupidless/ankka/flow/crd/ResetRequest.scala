@@ -16,6 +16,7 @@
 
 package com.thinkmorestupidless.ankka.flow.crd
 
+import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -57,14 +58,51 @@ object ResetRequest:
   def pending(flow: AnkkaFlow): Option[Request] =
     request(flow).filterNot(r => done(flow).contains(r.id))
 
-  /** The consumer group an inlet reads with: `<pipeline>.<streamlet>.<inlet>` (FR-015). */
-  def groupId(pipeline: String, streamlet: String, inlet: String): String =
-    s"$pipeline.$streamlet.$inlet"
+  /**
+   * The consumer group an inlet reads with: `<pipeline>.<streamlet>.<inlet>` (FR-015), after the
+   * prefix an ankka machine's cluster gives its groups.
+   */
+  def groupId(
+      pipeline: String,
+      streamlet: String,
+      inlet: String,
+      prefix: Option[String] = None
+  ): String =
+    s"${prefix.getOrElse("")}$pipeline.$streamlet.$inlet"
+
+  /**
+   * Each Flink streamlet's state epoch: a JSON object of streamlet to epoch. A streamlet the
+   * annotation does not name, or an annotation that does not parse, is at epoch 1. A reset of a
+   * Flink streamlet advances its epoch, so its job starts with state no earlier run wrote.
+   */
+  val StateEpochsAnnotation = s"${AnkkaFlowDefinition.domain}/state-epochs"
+
+  def stateEpochs(flow: AnkkaFlow): Map[String, Int] =
+    annotation(flow, StateEpochsAnnotation)
+      .flatMap { text =>
+        Try {
+          val node = mapper.readTree(text)
+          node.properties.asScala.map(e => e.getKey -> e.getValue.asInt(1)).toMap
+        }.toOption
+      }
+      .getOrElse(Map.empty)
+
+  def stateEpoch(flow: AnkkaFlow, streamlet: String): Int =
+    stateEpochs(flow).getOrElse(streamlet, 1)
+
+  def withEpochAdvanced(flow: AnkkaFlow, streamlet: String): AnkkaFlow =
+    val epochs = stateEpochs(flow)
+    val next   = epochs.updated(streamlet, epochs.getOrElse(streamlet, 1) + 1)
+    val sorted = scala.collection.immutable.TreeMap.from(next)
+    annotate(flow, StateEpochsAnnotation, mapper.writeValueAsString(sorted.asJava))
 
   def withRequest(flow: AnkkaFlow, request: Request): AnkkaFlow =
+    annotate(flow, RequestAnnotation, toJson(request))
+
+  private def annotate(flow: AnkkaFlow, key: String, value: String): AnkkaFlow =
     val annotations = new java.util.HashMap[String, String]()
     Option(flow.getMetadata.getAnnotations).foreach(a => annotations.putAll(a))
-    annotations.put(RequestAnnotation, toJson(request))
+    annotations.put(key, value)
     flow.getMetadata.setAnnotations(annotations)
     flow
 

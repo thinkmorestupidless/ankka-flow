@@ -20,6 +20,7 @@ specs: specs
 # checkout is `uv run --project /path/to/speckit-bdd/checker speckit-bdd`.
 checker: 'uvx --from "git+https://github.com/thinkmorestupidless/speckit-bdd@v0.2.0#subdirectory=checker" speckit-bdd'
 
-# Specs 001-003 were written before the features existed and keep their scenarios as prose, as the
-# changes they recorded were made; 004 is the first whose scenarios live in the features.
-specs-from: "004"
+# Specs 001-003 were written before the features existed and keep their scenarios as prose. Specs
+# 004-007 name scenarios of version one, which 009 removed with their SDKs and flow init;
+# they stay as records of what was built then. 009 is the first spec of the engine streamlets.
+specs-from: "009"

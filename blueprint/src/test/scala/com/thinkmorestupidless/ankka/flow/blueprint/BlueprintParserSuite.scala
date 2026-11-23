@@ -109,7 +109,7 @@ class BlueprintParserSuite extends munit.FunSuite:
     assertEquals(settings.topicConfig("cleanup.policy"), "compact")
   }
 
-  test("read the pipeline name, partitions, replicas and batching") {
+  test("read the pipeline name, partitions and replicas") {
     val blueprint = Blueprint.parseString(
       """blueprint {
         |  name = cart
@@ -118,7 +118,7 @@ class BlueprintParserSuite extends munit.FunSuite:
         |    t {
         |      partitions = 6
         |      replicas = 3
-        |      consumer-config { auto.offset.reset = earliest, flow.batch { max-records = 10 } }
+        |      consumer-config { auto.offset.reset = earliest }
         |    }
         |  }
         |}
@@ -129,7 +129,21 @@ class BlueprintParserSuite extends munit.FunSuite:
     val s = TopicSettings.fromConfig(blueprint.topics.head.kafkaConfig)
     assertEquals((s.partitions, s.replicas), (Some(6), Some(3)))
     assertEquals(s.consumerConfig, Map("auto.offset.reset" -> "earliest"))
-    assertEquals(s.batch.maxRecords, 10)
+  }
+
+  test("consumer-config.flow.batch is refused by name") {
+    val blueprint = Blueprint.parseString(
+      """blueprint {
+        |  streamlets { }
+        |  topics { t { consumer-config { flow.batch { max-records = 10 } } } }
+        |}
+        |""".stripMargin,
+      Vector.empty
+    )
+    val removed = blueprint.problems.collect { case p: BatchSettingRemoved => p }
+    assertEquals(removed, Vector(BatchSettingRemoved("t")))
+    val message = BlueprintProblem.toMessage(removed.head)
+    assert(message.contains("consumer-config.flow.batch") && message.contains("'t'"), message)
   }
 
   test("an invalid format is a problem, not an exception") {

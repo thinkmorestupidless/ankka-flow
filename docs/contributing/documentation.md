@@ -27,7 +27,7 @@ uv run --project tools/docs docs serve    # the site with live reload, while wri
 `target/docs-site`. The tool comes from ankka's repository, named in `tools/docs/pyproject.toml` and
 pinned to a commit by `tools/docs/uv.lock` (`uv lock --upgrade --project tools/docs` moves it). What
 it needs to know about this repository is `extra.docs` in `mkdocs.yml`: the frontmatter vocabulary,
-where the skills are rendered, and which directory the protocol table is generated from.
+and where the skills are rendered.
 
 ## Where a page goes
 
@@ -45,9 +45,14 @@ check fails.
 ## Frontmatter
 
 Every page starts with `title`, `description` and `kind`. One optional key is this repository's:
-`languages`, `scala` and `python`, for a page that shows streamlet code; a page with both shows them
-in `/// tab | Scala` and `/// tab | Python` blocks, Scala first, each sample included from tested code. `related` lists the pages
-a reader most often needs next.
+`languages`, `scala` and `java`, for a page that shows streamlet code. Every sample on such a page is
+shown in each language the page names, in `/// tab | Scala` and `/// tab | Java` blocks, Scala first,
+each included from tested code. A sample bound to one engine is bound to its language too, a Pekko
+Streams streamlet to Scala and a Flink streamlet to Java, so it stands alone in its engine's
+section with the reason on the line before its fence: `<!-- languages: scala; a Pekko Streams
+streamlet is written in Scala -->`. The docs check (`extra.docs.samples` in `mkdocs.yml`) fails a
+sample that is in fewer languages than its page names without that comment, and a tab whose code is
+written in the page. `related` lists the pages a reader most often needs next.
 
 ## Rules that bite
 
@@ -63,18 +68,14 @@ a reader most often needs next.
 ## Samples come from tested code
 
 A code block preceded by `<!-- include: path#region -->` is filled from a region marked
-`# docs:start region` and `# docs:end region` in a source file, and the check fails when the copy has
+`// docs:start region` and `// docs:end region` in a source file (`#` in configuration, YAML and
+shell), and the check fails when the copy has
 drifted. Without `#region` the whole file is included. The regions this documentation includes are in
-three samples — the cart router, the checkout feed and the checkout graph (each one's streamlet source
-and its tests) — and the samples' blueprints, Dockerfiles and configuration files are included whole,
-so every sample shown is one the build runs. Markers never go in `protocol/`, which the SDKs copy byte
-for byte. The repository's README includes the cart router and its blueprint the same way; the docs
-tool reads only the pages, so `just readme-sync` refreshes the README and the docs workflow checks it.
-
-## The generated table
-
-The RPC table on [Streamlet protocol](../reference/protocol.md) is generated from the `.proto` files in
-`protocol/src/main/protobuf/ankka/flow/v1` by `docs sync`; the prose around it is written by hand.
+the sample pipeline's two streamlets, the Pekko Streams cleaner and the Flink counter (each one's
+source and its tests), and the sample's blueprints, Kubernetes manifests and configuration files are
+included whole, so every sample shown is one the build runs. The repository's README includes the
+sample the same way; the docs tool reads only the pages, so `just readme-sync` refreshes the README
+and the docs workflow checks it.
 
 ## The skills
 

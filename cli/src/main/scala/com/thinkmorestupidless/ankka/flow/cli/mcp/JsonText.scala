@@ -1,6 +1,6 @@
 package com.thinkmorestupidless.ankka.flow.cli.mcp
 
-import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.descriptor.Json
 
 /**
  * What the server needs of JSON beyond the protocol module's AST and parser: field access, and a

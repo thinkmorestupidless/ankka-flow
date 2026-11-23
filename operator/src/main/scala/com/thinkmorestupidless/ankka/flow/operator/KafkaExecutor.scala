@@ -6,9 +6,22 @@ import java.util.concurrent.{ConcurrentHashMap, ExecutionException, TimeUnit}
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
-import org.apache.kafka.clients.admin.{Admin, AdminClientConfig, NewTopic}
+import org.apache.kafka.clients.admin.{
+  Admin,
+  AdminClientConfig,
+  DescribeTopicsOptions,
+  NewTopic,
+  OffsetSpec
+}
+import org.apache.kafka.common.acl.AclOperation
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.config.ConfigResource
-import org.apache.kafka.common.errors.{TopicExistsException, UnknownTopicOrPartitionException}
+import org.apache.kafka.common.errors.{
+  AuthenticationException,
+  TopicAuthorizationException,
+  TopicExistsException,
+  UnknownTopicOrPartitionException
+}
 import org.slf4j.LoggerFactory
 
 /**
@@ -66,6 +79,38 @@ final class KafkaExecutor extends AutoCloseable:
           case other =>
             TopicState.Unreachable(Option(other.getMessage).getOrElse(other.getClass.getSimpleName))
 
+  /**
+   * Whether the credentials `t` is reached with may do each of `needs` with it: the topic described
+   * with its authorized operations (V8). A topic the broker refuses to describe lacks the first
+   * right needed; one it describes lacks any right its operations do not hold (`ALL` holds both).
+   */
+  def grants(t: ResolvedTopic, needs: Set[Grant.Right]): Grant =
+    val ordered = Grant.Right.values.toVector.filter(needs.contains)
+    try
+      val d = admin(t)
+        .describeTopics(
+          java.util.List.of(t.name),
+          new DescribeTopicsOptions().includeAuthorizedOperations(true)
+        )
+        .allTopicNames()
+        .get(Timeout, TimeUnit.SECONDS)
+        .get(t.name)
+      val ops = Option(d.authorizedOperations).map(_.asScala.toSet).getOrElse(Set.empty)
+      def holds(r: Grant.Right) =
+        ops.contains(AclOperation.ALL) || ops.contains(r match
+          case Grant.Right.Read  => AclOperation.READ
+          case Grant.Right.Write => AclOperation.WRITE)
+      ordered.find(r => !holds(r)).fold(Grant.Granted)(Grant.Lacks(_))
+    catch
+      case e: Exception =>
+        cause(e) match
+          case _: TopicAuthorizationException =>
+            ordered.headOption.fold(Grant.Granted)(Grant.Lacks(_))
+          case a: AuthenticationException =>
+            Grant.CredentialRefused(Option(a.getMessage).getOrElse(a.getClass.getSimpleName))
+          case other =>
+            Grant.Unknown(Option(other.getMessage).getOrElse(other.getClass.getSimpleName))
+
   /** Creates a managed topic; one that already exists is left as it is (FR-019). */
   def ensure(t: ResolvedTopic): Unit =
     val topic =
@@ -103,6 +148,47 @@ final class KafkaExecutor extends AutoCloseable:
         case g: ConsumerGroupReset.GroupHasActiveMembers => g.getMessage
         case other => Option(other.getMessage).getOrElse(other.getClass.getSimpleName)
     }
+
+  /**
+   * How many records of `t` the group has yet to read: over every partition, its end offset minus
+   * the group's committed offset, or minus the partition's start where the group committed nothing
+   * there. `None` when Kafka cannot be asked. On a topic written in transactions the end includes
+   * the commit markers, so a group that has read everything may show a few.
+   */
+  def lag(group: String, t: ResolvedTopic): Option[Long] =
+    Try {
+      val a = admin(t)
+      val partitions = a
+        .describeTopics(java.util.List.of(t.name))
+        .allTopicNames()
+        .get(Timeout, TimeUnit.SECONDS)
+        .get(t.name)
+        .partitions
+        .asScala
+        .toVector
+        .map(p => new TopicPartition(t.name, p.partition))
+      def offsets(spec: => OffsetSpec): Map[TopicPartition, Long] =
+        a.listOffsets(partitions.map(_ -> spec).toMap.asJava)
+          .all()
+          .get(Timeout, TimeUnit.SECONDS)
+          .asScala
+          .view
+          .mapValues(_.offset)
+          .toMap
+      val end   = offsets(OffsetSpec.latest())
+      val start = offsets(OffsetSpec.earliest())
+      val committed = a
+        .listConsumerGroupOffsets(group)
+        .partitionsToOffsetAndMetadata()
+        .get(Timeout, TimeUnit.SECONDS)
+        .asScala
+        .collect { case (tp, o) if o != null && tp.topic == t.name => tp -> o.offset }
+        .toMap
+      partitions.map { tp =>
+        val from = committed.get(tp).fold(start(tp))(_.max(start(tp)))
+        (end(tp) - from).max(0L)
+      }.sum
+    }.toOption
 
   def close(): Unit =
     admins.values.asScala.foreach(a => Try(a.close(java.time.Duration.ofSeconds(5))))

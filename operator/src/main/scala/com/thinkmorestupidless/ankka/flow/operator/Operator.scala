@@ -3,6 +3,7 @@ package com.thinkmorestupidless.ankka.flow.operator
 import scala.jdk.CollectionConverters.*
 
 import com.thinkmorestupidless.ankka.flow.crd.AnkkaFlow
+import io.fabric8.kubernetes.api.model.GenericKubernetesResource
 import io.fabric8.kubernetes.api.model.apps.Deployment
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.informers.{ResourceEventHandler, SharedIndexInformer}
@@ -16,13 +17,20 @@ final class Operator(client: KubernetesClient, settings: Settings, reconciler: R
   private val queue = new WorkQueue(settings, reconciler.reconcile)
 
   private var informers: Vector[SharedIndexInformer[?]] = Vector.empty
+  @volatile private var flinkInformer: Option[SharedIndexInformer[GenericKubernetesResource]] =
+    None
 
   private def refOf(resource: AnkkaFlow): Option[PipelineRef] =
     Option(resource.getMetadata).map(m => PipelineRef(m.getNamespace, m.getName))
 
-  private def refOf(deployment: Deployment): Option[PipelineRef] =
+  private def refOf(deployment: Deployment): Option[PipelineRef] = ownerOf(deployment.getMetadata)
+
+  private def refOf(deployment: GenericKubernetesResource): Option[PipelineRef] =
+    ownerOf(deployment.getMetadata)
+
+  private def ownerOf(metadata: io.fabric8.kubernetes.api.model.ObjectMeta): Option[PipelineRef] =
     for
-      meta  <- Option(deployment.getMetadata)
+      meta  <- Option(metadata)
       owner <- Option(meta.getOwnerReferences).flatMap(_.asScala.find(_.getKind == "AnkkaFlow"))
     yield PipelineRef(meta.getNamespace, owner.getName)
 
@@ -44,18 +52,34 @@ final class Operator(client: KubernetesClient, settings: Settings, reconciler: R
       .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
       .inform(handler[Deployment](refOf), resync)
     informers = Vector(flows, deployments)
+    informFlink()
+    // The observe pass: what no informer reports (lag, grants), and a Flink operator installed
+    // after this one started, whose FlinkDeployments are then informed on too.
+    queue.every(settings.observeInterval) { () =>
+      informFlink()
+      flows.getStore.list.asScala.flatMap(refOf).foreach(queue.enqueue)
+    }
     queue.start()
-    log.info(
-      "ankka-flow operator {} watching pipelines in every namespace; sidecar image {}",
-      BuildInfo.version,
-      settings.sidecarImage.getOrElse("(not configured: every pipeline will be refused)")
-    )
+    log.info("ankka-flow operator {} watching pipelines in every namespace", BuildInfo.version)
+
+  /** A FlinkDeployment's status changes feed the queue once the Flink operator is installed. */
+  private def informFlink(): Unit = synchronized {
+    if flinkInformer.isEmpty && new Fabric8Executor(client, settings).flinkCrdInstalled() then
+      flinkInformer = Some(
+        client
+          .genericKubernetesResources(Fabric8Executor.FlinkDeploymentContext)
+          .inAnyNamespace()
+          .withLabel(Labels.ManagedByKey, Labels.ManagedBy)
+          .inform(handler[GenericKubernetesResource](refOf), settings.resyncInterval.toMillis)
+      )
+  }
 
   def awaitTermination(): Unit =
     try Thread.currentThread().join()
     catch case _: InterruptedException => Thread.currentThread().interrupt()
 
   def close(): Unit =
-    informers.foreach(_.close())
+    (informers ++ flinkInformer).foreach(_.close())
     informers = Vector.empty
+    flinkInformer = None
     queue.stop()

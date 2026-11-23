@@ -1,99 +1,66 @@
 # Delivery and failure
 
-> How the sidecar delivers records — commit only after the write, at least once, never skipping — and what happens when a batch fails, a partition stalls or a rebalance moves a partition.
+> What each engine promises about delivery — a Pekko Streams streamlet at least once, committing only after the write; a Flink streamlet once between managed topics — and what happens when a streamlet fails.
 
 Source: https://flow.ankka.cloud/concepts/delivery/
-The sidecar gives one guarantee and keeps it without exception: an inlet's offsets are committed only
-after everything the process emitted for those records has been written to Kafka and confirmed by the
-broker. Delivery is therefore **at least once**, nothing is ever skipped by the platform, and a record
-is only ever skipped because the streamlet decided to skip it.
+Every streamlet reads its inlets as a Kafka consumer group and writes its outlets as a Kafka
+producer. What it promises when something fails depends on its engine.
 
-## Commit after the write
+| Streamlet | Outlet on | Delivery |
+|---|---|---|
+| Pekko Streams | any topic | at least once |
+| Flink | a topic the pipeline manages | each record counted once |
+| Flink | a topic it does not manage, or an ankka topic | at least once |
 
-When the process acknowledges a batch, the sidecar:
+Nothing is skipped by the platform. A record is only ever dropped because the streamlet decided to
+drop it, by emitting nothing for it.
 
-1. produces every emit of the batch to its outlet's topic;
-2. waits for the broker to confirm every one of those writes;
-3. only then commits the batch's offsets on the inlet's consumer group.
+## A Pekko Streams streamlet: commit after the write
 
-Batches of one partition are written and committed in the order they were read, one after another. A
-batch whose writes fail is never committed, and nothing read after it on that partition is committed
-either.
+An inlet's offset is committed only after everything the streamlet produced from that record, and
+from every record before it on the same partition, has been written to Kafka and acknowledged by
+the broker. A record turned into several emits is committed after the last of them.
 
-## At least once
+A failure anywhere in an inlet's stream (a record the streamlet's code throws on, a write the broker
+refuses, a lost connection) stops that inlet's stream and starts it again from the last commit,
+after a backoff that grows from one second to thirty, indefinitely. Records whose results were
+written but not yet committed are read and processed again, so a reader downstream may see a result
+twice. A rebalance that moves a partition to another pod is the same: its new owner starts from the
+last commit.
 
-A crash, a restart or a failure between step 2 and step 3 leaves records whose emits were written but
-whose offsets were not committed. The next reader of the partition starts from the last committed
-offset and delivers those records again, and the streamlet emits for them again. Streamlet logic must
-tolerate seeing a record twice, and a sink that writes elsewhere must tolerate writing it twice. There
-is no exactly-once mode.
+A record that fails every time is read again every time, and its partition makes no progress. The
+inlet's lag on the pipeline's status grows while the other partitions carry on. Clearing it is a
+change to the streamlet's code, configuration or data, never to the platform.
 
-A repeat never reorders a key: redelivery starts from the last commit and proceeds in offset order.
+Per key, order is kept: records with one key are on one partition, read in offset order, and a
+streamlet that keeps each record's key when it emits keeps that order through the next topic.
 
-## Ordering
+## A Flink streamlet: once between managed topics
 
-At most one batch per inlet partition is with the process at a time, and a batch's records are in
-offset order. Records with the same key land on the same partition, so they reach the process in the
-order they were produced. A streamlet that keeps each record's key when it emits keeps that order
-through the next topic, and so through a chain of streamlets.
+A Flink streamlet's job takes a checkpoint every checkpoint interval (ten seconds unless the
+deploy-time configuration sets `flow.streamlets.<name>.flink.checkpoint-interval`): its state, and the offset of every
+inlet partition, written together to the state store. An outlet on a topic the pipeline manages
+writes in a Kafka transaction that commits with the checkpoint. When a pod fails, the job restarts
+from the last completed checkpoint: the state as it was, the inlets read from the offsets it
+recorded, and every transaction opened since aborted. A window is written once.
 
-Batches of different partitions interleave and may be processed concurrently. Which partitions a pod
-holds changes on every rebalance, so a streamlet must never keep state per partition in memory.
+Every inlet on a managed topic, of either engine, reads with `isolation.level=read_committed`, so a
+reader downstream of a Flink streamlet sees only committed records. It sees them one checkpoint
+interval after the Flink streamlet wrote them.
 
-## Skipping is the streamlet's decision
+An outlet on a topic the pipeline does not manage, or on an ankka topic, is written at least once: a
+transaction there needs rights the pipeline is not given, so after a restart it may write again what
+it wrote after the last checkpoint.
 
-The sidecar never skips a record and never sends one to a dead-letter topic. A streamlet that does
-not want a record — including one it cannot decode — acknowledges the batch without emitting for that
-record. The offset is committed with the rest of the batch and the record is gone from the pipeline's
-point of view.
+The records a Flink streamlet writes carry the timestamp its job gives them: for a window, the
+window's last millisecond, not the time it was written.
 
-## When something fails
+The inlet's consumer group is committed on each checkpoint, so the lag the status reports for a
+Flink streamlet trails by up to one checkpoint interval.
 
-Any of these fails the stream:
+## When the state cannot be read
 
-- the process fails a batch;
-- the process breaks the protocol: an emit to an outlet it did not declare, an emit after its batch's
-  acknowledgement, an acknowledgement for a batch that is not in flight;
-- a write to Kafka fails;
-- the process becomes unreachable or closes the conversation;
-- a record is larger than the protocol's per-record limit (just under 4 MiB).
-
-The sidecar then:
-
-1. discards every batch in flight, committing nothing for them;
-2. reports the pod not ready;
-3. waits, starting at 500 ms and doubling up to `FLOW_RECONNECT_MAX_BACKOFF` (30 s by default);
-4. repeats discovery, opens a new conversation and rebuilds its consumers and producers;
-5. resumes every partition from its last committed offset.
-
-It does this indefinitely; it never gives up and never exits for a failed batch. A conversation that
-then runs for longer than twice the maximum backoff resets the wait to 500 ms. The only thing that
-makes the sidecar exit is a discovery refusal: a process whose descriptor differs from the deployed
-one.
-
-## Stalled partitions
-
-A batch that fails every time is redelivered every time, so its partition makes no progress: it
-**stalls**. Other partitions of the same inlet carry on. A stall is visible three ways:
-
-- the inlet's consumer lag on that partition grows;
-- the sidecar's `ankka_flow_sidecar_stalled_seconds` gauge reports the age of the oldest uncommitted
-  batch of that partition;
-- once the stall passes `FLOW_STALL_WARNING_AFTER` (five minutes by default), the sidecar records one
-  `PartitionStalled` warning event on its pod, naming the pipeline, streamlet, inlet, partition and the
-  last error. Outside Kubernetes it logs the same warning.
-
-The stall is measured from the first attempt at the batch. Each failure tears the stream down and the
-batch is read again after the reconnect, but the clock keeps running across those reconnects; it
-resets only when the partition is revoked and moves to another pod.
-
-The stall clears when a batch of that partition commits. Clearing it is a change to the streamlet's
-code or configuration, or to the data it depends on, not to the platform: the platform will not move
-past the record for it.
-
-## Rebalances
-
-When a rebalance takes a partition away from a pod while one of its batches is in flight, that is not
-a failure. The batch's acknowledgement and emits are discarded, nothing more is committed for the
-partition on that pod, and the new owner reads it again from the last commit. Emits the old owner had
-already written are written again by the new owner: one more case of at least once.
+A new image of a Flink streamlet resumes from the state the old one left. When it cannot read that
+state, its job fails, the pipeline is `Degraded` with the condition `StateUnreadable`, and the state
+store is left as it was. Deploy the previous image again, or [reset](../deploy/reset.md) the
+streamlet, which starts it at a new state epoch with no state.

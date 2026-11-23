@@ -29,10 +29,6 @@ operator/src/main/scala/com/thinkmorestupidless/ankka/flow/operator/ConsumerGrou
 operator/src/main/scala/com/thinkmorestupidless/ankka/flow/operator/TopicResolution.scala
 operator/src/test/scala/com/thinkmorestupidless/ankka/flow/operator/ConsumerGroupResetSuite.scala
 operator/src/test/scala/com/thinkmorestupidless/ankka/flow/operator/TopicResolutionSuite.scala
-protocol/src/main/scala/com/thinkmorestupidless/ankka/flow/protocol/Fingerprint.scala
-sidecar/src/main/scala/com/thinkmorestupidless/ankka/flow/sidecar/CommitAfterWrite.scala
-sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/ConsumerLagKafkaSuite.scala
-sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/PrometheusRulesSuite.scala
-sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/RecordKafkaSuite.scala
-sidecar/src/test/scala/com/thinkmorestupidless/ankka/flow/sidecar/SinkCommittingAfterKafkaSuite.scala
-sidecar/src/universal/agent/prometheus.yaml
+sdks/pekko-streams/src/main/scala/com/thinkmorestupidless/ankka/flow/pekko/CommitAfterWrite.scala
+sdks/pekko-streams/src/test/scala/com/thinkmorestupidless/ankka/flow/pekko/RecordKafkaSuite.scala
+sdks/pekko-streams/src/test/scala/com/thinkmorestupidless/ankka/flow/pekko/SinkCommittingAfterKafkaSuite.scala

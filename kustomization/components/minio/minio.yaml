@@ -1,0 +1,75 @@
+# A single MinIO and a Job that makes its bucket `flow-state`: a state store for Flink streamlets on
+# a development cluster only (one pod, no persistence beyond it, a password in the manifest). The
+# images are Chainguard's builds, pinned by the digests V.minioImage and V.minioClientImage name in
+# project/Dependencies.scala; change both places together.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: cgr.dev/chainguard/minio@sha256:548147b5fc95a67e3e45285dff7e0e50326c3eb1977c6218039461771156c5e7
+          imagePullPolicy: IfNotPresent
+          args: ["server", "/data"]
+          env:
+            - { name: MINIO_ROOT_USER, value: flow }
+            - { name: MINIO_ROOT_PASSWORD, value: flow-state-password }
+          ports:
+            - containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            periodSeconds: 5
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bucket
+  namespace: minio
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: cgr.dev/chainguard/minio-client@sha256:328ad584835c07ff4b28418aa54d9d9a83893b86bc543436c910359cca76ce19
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: MC_HOST_s, value: "http://flow:flow-state-password@minio.minio.svc:9000" }
+          args: ["mb", "--ignore-existing", "s/flow-state"]

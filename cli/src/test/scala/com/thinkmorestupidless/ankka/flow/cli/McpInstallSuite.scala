@@ -6,7 +6,7 @@ import java.nio.file.Files
 import com.thinkmorestupidless.ankka.flow.cli.mcp.JsonText.*
 import com.thinkmorestupidless.ankka.flow.cli.mcp.McpInstall
 import com.thinkmorestupidless.ankka.flow.cli.mcp.McpInstall.{Outcome, Request}
-import com.thinkmorestupidless.ankka.flow.protocol.Json
+import com.thinkmorestupidless.ankka.flow.descriptor.Json
 
 /** `flow mcp install`, everything under temporary directories and a scripted `claude`. */
 class McpInstallSuite extends munit.FunSuite:

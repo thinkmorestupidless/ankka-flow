@@ -11,16 +11,15 @@ import io.fabric8.kubernetes.model.annotation.{Group, Kind, Plural, ShortNames, 
  * A pipeline as the CLI emits it and the operator runs it (contracts/resource-and-operator.md).
  *
  * Written by `flow generate`, never by the operator. It says everything that will run except what
- * only the cluster knows: the sidecar image (the operator's own setting) and Kafka cluster secrets.
- * Every field has a default so an older operator reading a newer resource sees a missing field as
- * its default.
+ * only the cluster knows: Kafka cluster secrets and the state store. Every field has a default so
+ * an older operator reading a newer resource sees a missing field as its default.
  */
 @JsonInclude(JsonInclude.Include.NON_ABSENT)
 final case class AnkkaFlowSpec(
     pipeline: String = "",
     version: String = "",
-    /** The protocol version the descriptors were written against, "MAJOR.MINOR". */
-    protocolVersion: String = "",
+    /** The descriptor version the streamlets' descriptors were written against, "MAJOR.MINOR". */
+    descriptorVersion: String = "",
     onDelete: OnDelete = OnDelete(),
     streamlets: List[StreamletSpec] = Nil,
     topics: List[TopicSpec] = Nil
@@ -40,20 +39,41 @@ object OnDelete:
 final case class StreamletSpec(
     name: String = "",
     image: String = "",
+    /** The engine the descriptor names: `pekko-streams` or `flink`. */
+    engine: String = "",
+    /** Pekko Streams: the pods. Flink: 1 runs the job, 0 suspends it. */
     replicas: Int = 1,
+    /** Flink only: the job's parallelism; the job's own when absent. */
+    @JsonDeserialize(contentAs = classOf[java.lang.Integer])
+    parallelism: Option[Int] = None,
+    /** Flink only. */
+    flink: Option[FlinkSpec] = None,
     /** Every declared parameter, resolved and typed. */
     config: Map[String, JsonNode] = Map.empty,
     /** Port name to topic id. */
     inlets: Map[String, String] = Map.empty,
     outlets: Map[String, String] = Map.empty,
     /** The descriptor's `streamlet` object, verbatim, with its snake_case keys (DESCRIPTOR.md). */
-    descriptor: JsonNode = null,
-    /**
-     * `true` for a streamlet whose descriptor the platform ships (`builtin/<name>` in the
-     * blueprint): its `image` is empty and its pod has only the sidecar, which runs the stage.
-     */
-    builtin: Boolean = false
+    descriptor: JsonNode = null
 )
+
+/** A Flink streamlet's job: from its descriptor, and from the deploy-time configuration. */
+@JsonInclude(JsonInclude.Include.NON_ABSENT)
+final case class FlinkSpec(
+    entryClass: String = "",
+    /** The Flink line the job was built against, "MAJOR.MINOR". */
+    version: String = "",
+    checkpointInterval: String = FlinkSpec.DefaultCheckpointInterval,
+    jobManager: Resources = Resources(),
+    taskManager: Resources = Resources()
+)
+
+object FlinkSpec:
+  val DefaultCheckpointInterval = "10s"
+
+/** A job manager's or task manager's resources, as Kubernetes quantities. */
+@JsonInclude(JsonInclude.Include.NON_ABSENT)
+final case class Resources(cpu: String = "1", memory: String = "1024m")
 
 @JsonInclude(JsonInclude.Include.NON_ABSENT)
 final case class TopicSpec(
@@ -61,6 +81,8 @@ final case class TopicSpec(
     /** The Kafka topic's name. */
     name: String = "",
     managed: Boolean = true,
+    /** The ankka topic this is, `<project>/<name>` in the blueprint. Never managed. */
+    ankka: Option[AnkkaRef] = None,
     cluster: Option[String] = None,
     bootstrapServers: Option[String] = None,
     // `contentAs` because Scala's Option[Int] erases to Option[Object]: without it Jackson decodes
@@ -72,13 +94,12 @@ final case class TopicSpec(
     connectionConfig: Map[String, String] = Map.empty,
     producerConfig: Map[String, String] = Map.empty,
     consumerConfig: Map[String, String] = Map.empty,
-    topicConfig: Map[String, String] = Map.empty,
-    /** Batching for inlets reading this topic (research R10). */
-    batch: BatchSpec = BatchSpec()
+    topicConfig: Map[String, String] = Map.empty
 )
 
+/** An ankka project's topic, by the names ankka gives it. */
 @JsonInclude(JsonInclude.Include.NON_ABSENT)
-final case class BatchSpec(maxRecords: Int = 100, maxBytes: Long = 1024L * 1024)
+final case class AnkkaRef(project: String = "", name: String = "")
 
 @JsonInclude(JsonInclude.Include.NON_ABSENT)
 final case class AnkkaFlowStatus(
@@ -87,12 +108,18 @@ final case class AnkkaFlowStatus(
     phase: String = "",
     detail: String = "",
     lastTransitionTime: String = "",
+    conditions: List[Condition] = Nil,
     streamlets: List[StreamletStatus] = Nil,
     topics: List[TopicStatus] = Nil
 ):
-  /** Equal but for the transition time: an unchanged report is not written again. */
+  /** Equal but for the transition times: an unchanged report is not written again. */
   def sameReport(other: AnkkaFlowStatus): Boolean =
-    copy(lastTransitionTime = "") == other.copy(lastTransitionTime = "")
+    def untimed(s: AnkkaFlowStatus) =
+      s.copy(
+        lastTransitionTime = "",
+        conditions = s.conditions.map(_.copy(lastTransitionTime = ""))
+      )
+    untimed(this) == untimed(other)
 
 object AnkkaFlowStatus:
   val Pending  = "Pending"
@@ -100,12 +127,45 @@ object AnkkaFlowStatus:
   val Degraded = "Degraded"
   val Failed   = "Failed"
 
+/** A condition of the pipeline, as Kubernetes conditions are: `status` is `True` or `False`. */
+@JsonInclude(JsonInclude.Include.NON_ABSENT)
+final case class Condition(
+    `type`: String = "",
+    status: String = "",
+    reason: String = "",
+    message: String = "",
+    lastTransitionTime: String = ""
+)
+
+object Condition:
+  val Ready                    = "Ready"
+  val FlinkOperatorMissing     = "FlinkOperatorMissing"
+  val StateStoreMissing        = "StateStoreMissing"
+  val TopicNotGranted          = "TopicNotGranted"
+  val MachineCredentialRefused = "MachineCredentialRefused"
+  val StateUnreadable          = "StateUnreadable"
+
+  val True  = "True"
+  val False = "False"
+
 @JsonInclude(JsonInclude.Include.NON_ABSENT)
 final case class StreamletStatus(
     name: String = "",
+    engine: String = "",
     desired: Int = 0,
     ready: Int = 0,
-    detail: String = ""
+    detail: String = "",
+    inlets: List[InletStatus] = Nil
+)
+
+/** An inlet's consumer group and how far behind it is; `lag` absent when it is not known. */
+@JsonInclude(JsonInclude.Include.NON_ABSENT)
+final case class InletStatus(
+    name: String = "",
+    topic: String = "",
+    group: String = "",
+    @JsonDeserialize(contentAs = classOf[java.lang.Long])
+    lag: Option[Long] = None
 )
 
 @JsonInclude(JsonInclude.Include.NON_ABSENT)
