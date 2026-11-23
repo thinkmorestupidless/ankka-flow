@@ -63,7 +63,7 @@ class LagKafkaSuite extends munit.FunSuite:
         group,
         offsets.map((p, o) => new TopicPartition(name, p) -> new OffsetAndMetadata(o)).toMap.asJava
       ).all().get()
-    )
+    ): Unit
 
   test("a group's lag is the sum over partitions of the end offset minus its committed offset") {
     filled("orders", 10)

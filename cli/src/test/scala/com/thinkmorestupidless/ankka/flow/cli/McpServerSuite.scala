@@ -448,7 +448,7 @@ class McpServerSuite extends munit.FunSuite:
         s"/api/v1/namespaces/shop/pods/$pod/log?pretty=false&container=$container&tailLines=$lines"
       )
       .andReturn(200, body)
-      .always()
+      .always(): Unit
 
   test("pipeline_logs reads every pod carrying the streamlet's labels, a Flink job's among them") {
     install(pipeline("cart", "Ready"))

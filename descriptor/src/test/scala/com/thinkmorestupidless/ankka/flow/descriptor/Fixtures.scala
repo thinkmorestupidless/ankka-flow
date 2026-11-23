@@ -27,7 +27,7 @@ object Fixtures:
   private def pekko(
       name: String,
       description: String = "",
-      inlets: Vector[Port] = Vector.empty,
+      inlets: Vector[Port],
       outlets: Vector[Port] = Vector.empty,
       parameters: Vector[Parameter] = Vector.empty
   ) = descriptor(
