@@ -2,6 +2,8 @@ package com.thinkmorestupidless.ankka.flow.operator
 
 import java.util.Properties
 
+import scala.concurrent.duration.*
+
 import org.apache.kafka.clients.admin.{Admin, AdminClientConfig, NewTopic}
 import org.apache.kafka.common.acl.*
 import org.apache.kafka.common.resource.{PatternType, ResourcePattern, ResourceType}
@@ -74,6 +76,8 @@ class AnkkaClusterKafkaSuite extends munit.FunSuite:
       new AccessControlEntry(s"User:$user", "*", op, AclPermissionType.ALLOW)
     )
 
+  private val Both = Set(Grant.Right.Read, Grant.Right.Write)
+
   override def beforeAll(): Unit =
     kafka.start()
     val p = new Properties()
@@ -93,12 +97,16 @@ class AnkkaClusterKafkaSuite extends munit.FunSuite:
         .all()
         .get()
     finally admin.close()
+    // The broker's authorizer applies ACLs from the metadata log asynchronously: until it has, a
+    // granted user is refused like any other. Every case starts once the grant is enforced.
+    val deadline = System.nanoTime + 60.seconds.toNanos
+    while executor.grants(topic(sasl("granted", "granted-secret")), Both) != Grant.Granted do
+      assert(System.nanoTime < deadline, "the broker never enforced the ACLs it was given")
+      Thread.sleep(250)
 
   override def afterAll(): Unit =
     executor.close()
     kafka.stop()
-
-  private val Both = Set(Grant.Right.Read, Grant.Right.Write)
 
   test("a machine with both rights is granted") {
     assertEquals(executor.grants(topic(sasl("granted", "granted-secret")), Both), Grant.Granted)
