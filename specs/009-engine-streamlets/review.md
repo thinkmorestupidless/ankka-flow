@@ -218,3 +218,131 @@ Tests run: `sbt -Dflow.cluster.tests=off descriptor/test blueprint/test`, which 
 and k3s, outside this review's budget), and the native build (no GraalVM run was asked for). The
 blocking finding comes from reading the Pekko and pekko-connectors-kafka sources and needs the
 suggested Kafka case to reproduce it.
+
+## Second round
+
+# Review: 009 engine streamlets, the fixes of the first round (5629187...HEAD)
+
+**Verdict:** Approve with comments. The should-fix is expected before merge. The nits are optional.
+**What it does:** Answers the first round's twelve findings in six commits. The Pekko Streams
+runner's hold stage now releases held offsets only on normal completion. The docs tool's samples
+check is turned on and each of its problems is answered. Unreadable ankka contracts are refused.
+The docs gain a limitations entry, a Maven build, the Flink keys the operator sets and each
+engine's lag.
+**Should it exist:** Yes. Each commit answers one first-round finding, and none adds scope.
+**Read:** In full: the first round's report; `CommitAfterWrite.scala` (the runner's form and the
+batch form above it), `HoldUntilNextSuite.scala`, the new `RunnerKafkaSuite` case,
+`AnkkaDeclarations.scala` and its suite, every docs and feature hunk, the `research.md` hunk.
+Skimmed: the marketplace copies (rendered; `docs check` fails when stale). Opened outside the
+diff: `Runner.scala` (`stop`, `drainAndShutdown`), `RunnerKafkaSuite`'s `start`/`stop` helpers,
+`FlinkRendering.scala:44-63` (to check the key list in `deploy/install.md`), `build.sbt` (the Java
+modules' `crossPaths := false`, so the Maven artifact names hold), `project/Dependencies.scala`
+(Flink 2.2.1), `docs/reference/cli.md` and `contracts/cli.md` (the `--ankka-topics` refusals).
+**Size:** 27 files, +436 −32 hand-written lines. About half of that is this report's first round.
+The code is around 180 lines, so the change reviews in one sitting.
+
+### Resolutions of the first round
+
+| First-round finding | Resolution | Holds? |
+|---|---|---|
+| Blocking: `CommitAfterWrite` released held offsets on failure | `holdUntilNext`: a `None` marker concatenated after the writes, `onComplete` returns `None` | **Holds.** `concat` emits only after the upstream completes normally. On failure `statefulMap`'s `onComplete` now emits nothing. The committer's emergency commit then covers only released offsets, each followed by a confirmed later offset. A drained stop (`drainAndShutdown`) and a kill-switch shutdown both complete normally and still release. The new Kafka case's closing `committed == 2` exercises that path. `HoldUntilNextSuite` would fail on the old release: its failure case would see `0 -> 1`. Ran it: 2 passed. The Kafka case was not run here, and `research.md` honestly records that it cannot tell the defect from the fix. |
+| Should fix: the contributing page's language rule named Python | Restated for Scala and Java, with the one-engine reason comment | **Holds.** |
+| Should fix: nothing enforced the rule | `extra.docs.samples: {facet: languages, tested: true}` | **Holds.** `just docs`: 35 pages, no problems. Every `[scala, java]` page (`contracts`, `images`, `testing`) shows each sample in both languages, or gives the engine as the reason. The single-language pages (`pekko-streams-*` `[scala]`, `flink-*` `[java]`) match their SDKs. No page, sample or limitations entry lacks a language a supported engine can do. |
+| Should fix: `contracts.md` tabs written in the page | `ports` regions in `Cleaner.scala` and `CartCounter.java`, included | **Holds.** Each region holds exactly the two declarations the tab shows. |
+| Should fix: limitations lacked the Pekko Streams language limit | "Pekko Streams streamlets in Scala" | **Holds.** |
+| Should fix: `install.feature` named the protocol | "the descriptor version" | **Holds.** `just features`: 0 findings in 77 scenarios. |
+| Todo: hand-edited native-image metadata, `cli-native` not run | Deferred to the pull request's `cli-native` check | **Holds as an answer, still open as a check.** No pull request exists yet, so nothing has built the binary. Do not mark the pull request ready before that job is green. |
+| Nit: Flink page sbt-only | Maven `<dependencies>` block | **Holds.** The artifact names match `build.sbt` (Java modules unsuffixed), and the Flink version matches `V.flink` 2.2.1. |
+| Nit: `first-streamlet.md` facet | Dropped | **Holds.** |
+| Question: flow's Flink keys override the store's | Intended, and listed in `deploy/install.md` | **Holds.** The list matches `FlinkRendering.configuration` key for key, including the conditional `env.java.opts.taskmanager`. |
+| Question: a malformed contract read as none | Refused, naming the topic | **Holds in code.** Ran `AnkkaDeclarationsSuite`: 3 passed. The reference pages were not updated (see Should fix). |
+| Thought: lag at rest | Engines page says what each engine's lag rests at | **Holds.** |
+| Note: the brain's Pekko line | ankka-brain local commit | **Holds.** `ankka-brain/family.md` names the Pekko Streams SDK at Pekko 1.7.1 and sbt 1.13.1. |
+
+### Blocking
+
+None.
+
+### Should fix
+
+- `docs/reference/cli.md` (the `verify` refusal table) and
+  `specs/009-engine-streamlets/contracts/cli.md` (`--ankka-topics`) — issue (non-blocking): e1b25bb
+  adds a user-visible refusal, `--ankka-topics <p>=<file>: '<file>': topic '<name>': a contract must
+  have a name`, and neither page mentions it. The reference table also has no row for the
+  `--ankka-topics` file's other refusals: cannot read, not JSON, not a list, a topic with no name.
+  The contract still says only that `contract: {"name", "fingerprint"}` is read when present.
+  CLAUDE.md: "A behaviour change is a docs change. The pages restate CLI flags …; change them in
+  the same commit." Suggestion: add one row to the refusal table, "the `--ankka-topics` file cannot
+  be read, is not a JSON array of named topics, or a topic's `contract` is not absent, `null` or an
+  object with a string `name`", whose message is `--ankka-topics <project>=<file>: …`. State the
+  same rule in the contract's paragraph.
+
+### Nits
+  Resolved: rows for the malformed option, the unreadable file and each unreadable contract in `docs/reference/cli.md`; the contract row added to `contracts/cli.md` with the person's approval, 29dc0ad.
+
+- `sdks/pekko-streams/src/main/scala/com/thinkmorestupidless/ankka/flow/pekko/CommitAfterWrite.scala:95-108`
+  — nitpick (non-blocking): `holdUntilNext` was inserted between `flowCommittingAfter` and its
+  Scaladoc. That leaves two doc comments in a row, and the first (the runner's form) is now
+  detached from the method it describes. Suggestion: move `holdUntilNext` and its comment above
+  the "The runner's form" comment.
+  Resolved: the Scaladoc is back above `flowCommittingAfter`, 29dc0ad.
+- `RunnerKafkaSuite.scala:149-151` and `research.md:679` — nitpick (non-blocking): the 2 MiB value
+  is said to be "past the broker's limit". Neither the runner nor the suite sets
+  `max.request.size`, so the producer refuses the record client-side (`RecordTooLargeException`,
+  1 MiB by default) before any broker sees it. The test is just as valid either way. Suggestion:
+  "past the producer's request size limit".
+  Resolved: both say the producer's request size limit, 29dc0ad.
+- `cli/src/main/scala/com/thinkmorestupidless/ankka/flow/cli/AnkkaDeclarations.scala:53` —
+  nitpick (non-blocking): a `contract` that is not an object (a string, say) gets the same message
+  as an object without a name, "a contract must have a name". Suggestion: "a contract must be an
+  object with a name" for both branches. The suite's `endsWith` assertion changes with it.
+
+### Questions
+  Resolved: a non-object contract is refused with "a contract must be an object", with its test case, 29dc0ad.
+
+- `cli/src/main/scala/com/thinkmorestupidless/ankka/flow/cli/AnkkaDeclarations.scala:49` —
+  question: the new rule refuses a contract flow cannot read. A `fingerprint` that is present but
+  not a string (`{"name": "x.v1", "fingerprint": 7}`) is still read as no fingerprint, and the port
+  is then matched by name alone. That passes a check the file meant to make stricter. Should it be
+  refused the same way? Either answer works if it is stated: a refusal with its test case, or the
+  contract page saying a non-string fingerprint is ignored.
+
+### Praise
+  Resolved: yes; a fingerprint that is not a string (and not `null`) is refused, "a contract's fingerprint must be a string", with its test case, 29dc0ad.
+
+- `CommitAfterWrite.scala` `holdUntilNext` — praise: the hold is now a small, generic, pure stage
+  with its own unit suite. The failure case is deterministic with no broker, whereas the Kafka case
+  can only race. The fix is easier to reason about than the code it replaces. Keeping `commitFirst`
+  as a bypass outside it keeps `mutationCheck`'s meaning unchanged.
+- `specs/009-engine-streamlets/research.md:673-680` — praise: the design record says what the
+  first version got wrong and why the broker test could not see it, instead of rewriting history.
+
+### Out of scope
+
+- note: `holdUntilNext` (and the release before it) assumes offsets rise within a partition for
+  the life of one stream. Suppose a partition is revoked mid-run and comes back after another
+  member has committed past the held offset. The first later offset then releases the stale held
+  one, which can move the group's position backwards: duplicates, not loss, so this is within at
+  least once. This predates this change. If rebalances inside one run are expected, file an issue
+  to drop a partition's held offset on revocation (`ConsumerRebalanceEvent` / `PartitionAssignmentHandler`).
+
+### Checks applied
+
+General groups applied: Correctness, Design and scope, Error handling, Concurrency and state (the
+stream's completion and failure paths), Tests, API and compatibility (the new CLI refusal),
+Documentation (the language rule, the includes, limitations, reference pages), Commit and PR
+hygiene (six Conventional Commits headers parse, each naming its finding). Skipped: Security, Data
+and migrations, Performance, Observability, Dependencies, because the diff adds no entry point,
+stored format, hot path, setting or dependency.
+Language skills: the general checklist plus the Scala and Java concerns from round one
+(streams/concurrency, totality of the JSON match, munit fixtures). The Java hunk is two marker
+comments.
+Project rules: `CLAUDE.md` (commit after write, never skip, a behaviour change is a docs change,
+samples from tested code), `docs/contributing/documentation.md`. There is no repository
+`REVIEW.md`: the gather script listed `specs/009-engine-streamlets/REVIEW.md`, which is this file
+matched case-insensitively. The rule that every sample appears in every supported language is
+held by `extra.docs.samples`, which now passes.
+Tests run: `sbt 'cli/testOnly *AnkkaDeclarationsSuite' 'pekkoSdk/testOnly *HoldUntilNextSuite'`
+(3 and 2 passed), `just docs` (35 pages, no problems), `just features` (0 findings). Not run:
+`RunnerKafkaSuite` and `mutationCheck` (Docker), the k3s suite (excluded by instruction), and
+`cli-native` (no GraalVM; see the resolution table).
