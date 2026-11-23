@@ -88,7 +88,8 @@ secret with write access to `thinkmorestupidless/ankka-marketplace`.
 
 ## The site
 
-The docs workflow builds the site on every pull request that touches the documentation and publishes
-it to GitHub Pages from `main`, at `flow.ankka.cloud`: a custom domain set in the repository's Pages
-settings, with a DNS CNAME to the GitHub Pages host. Pages is enabled once, with "GitHub Actions" as
+The `ci` workflow's `docs` job checks and builds the site on every pull request that touches the
+documentation. A release publishes it to GitHub Pages once its libraries reach Maven Central, so the
+site always describes the newest release, at `flow.ankka.cloud`: a custom domain set in the
+repository's Pages settings, with a DNS CNAME to the GitHub Pages host. Pages is enabled once, with "GitHub Actions" as
 its source.

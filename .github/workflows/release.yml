@@ -3,8 +3,8 @@ name: release
 # A tag is a release. A tag with a hyphen (v0.5.0-rc.1) is a pre-release: it gets the release page and
 # the native `flow` binaries, and nothing else — no image reaches the registry, no artifact reaches
 # Maven Central, no plugin reaches the marketplace, and the Homebrew formula is not touched, so what
-# `brew install` gives a reader is always a release. `images`, `sdks`, `marketplace` and `homebrew`
-# are gated on the tag's name below; `release-page` and
+# `brew install` gives a reader is always a release, and the documentation site is not published.
+# `images`, `sdks`, `marketplace`, `homebrew` and `docs` are gated on the tag's name below; `release-page` and
 # `cli-native` run on every tag, and the publishing jobs do not wait on them.
 
 on:
@@ -292,9 +292,9 @@ jobs:
     # job clones it, replaces `plugins/ankka-flow/` with the rendered plugin, writes ankka-flow's entry
     # into the manifest's `plugins` list without touching the others, and pushes an ordinary commit —
     # never a force push, which would erase the other projects' plugins. The manifest's name, owner and
-    # description, and the README, are ankka's, published by ankka's own release. The documentation site
-    # is published from main by docs.yml; a release adds the plugin, so that a version of the plugin
-    # holds the documentation of that release.
+    # description, and the README, are ankka's, published by ankka's own release. The plugin and the
+    # documentation site (the `docs` job) are both published by a release, so each holds the
+    # documentation of that release.
     #
     # Needs `MARKETPLACE_REPO_TOKEN`: a token with contents:write on ankka-marketplace, because the
     # workflow's own token has no access to another repository.
@@ -352,3 +352,35 @@ jobs:
           done
           git tag -f "ankka-flow-${GITHUB_REF_NAME}"
           git push --force "$remote" "ankka-flow-${GITHUB_REF_NAME}"
+
+  docs:
+    # The documentation site (pages, llms.txt, llms-full.txt, raw Markdown per page, docs-index.json
+    # and latest.json naming this release as the newest) for the release just tagged, to GitHub
+    # Pages at https://flow.ankka.cloud/, a custom domain set in the repository's Pages settings with
+    # a DNS CNAME to the GitHub Pages host; Pages must be enabled with "GitHub Actions" as its source,
+    # once. Never from `main`: the pages describe what a reader can install. It waits for the SDKs
+    # because a release that never reached Maven Central should not be documented as released.
+    #
+    # A release tag only: a pre-release (a tag with a hyphen) publishes no site.
+    needs: sdks
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the tags: the pages name the release
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - run: uv run --project tools/docs docs build --release "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: target/docs-site
+      - id: deploy
+        uses: actions/deploy-pages@v5
