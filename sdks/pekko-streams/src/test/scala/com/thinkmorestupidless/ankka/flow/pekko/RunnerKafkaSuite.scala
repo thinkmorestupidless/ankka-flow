@@ -147,8 +147,8 @@ class RunnerKafkaSuite extends KafkaSuite:
   }
 
   /**
-   * Each record written twice, as `v` and `v!`; `big`'s second while asked is past the broker's
-   * limit.
+   * Each record written twice, as `v` and `v!`; `big`'s second while asked is past the producer's
+   * request size limit, so it fails before it reaches the broker.
    */
   final class Twice(val failing: AtomicBoolean) extends PekkoStreamlet("upper"):
     val in    = inlet("in", Contract("x.v1"), Codec.string)

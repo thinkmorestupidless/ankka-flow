@@ -53,12 +53,15 @@ class AnkkaDeclarationsSuite extends munit.FunSuite:
       val f = Files.createTempFile("topics", ".json")
       Files.writeString(f, json)
       AnkkaDeclarations.load(s"checkout=$f")
-    for bad <- Seq("""{"fingerprint": "sha256:00"}""", """{"name": 7}""", "\"cart-events.v1\"") do
-      val got = load(s"""[{"name": "cart-events", "contract": $bad}]""")
-      assert(
-        got.left.exists(_.endsWith(": topic 'cart-events': a contract must have a name")),
-        s"$bad: $got"
+    for (bad, why) <- Seq(
+        """{"fingerprint": "sha256:00"}"""       -> "a contract must have a name",
+        """{"name": 7}"""                        -> "a contract must have a name",
+        "\"cart-events.v1\""                     -> "a contract must be an object",
+        """{"name": "c.v1", "fingerprint": 7}""" -> "a contract's fingerprint must be a string"
       )
+    do
+      val got = load(s"""[{"name": "cart-events", "contract": $bad}]""")
+      assert(got.left.exists(_.endsWith(s": topic 'cart-events': $why")), s"$bad: $got")
     assertEquals(
       load("""[{"name": "notices", "contract": null}]""").map(_.topics),
       Right(Map("notices" -> None))

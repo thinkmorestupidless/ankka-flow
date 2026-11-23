@@ -23,6 +23,7 @@ when the topic declares one, `contract: {"name", "fingerprint"}`. Other fields a
 | the topic declares no contract | refused: `ankka topic <project>/<name> declares no contract: declare one with ankka projects topics set <name> --contract … --schema …` |
 | no file for a project the blueprint names | verified, with the note `ankka topics of project '<project>' were not checked: pass --ankka-topics <project>=<file>` |
 | a file for a project the blueprint does not name | refused, naming it |
+| a topic's `contract` present and not `null`, but not an object, or with no string `name`, or a `fingerprint` that is not a string | refused as a file flow cannot read: `--ankka-topics <option>: '<file>': topic '<name>': a contract must be an object` (or `must have a name`, or `a contract's fingerprint must be a string`) |
 
 Always, with or without a file: `ankka` with `managed = true` is refused (`an ankka topic is the
 ankka project's: a pipeline never creates it`), as is `ankka` with `topic.name` or

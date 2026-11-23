@@ -65,6 +65,9 @@ one pass:
 | the project does not declare the ankka topic | `ankka topic <project>/<name> is not declared; project <project> declares: <names>` |
 | the ankka topic declares no contract | `ankka topic <project>/<name> declares no contract: declare one with ankka projects topics set <name> --contract … --schema …` |
 | `--ankka-topics` names a project no topic does | `--ankka-topics names project '<project>', which no topic of the blueprint does` |
+| `--ankka-topics` not of the form `<project>=<file>` | `--ankka-topics <option>: expected <project>=<file>` |
+| an `--ankka-topics` file that cannot be read, or is not the JSON array ankka prints | `--ankka-topics <option>: cannot read '<file>': …`, or `--ankka-topics <option>: '<file>': expected the JSON array ankka projects topics list -o json prints` |
+| a topic in that file whose `contract` flow cannot read | `--ankka-topics <option>: '<file>': topic '<name>': a contract must be an object`, `… must have a name` or `… a contract's fingerprint must be a string` |
 | a topic sets `consumer-config.flow.batch` | `Topic '<id>' sets consumer-config.flow.batch, which is no longer a setting; remove it.` |
 | an illegal topic or Kafka cluster name | `'<name>' is not a valid topic name, …`, `Invalid Kafka cluster name '<name>'. …` |
 | `--conf` does not parse | `--conf <file>: <reason>` |

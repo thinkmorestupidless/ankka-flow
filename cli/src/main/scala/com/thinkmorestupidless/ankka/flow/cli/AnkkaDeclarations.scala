@@ -42,15 +42,15 @@ object AnkkaDeclarations:
                   val contract: Either[String, Option[Contract]] = item.field("contract") match
                     case None | Some(Json.Null) => Right(None)
                     case Some(c: Json.Obj) =>
-                      c.field("name") match
-                        case Some(Json.Str(n)) =>
-                          Right(
-                            Some(
-                              Contract(n, c.field("fingerprint").collect { case Json.Str(f) => f })
-                            )
-                          )
+                      (c.field("name"), c.field("fingerprint")) match
+                        case (Some(Json.Str(n)), None | Some(Json.Null)) =>
+                          Right(Some(Contract(n, None)))
+                        case (Some(Json.Str(n)), Some(Json.Str(f))) =>
+                          Right(Some(Contract(n, Some(f))))
+                        case (Some(Json.Str(_)), Some(_)) =>
+                          Left(s"topic '$name': a contract's fingerprint must be a string")
                         case _ => Left(s"topic '$name': a contract must have a name")
-                    case Some(_) => Left(s"topic '$name': a contract must have a name")
+                    case Some(_) => Left(s"topic '$name': a contract must be an object")
                   contract.map(c => m + (name -> c))
                 case _ => Left("every topic must have a name")
             }

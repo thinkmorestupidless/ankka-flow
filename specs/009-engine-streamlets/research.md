@@ -676,7 +676,7 @@ returns, and the committer commits a batch in flight as an emergency when its up
 record made into two elements whose second write failed could be committed. The release on
 completion is now a marker concatenated after the writes, which only a normal completion reaches,
 and `onComplete` releases nothing. `HoldUntilNextSuite` fails with the old release; the Kafka case
-beside it (`RunnerKafkaSuite`, the second of two writes past the broker's size limit) passed with
+beside it (`RunnerKafkaSuite`, the second of two writes past the producer's request size limit) passed with
 the defect too, because whether the emergency commit lands races the consumer's stop. The committer then
 commits what it is handed (`OffsetFirstObserved`). The consumer's stop timeout is zero, so a failed
 run leaves its group at once and its restart is assigned promptly; a stop is

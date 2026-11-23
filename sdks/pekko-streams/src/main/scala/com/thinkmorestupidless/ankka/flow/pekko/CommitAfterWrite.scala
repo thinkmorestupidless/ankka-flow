@@ -93,14 +93,6 @@ object CommitAfterWrite:
       .toMat(Committer.sinkWithOffsetContext[Unit](committerSettings))(Keep.right)
 
   /**
-   * The runner's form: each element is written on its own, up to `parallelism` writes in flight and
-   * their results kept in the order the elements were read. An offset is handed to the committer
-   * once its element's write has succeeded and a later offset of its partition has been confirmed
-   * too, or when the stream completes: several elements carrying one offset (one record made into
-   * several) are all confirmed before it is committed. A failed write fails the stream with nothing
-   * from it onwards committed, and what was held back is not committed either.
-   */
-  /**
    * Holds each partition's latest confirmed offset, and hands it on once a later offset of that
    * partition arrives, or when the stream completes. On failure nothing held is handed on:
    * `statefulMap` runs its `onComplete` on failure too, so the release on completion is a marker
@@ -125,6 +117,14 @@ object CommitAfterWrite:
       )
       .filter(_.nonEmpty)
 
+  /**
+   * The runner's form: each element is written on its own, up to `parallelism` writes in flight and
+   * their results kept in the order the elements were read. An offset is handed to the committer
+   * once its element's write has succeeded and a later offset of its partition has been confirmed
+   * too, or when the stream completes: several elements carrying one offset (one record made into
+   * several) are all confirmed before it is committed. A failed write fails the stream with nothing
+   * from it onwards committed, and what was held back is not committed either.
+   */
   def flowCommittingAfter[T](
       write: T => Future[Any],
       committerSettings: CommitterSettings,
