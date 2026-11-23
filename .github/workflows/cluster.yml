@@ -1,0 +1,66 @@
+# The k3s suite, `FlowClusterSuite`: a Kubernetes node in a container with the CRD, both operators,
+# Kafka, MinIO and the sample's images, and every case a real pipeline on it, including the Flink
+# streamlets under the Flink Kubernetes Operator. It takes ten to twenty-five minutes, so it is not
+# run on a pull request: `ci` stays fast, and a regression this suite catches is found the next
+# morning rather than before merge.
+#
+# Nightly on `main`, which is otherwise never built (see `ci.yml`), and on demand. A run on demand
+# can name a branch, which is how a change to the operator, the CRD or the SDKs' runtime is checked
+# before it merges, and can turn the soak cases on (SC-003: ten minutes of pod kills under load for
+# each engine, about thirty-five minutes in all).
+name: cluster
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      soak:
+        description: "Run the soak cases too (on or off)"
+        default: "off"
+      flink:
+        description: "Run the Flink cases (on or off)"
+        default: "on"
+concurrency:
+  group: cluster-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  suite:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # sbt-dynver derives the version, and so every image's tag, from tags
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      # What the runner was short of, sampled for the whole suite, so a flaky failure can be told
+      # from a starved runner: a table in the job's summary and the raw samples as an artifact.
+      - name: Start sampling the runner
+        run: nohup python3 .github/cluster-sampler.py record "$RUNNER_TEMP/samples" > "$RUNNER_TEMP/sampler.log" 2>&1 &
+      # `testOnly` builds the images the suite deploys first (the build hooks both `test` and
+      # `testOnly`).
+      - run: >-
+          sbt
+          -Dflow.cluster.soak=${{ inputs.soak || 'off' }}
+          -Dflow.flink.tests=${{ inputs.flink || 'on' }}
+          'set operator / Test / logBuffered := false'
+          'operator/testOnly *FlowClusterSuite'
+      - name: Summarise the runner's resources
+        if: always()
+        run: python3 .github/cluster-sampler.py summary "$RUNNER_TEMP/samples" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: resources
+          path: ${{ runner.temp }}/samples/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-reports
+          path: 'operator/target/test-reports/*FlowClusterSuite.xml'
+          if-no-files-found: warn
