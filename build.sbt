@@ -88,8 +88,13 @@ lazy val commonSettings = Seq(
     "UTF-8",
     "-Wunused:all",
     "-Wvalue-discard",
+    // Every warning is an error, as `javaSettings` has it for the Java modules: a warning the build
+    // lets through is one nobody reads.
+    "-Werror",
     "-source:3.7"
   ),
+  // Not for Scaladoc, which the release's `ci-release` runs: a doc comment must not fail a publish.
+  Compile / doc / scalacOptions ~= (_.filterNot(_ == "-Werror")),
   javacOptions ++= Seq("--release", "21"),
   libraryDependencies ++= commonTest,
   Test / fork              := true,
